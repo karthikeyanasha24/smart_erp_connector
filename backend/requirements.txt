@@ -12,6 +12,7 @@ python-multipart==0.0.12
 # ── Data Validation ────────────────────────────────────────────────────────────
 pydantic==2.10.3
 pydantic-settings==2.6.1
+email-validator==2.2.0
 
 # ── SQL Server ─────────────────────────────────────────────────────────────────
 pyodbc==5.2.0
