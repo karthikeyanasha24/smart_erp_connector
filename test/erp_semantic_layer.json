@@ -1,0 +1,760 @@
+{
+  "version": 1,
+  "title": "SmarterP Connector — ERP semantic layer",
+  "database": "zRetailHQ0",
+  "description": "Maps business language to views, columns, and T-SQL date filters. Edit this file when KPI definitions change; NLQ script loads it via NLQ_SEMANTIC_FILE.",
+  "catalog_meta": {
+    "view_count": 28,
+    "approx_column_count": 658,
+    "full_column_inventory": "backend/schema_catalog.txt",
+    "note": "This file indexes all 28 views with purpose and KPI columns only — not every column. Use schema_catalog.txt for column-level detail."
+  },
+
+  "defaults": {
+    "revenue_view": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+    "revenue_amount_col": "[NetSlsNetAmount]",
+    "revenue_date_col": "[XnDt]",
+    "bill_id_col": "[XnNo]",
+    "line_id_col": "[XnId]"
+  },
+
+  "metrics": {
+    "revenue": {
+      "agg": "SUM",
+      "col": "[NetSlsNetAmount]",
+      "view": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "date_col": "[XnDt]"
+    },
+    "sales": {
+      "agg": "SUM",
+      "col": "[NetSlsNetAmount]",
+      "view": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "date_col": "[XnDt]"
+    },
+    "net sales": {
+      "agg": "SUM",
+      "col": "[NetSlsNetAmount]",
+      "view": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "date_col": "[XnDt]"
+    },
+    "gross sales": {
+      "agg": "SUM",
+      "col": "[NetAmount]",
+      "view": "dbo.VW_MB_POWERBI_APP_REPORT",
+      "date_col": "[XnDt]"
+    },
+    "transactions": {
+      "agg": "COUNT",
+      "col": "DISTINCT [XnNo]",
+      "view": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "date_col": "[XnDt]"
+    },
+    "bills": {
+      "agg": "COUNT",
+      "col": "DISTINCT [XnNo]",
+      "view": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "date_col": "[XnDt]"
+    },
+    "units": {
+      "agg": "SUM",
+      "col": "[NetSlsQty]",
+      "view": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "date_col": "[XnDt]"
+    },
+    "quantity": {
+      "agg": "SUM",
+      "col": "[NetSlsQty]",
+      "view": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "date_col": "[XnDt]"
+    },
+    "stock": {
+      "agg": "SUM",
+      "col": "[StockQty]",
+      "view": "dbo.VW_MB_POWERBI_STOCK_REPORT",
+      "date_col": null
+    },
+    "purchases": {
+      "agg": "SUM",
+      "col": "[NetPurNetAmount]",
+      "view": "dbo.VW_MB_POWERBI_PURXNS_REPORT",
+      "date_col": "[PurInvDate]"
+    },
+    "purchase": {
+      "agg": "SUM",
+      "col": "[NetPurNetAmount]",
+      "view": "dbo.VW_MB_POWERBI_PURXNS_REPORT",
+      "date_col": "[PurInvDate]"
+    }
+  },
+
+  "time_periods": {
+    "today": "CAST([XnDt] AS DATE) = CAST(GETDATE() AS DATE)",
+    "yesterday": "CAST([XnDt] AS DATE) = CAST(DATEADD(DAY, -1, GETDATE()) AS DATE)",
+    "this_week": "[XnDt] >= DATEADD(DAY, -(DATEPART(dw, GETDATE()) - 1), CAST(GETDATE() AS DATE)) AND [XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))",
+    "mtd": "[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND [XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))",
+    "qtd": "[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()), ((MONTH(GETDATE()) - 1) / 3) * 3 + 1, 1) AND [XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))",
+    "ytd": "[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()), 1, 1) AND [XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))",
+    "last_7d": "[XnDt] >= DATEADD(DAY, -7, CAST(GETDATE() AS DATE)) AND [XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))",
+    "last_30d": "[XnDt] >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE)) AND [XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))",
+    "last_6m": "[XnDt] >= DATEADD(MONTH, -6, CAST(GETDATE() AS DATE)) AND [XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
+  },
+
+  "dimensions": {
+    "branch": {
+      "col": "[BranchAlias]",
+      "note": "Use on SLSXNS, APP_REPORT, SLS_REPORT, STOCK_REPORT"
+    },
+    "store": { "col": "[BranchAlias]" },
+    "location": { "col": "[BranchAlias]" },
+    "outlet": { "col": "[BranchAlias]" },
+    "category": {
+      "col": "[CategoryShortName]",
+      "display_col": "[Category]",
+      "note": "Short code for filters; full [Category] for display labels"
+    },
+    "department": {
+      "col": "[DepartmentShortName]",
+      "display_col": "[Department]",
+      "note": "Do not assume = 'Women'; use LIKE unless user gives exact code"
+    },
+    "salesperson": {
+      "col": "[SalesPersonName]",
+      "view": "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "note": "Use salesperson_lines view with CashmemoDt — not on SLSXNS"
+    },
+    "product": { "col": "[ArticleNo]" },
+    "article": { "col": "[ArticleNo]" },
+    "item": { "col": "[Itemcode]" },
+    "supplier": { "col": "[SupplierName]", "code_col": "[SupplierAlias]" },
+    "vendor": { "col": "[SupplierAlias]" },
+    "day": { "col": "CAST([XnDt] AS DATE)" },
+    "date": { "col": "CAST([XnDt] AS DATE)" },
+    "month": { "col": "DATEFROMPARTS(YEAR([XnDt]), MONTH([XnDt]), 1)" },
+    "hour": {
+      "col": null,
+      "note": "SLSXNS.[XnDt] is DATE only — hourly peak analysis is NOT supported on this view"
+    }
+  },
+
+  "view_categories": {
+    "sales_revenue": ["sales_app", "sales_lines", "sales_memo", "sales_apr", "sales_article", "ai_sales_data", "mis_supplier_sls", "salesperson_lines"],
+    "footfall": ["sales_billcount", "sales_app", "sales_lines"],
+    "procurement": ["purchases", "pur_report", "pur_qty_cost", "purchase_returns", "supplier_pur", "mis_supplier_sls"],
+    "inventory": ["stock", "stock_git", "ai_stock"],
+    "transfers": ["stock_transfer_in", "stock_transfer_out"],
+    "masters": ["branch_list", "ai_branch", "category_master", "product_master", "vendor_master", "ai_supplier", "ai_salesperson", "mst_items"],
+    "customers": ["ai_customer"]
+  },
+
+  "views": {
+    "sales_app": {
+      "catalog_no": 1,
+      "fqn": "dbo.VW_MB_POWERBI_APP_REPORT",
+      "purpose": "Primary aggregated sales — dashboard default; 90% of analytics",
+      "grain": "application summary",
+      "date_col": "XnDt",
+      "amount_col": "NetAmount",
+      "qty_col": "AppQty",
+      "bill_col": "BillCount",
+      "branch_col": "BranchAlias",
+      "column_count": 33
+    },
+    "sales_memo": {
+      "catalog_no": 2,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_REPORT",
+      "purpose": "Memo-level sales with product attributes; margin via NetSlsCostValue",
+      "grain": "sales memo / item",
+      "date_col": "XnMemoDate",
+      "amount_col": "NetAmount",
+      "qty_col": "NetSlsQty",
+      "branch_col": "BranchAlias",
+      "column_count": 24,
+      "note": "Use XnMemoDate for period filters — not XnDt"
+    },
+    "ai_sales_data": {
+      "catalog_no": 3,
+      "fqn": "dbo.VwAISalesData",
+      "purpose": "Lightweight AI sales summary for fast trends and NLQ",
+      "grain": "invoice line",
+      "date_col": "InvoiceDt",
+      "amount_col": "SaleNetAmount",
+      "qty_col": "Quantity",
+      "bill_col": "InvoiceNo",
+      "branch_col": "BranchId",
+      "column_count": 12
+    },
+    "ai_branch": {
+      "catalog_no": 4,
+      "fqn": "dbo.VwAIBranch",
+      "purpose": "Branch master — names, geography, address (no sales amounts)",
+      "grain": "dimension",
+      "branch_col": "BranchId",
+      "display_cols": ["BranchName", "BranchShortName", "City", "State"],
+      "column_count": 10
+    },
+    "ai_customer": {
+      "catalog_no": 5,
+      "fqn": "dbo.VwAICustomerDetails",
+      "purpose": "Customer master — new customer KPI, contact, credit, branch",
+      "grain": "dimension",
+      "date_col": "CreatedOn",
+      "branch_col": "BranchName",
+      "column_count": 20
+    },
+    "ai_stock": {
+      "catalog_no": 6,
+      "fqn": "dbo.VwAIStockData",
+      "purpose": "Simple stock by ItemId and BranchId — Products page",
+      "grain": "stock snapshot",
+      "qty_col": "StockQty",
+      "branch_col": "BranchId",
+      "column_count": 3
+    },
+    "salesperson_lines": {
+      "catalog_no": 7,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "purpose": "Top salespersons chart — has SalesPersonName and CashmemoDt",
+      "grain": "cash memo line",
+      "date_col": "CashmemoDt",
+      "amount_col": "SalesNetAmount",
+      "qty_col": "SalesQuantity",
+      "bill_col": "CashmemoNo",
+      "branch_col": "BranchAlias",
+      "column_count": 33,
+      "note": "Preferred for salesperson ranking — not SLSXNS"
+    },
+    "sales_apr": {
+      "catalog_no": 8,
+      "fqn": "dbo.VW_MB_POWERBI_APR_REPORT",
+      "purpose": "Application (APR) sales — similar grain to APP_REPORT",
+      "grain": "application summary",
+      "date_col": "XnDt",
+      "amount_col": "NetAmount",
+      "qty_col": "AppQty",
+      "bill_col": "BillCount",
+      "branch_col": "BranchAlias",
+      "column_count": 31
+    },
+    "branch_list": {
+      "catalog_no": 9,
+      "fqn": "dbo.VW_MB_POWERBI_BRANCH_LIST",
+      "purpose": "Branch dimension for filters, dropdowns, branch intelligence",
+      "grain": "dimension",
+      "branch_col": "BranchId",
+      "display_cols": ["BranchName", "ShortName", "City", "State"],
+      "column_count": 11
+    },
+    "category_master": {
+      "catalog_no": 10,
+      "fqn": "dbo.VW_MB_POWERBI_CATEGORY_MASTER",
+      "purpose": "Department / category / sub-category hierarchy master",
+      "grain": "dimension",
+      "display_cols": ["InvDepartmentShortName", "InvCategoryShortName", "InvSubCategoryShortName"],
+      "column_count": 9
+    },
+    "stock_git": {
+      "catalog_no": 11,
+      "fqn": "dbo.VW_MB_POWERBI_CBS_WITH_GIT",
+      "purpose": "Closing balance stock plus goods-in-transit (GIT)",
+      "grain": "stock + GIT snapshot",
+      "date_col": "PurInvoiceDt",
+      "qty_col": "StockQty",
+      "amount_col": "CbsCostValue",
+      "branch_col": "BranchAlias",
+      "column_count": 24,
+      "extra_cols": ["GitQty", "GitCostValue", "CbsMrpValue"]
+    },
+    "mis_supplier_sls": {
+      "catalog_no": 12,
+      "fqn": "dbo.VW_MB_POWERBI_MIS_SUPPLIER_SLS_DATA",
+      "purpose": "Monthly supplier-wise net sales MIS",
+      "grain": "supplier-month",
+      "date_col": "XnMemoDate",
+      "amount_col": "NetAmount",
+      "qty_col": "NetSlsQty",
+      "column_count": 16
+    },
+    "product_master": {
+      "catalog_no": 13,
+      "fqn": "dbo.VW_MB_POWERBI_PRODUCT_MASTER",
+      "purpose": "Item master — style, fabric, supplier, MRP (not transactional)",
+      "grain": "dimension",
+      "date_col": "PurDate",
+      "display_cols": ["Itemcode", "ArticleNo", "ItemMRP", "PurchasePrice"],
+      "column_count": 37
+    },
+    "purchase_returns": {
+      "catalog_no": 14,
+      "fqn": "dbo.VW_MB_POWERBI_PRT_REPORT",
+      "purpose": "Purchase return transactions by branch and supplier",
+      "grain": "purchase return line",
+      "date_col": "PurReturnDt",
+      "qty_col": "PrtQty",
+      "branch_col": "BranchAlias",
+      "column_count": 24
+    },
+    "pur_qty_cost": {
+      "catalog_no": 15,
+      "fqn": "dbo.VW_MB_POWERBI_PUR_QTY_WITH_COST",
+      "purpose": "Purchase quantity and cost summary",
+      "grain": "purchase summary",
+      "date_col": "PurchaseDt",
+      "qty_col": "PurQty",
+      "amount_col": "PurCost",
+      "branch_col": "BranchAlias",
+      "column_count": 7
+    },
+    "pur_report": {
+      "catalog_no": 16,
+      "fqn": "dbo.VW_MB_POWERBI_PUR_REPORT",
+      "purpose": "Purchase receipts by branch, supplier, category, item",
+      "grain": "purchase receipt line",
+      "date_col": "PurchaseDt",
+      "qty_col": "PurQty",
+      "bill_col": "PurchaseId",
+      "branch_col": "BranchAlias",
+      "column_count": 24
+    },
+    "purchases": {
+      "catalog_no": 17,
+      "fqn": "dbo.VW_MB_POWERBI_PURXNS_REPORT",
+      "purpose": "Detailed purchase and return transactions with tax breakdown",
+      "grain": "purchase transaction line",
+      "date_col": "PurInvDate",
+      "amount_col": "NetPurNetAmount",
+      "qty_col": "NetPurQty",
+      "branch_col": "BranchAlias",
+      "column_count": 51,
+      "extra_cols": ["PurNetAmount", "PrtNetAmount", "NetPurCost"]
+    },
+    "sales_article": {
+      "catalog_no": 18,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_ARTICLE_REPORT",
+      "purpose": "Article/style-level net sales performance",
+      "grain": "article",
+      "date_col": "XnMemoDate",
+      "amount_col": "NetAmount",
+      "qty_col": "NetSlsQty",
+      "column_count": 10
+    },
+    "sales_billcount": {
+      "catalog_no": 19,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_BILLCOUNT",
+      "purpose": "Daily bill count per branch — footfall / transaction volume",
+      "grain": "branch-day",
+      "date_col": "CashmemoDt",
+      "bill_col": "BillCount",
+      "branch_col": "BranchId",
+      "column_count": 3
+    },
+    "sales_lines": {
+      "catalog_no": 20,
+      "fqn": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "purpose": "Canonical net sales lines — MTD/today revenue, returns, tax (preferred for revenue KPIs)",
+      "grain": "sales transaction line",
+      "date_col": "XnDt",
+      "amount_col": "NetSlsNetAmount",
+      "qty_col": "NetSlsQty",
+      "bill_col": "XnNo",
+      "line_col": "XnId",
+      "branch_col": "BranchAlias",
+      "column_count": 42,
+      "note": "XnDt is DATE only — no hourly analysis"
+    },
+    "stock_transfer_in": {
+      "catalog_no": 21,
+      "fqn": "dbo.VW_MB_POWERBI_STI_REPORT",
+      "purpose": "Inbound stock transfers between branches",
+      "grain": "transfer in line",
+      "date_col": "XnDt",
+      "qty_col": "StiQty",
+      "amount_col": "NetAmount",
+      "branch_col": "TargetBranchAlias",
+      "column_count": 36,
+      "extra_cols": ["SourceBranchAlias", "SourceBranchId", "TargetBranchId"]
+    },
+    "stock_transfer_out": {
+      "catalog_no": 22,
+      "fqn": "dbo.VW_MB_POWERBI_STO_REPORT",
+      "purpose": "Outbound stock transfers between branches",
+      "grain": "transfer out line",
+      "date_col": "XnDt",
+      "qty_col": "StoQty",
+      "amount_col": "NetAmount",
+      "branch_col": "SourceBranchAlias",
+      "column_count": 36,
+      "extra_cols": ["TargetBranchAlias", "SourceBranchId", "TargetBranchId"]
+    },
+    "stock": {
+      "catalog_no": 23,
+      "fqn": "dbo.VW_MB_POWERBI_STOCK_REPORT",
+      "purpose": "Current stock on hand by branch, supplier, category, item",
+      "grain": "stock snapshot",
+      "date_col": "PurInvoiceDt",
+      "qty_col": "StockQty",
+      "branch_col": "BranchAlias",
+      "column_count": 20
+    },
+    "supplier_pur": {
+      "catalog_no": 24,
+      "fqn": "dbo.VW_MB_POWERBI_SUPPLIER_PUR_REPORT",
+      "purpose": "Supplier-wise purchase history with product attributes",
+      "grain": "supplier purchase line",
+      "date_col": "PurDate",
+      "qty_col": "PurQty",
+      "branch_col": "BranchAlias",
+      "column_count": 40
+    },
+    "vendor_master": {
+      "catalog_no": 25,
+      "fqn": "dbo.VW_MB_POWERBI_VENDOR_MASTER",
+      "purpose": "Vendor/party master — contact, tax, credit, MSME (no transactions)",
+      "grain": "dimension",
+      "display_cols": ["PartyName", "PartyAlias", "City", "State", "TaxGSTINNo"],
+      "column_count": 47
+    },
+    "ai_salesperson": {
+      "catalog_no": 26,
+      "fqn": "dbo.VwAISalesPerson",
+      "purpose": "Salesperson dimension lookup",
+      "grain": "dimension",
+      "display_cols": ["SalesPersonId", "SalesPersonName", "SalesPersonShortName"],
+      "column_count": 3
+    },
+    "ai_supplier": {
+      "catalog_no": 27,
+      "fqn": "dbo.VwAISupplier",
+      "purpose": "Supplier dimension lookup for procurement NLQ",
+      "grain": "dimension",
+      "branch_col": "PurPartyId",
+      "display_cols": ["PartyName", "PartyAlias", "City", "State"],
+      "column_count": 11
+    },
+    "mst_items": {
+      "catalog_no": 28,
+      "fqn": "dbo.VwMstItems",
+      "purpose": "Complete item master — hierarchy, parameters, supplier, pricing",
+      "grain": "dimension",
+      "date_col": "PurInvoiceDt",
+      "display_cols": ["Itemcode", "ItemId", "ArticleNo", "ItemMRP", "PurchasePrice"],
+      "column_count": 50
+    }
+  },
+
+  "guardrails": [
+    "Default revenue: SUM([NetSlsNetAmount]) on dbo.VW_MB_POWERBI_SLSXNS_REPORT (sales_lines) with [XnDt] date filter.",
+    "Dashboard-style aggregates: VW_MB_POWERBI_APP_REPORT (sales_app) — may differ from SLSXNS daily totals.",
+    "Footfall / bill count: VW_MB_POWERBI_SLS_BILLCOUNT (CashmemoDt, BillCount) or BillCount on APP_REPORT.",
+    "Salesperson top-N: VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID — never SalesPersonName on SLSXNS.",
+    "Stock on hand: VW_MB_POWERBI_STOCK_REPORT or VwAIStockData; GIT stock: VW_MB_POWERBI_CBS_WITH_GIT.",
+    "STOCK_REPORT keys items by ItemId (not Itemcode) — join VW_MB_POWERBI_PRODUCT_MASTER on ItemId to match APP_REPORT Itemcode.",
+    "Purchases: VW_MB_POWERBI_PURXNS_REPORT (NetPurNetAmount, PurInvDate); returns: VW_MB_POWERBI_PRT_REPORT.",
+    "Transfers: STI_REPORT (inbound) / STO_REPORT (outbound) — use SourceBranchAlias and TargetBranchAlias.",
+    "Masters (no amounts): branch_list, category_master, vendor_master, product_master, VwMstItems — join to transactional views.",
+    "Never hard-code calendar dates for rolling MTD/today; use GETDATE() expressions.",
+    "[XnDt] on SLSXNS is DATE type: DATEPART(HOUR, [XnDt]) fails or returns hour 0 only — refuse hourly peak queries or state limitation.",
+    "Long history (24+ months) on line-level sales views: aggregate to month in one pass.",
+    "Women's / department filters: use LIKE on [DepartmentShortName], not exact = 'Women'.",
+    "Full column list (~658 cols) is in schema_catalog.txt — semantic file lists KPI columns per view only."
+  ],
+
+  "frequent_ai_queries": {
+    "_comment": "Curated list for NLQ terminal (faq command) and FAQ templates in test/nlq_faq_kpi.py. Items marked template_only use SQL heuristics or return a single-row not-supported note.",
+    "source": "test/nlq_faq_kpi.py FREQUENT_AI_QUERIES",
+    "sql_bundle": "test/frequent_ai_queries_faq.sql",
+    "sql_bundle_regenerate": "python test/export_frequent_ai_queries_sql.py --write",
+    "questions": [
+      "Store Wise MTD Sales, Unique Customer Count, ATS",
+      "Department Wise MTD Sales, Unique Customer Count, ATS",
+      "Category Wise MTD Sales, Unique Customer Count, ATS",
+      "Month-wise Sales Comparison since Apr'24",
+      "Last 5 Years Sales Analysis at Department and Category Level",
+      "Average Sales at MTD Level",
+      "Today's Sales with Unique Customer Count and Unique Invoices Billed",
+      "Current Year YTD Growth vs Last Year YTD Growth",
+      "Current Year QTD Growth vs Last Year QTD Growth",
+      "Current Year MTD Growth vs Last Year MTD Growth",
+      "Which Store has the Highest Sales in the Current Month?",
+      "Which Department has the Highest Sales in the Current Month?",
+      "Which Category has the Highest Sales in the Current Month?",
+      "Most Selling Product in the Current Month or Year",
+      "Least Selling Product in the Current Month or Year",
+      "Which Supplier has the Highest Sales in the Current Month?",
+      "Which Supplier has the Lowest Sales in the Current Month?",
+      "Top 10 Performing Stores based on Growth %",
+      "Bottom 10 Performing Stores based on Sales Decline",
+      "Which Products are Growing Fastest Month-over-Month?",
+      "Which Categories are Showing Negative Growth Trends?",
+      "Predict Next Month Sales using AI Forecasting",
+      "Expected Stock Requirement for Next 30 Days",
+      "Potential Stock-Out Products Prediction",
+      "Slow-Moving Inventory Identification",
+      "Fast-Moving Inventory Identification",
+      "Customer Repeat Purchase Analysis",
+      "Peak Sales Hours / Peak Billing Time Analysis",
+      "Festival vs Non-Festival Sales Comparison",
+      "Region Wise Sales Performance Comparison",
+      "Supplier Contribution % in Overall Sales",
+      "Average Basket Size by Store",
+      "Average Invoice Value Trend Analysis",
+      "Discount Impact on Sales Performance",
+      "Store Ranking based on Sales, ATS, and Customer Count",
+      "Product Recommendation based on Customer Buying Pattern",
+      "AI-based Demand Forecasting by Store and Category",
+      "Daily Sales Target vs Achievement Tracking",
+      "Weather/Festival Impact on Sales Trend",
+      "High Return / Low Conversion Product Identification",
+      "AI-based Alerts for Sudden Sales Drop or Spike",
+      "Top Customers based on Purchase Value",
+      "New vs Repeat Customer Analysis",
+      "Category Contribution % in Total Revenue",
+      "Gross Margin Analysis by Department/Category",
+      "Inventory Aging Analysis",
+      "Dead Stock Identification",
+      "Product-wise Sell Through %",
+      "Sales Trend Prediction for Upcoming Festivals/Seasons",
+      "AI-generated Business Insights and Recommendations"
+    ],
+    "not_sql_only": [
+      "Peak Sales Hours / Peak Billing Time Analysis",
+      "Product Recommendation based on Customer Buying Pattern",
+      "AI-based Demand Forecasting by Store and Category",
+      "Daily Sales Target vs Achievement Tracking",
+      "Weather/Festival Impact on Sales Trend",
+      "AI-generated Business Insights and Recommendations"
+    ]
+  },
+
+  "compare_ai_queries": {
+    "_comment": "NLQ terminal compare command; templates in test/nlq_faq_compare.py",
+    "source": "test/nlq_faq_compare.py COMPARE_AI_QUERIES",
+    "questions": [
+      "Compare this month sales vs last month",
+      "Compare branch sales for Chennai vs Bangalore",
+      "Compare department performance year over year",
+      "Compare weekday vs weekend sales",
+      "Compare online vs offline sales",
+      "Compare category sales across branches",
+      "Compare top 5 suppliers by revenue",
+      "Compare current quarter vs previous quarter",
+      "Compare bill count between branches",
+      "Compare sales before and after discount campaigns"
+    ],
+    "not_sql_only": [
+      "Compare online vs offline sales"
+    ],
+    "heuristic_only": [
+      "Compare sales before and after discount campaigns"
+    ]
+  },
+
+  "comparison_faq_sql_export": {
+    "_comment": "Combined SQL for all compare lists (sales→conversational): 81 FAQ blocks from try_faq_template",
+    "combined_sql": "test/comparison_queries_faq.sql",
+    "sections_dir": "test/comparison_queries_faq/",
+    "regenerate": "python test/export_comparison_queries_sql.py --write",
+    "verify_templates": "python test/export_comparison_queries_sql.py",
+    "execute_on_db_optional": "python test/export_comparison_queries_sql.py --execute"
+  },
+
+  "product_compare_ai_queries": {
+    "_comment": "NLQ terminal product command; templates in test/nlq_faq_product_compare.py",
+    "source": "test/nlq_faq_product_compare.py PRODUCT_COMPARE_AI_QUERIES",
+    "questions": [
+      "Compare sales of kurtis vs sarees",
+      "Compare fabric performance by season",
+      "Compare color-wise sales trends",
+      "Compare MRP vs actual selling price",
+      "Compare top-selling articles between months",
+      "Compare product return rates by category",
+      "Compare premium vs budget product sales",
+      "Compare size-wise sales distribution",
+      "Compare stock turnover by category",
+      "Compare old collection vs new collection performance"
+    ],
+    "heuristic_only": [
+      "Compare fabric performance by season",
+      "Compare premium vs budget product sales",
+      "Compare old collection vs new collection performance"
+    ]
+  },
+
+  "branch_compare_ai_queries": {
+    "_comment": "NLQ terminal branch command; templates in test/nlq_faq_branch_compare.py",
+    "source": "test/nlq_faq_branch_compare.py BRANCH_COMPARE_AI_QUERIES",
+    "questions": [
+      "Compare Chennai branches by sales growth",
+      "Compare branch profitability",
+      "Compare stock levels across branches",
+      "Compare customer footfall between branches",
+      "Compare branch conversion rate",
+      "Compare branch inventory aging",
+      "Compare transfer in vs transfer out between branches",
+      "Compare branch sales contribution percentage",
+      "Compare branch-wise average basket size",
+      "Compare top-performing branches for womenswear"
+    ],
+    "not_sql_only": [
+      "Compare branch conversion rate"
+    ],
+    "heuristic_only": [
+      "Compare branch conversion rate"
+    ]
+  },
+
+  "supplier_compare_ai_queries": {
+    "_comment": "NLQ terminal supplier command; test/nlq_faq_supplier_compare.py",
+    "source": "test/nlq_faq_supplier_compare.py SUPPLIER_COMPARE_AI_QUERIES",
+    "questions": [
+      "Compare supplier sales contribution",
+      "Compare supplier purchase cost trends",
+      "Compare suppliers by margin percentage",
+      "Compare supplier return percentage",
+      "Compare local vs outstation suppliers",
+      "Compare supplier performance by category",
+      "Compare top suppliers over last 6 months",
+      "Compare supplier delivery efficiency",
+      "Compare supplier stock movement",
+      "Compare supplier profitability contribution"
+    ],
+    "not_sql_only": [
+      "Compare supplier delivery efficiency"
+    ],
+    "heuristic_only": [
+      "Compare local vs outstation suppliers",
+      "Compare supplier delivery efficiency"
+    ]
+  },
+
+  "customer_compare_ai_queries": {
+    "_comment": "NLQ terminal customer command; test/nlq_faq_customer_compare.py",
+    "source": "test/nlq_faq_customer_compare.py CUSTOMER_COMPARE_AI_QUERIES",
+    "questions": [
+      "Compare new vs repeat customer sales",
+      "Compare customer groups by revenue",
+      "Compare city-wise customer spending",
+      "Compare customer retention by branch",
+      "Compare high-value vs regular customers",
+      "Compare customer purchase frequency",
+      "Compare male vs female customer sales",
+      "Compare festive season customer trends",
+      "Compare loyalty customer contribution",
+      "Compare average order value by customer segment"
+    ],
+    "heuristic_only": [
+      "Compare male vs female customer sales",
+      "Compare festive season customer trends",
+      "Compare loyalty customer contribution"
+    ]
+  },
+
+  "inventory_compare_ai_queries": {
+    "_comment": "NLQ terminal inventory command; test/nlq_faq_inventory_compare.py",
+    "source": "test/nlq_faq_inventory_compare.py INVENTORY_COMPARE_AI_QUERIES",
+    "questions": [
+      "Compare stock quantity vs sales quantity",
+      "Compare inventory across warehouses",
+      "Compare fast-moving vs slow-moving items",
+      "Compare stock aging by category",
+      "Compare opening vs closing stock",
+      "Compare stock transfer efficiency",
+      "Compare stock availability across cities",
+      "Compare stock value by supplier",
+      "Compare purchase quantity vs sales quantity",
+      "Compare inventory turnover between branches"
+    ],
+    "heuristic_only": [
+      "Compare opening vs closing stock",
+      "Compare stock transfer efficiency"
+    ]
+  },
+
+  "executive_compare_ai_queries": {
+    "_comment": "NLQ terminal executive command; test/nlq_faq_executive_compare.py",
+    "source": "test/nlq_faq_executive_compare.py EXECUTIVE_COMPARE_AI_QUERIES",
+    "questions": [
+      "Compare sales growth vs profit growth",
+      "Compare branch efficiency vs inventory holding",
+      "Compare revenue vs bill count trends",
+      "Compare GST contribution across states",
+      "Compare sales trend before and after promotions",
+      "Compare margin percentage across categories",
+      "Compare purchase cost inflation month over month",
+      "Compare category contribution to total revenue",
+      "Compare branch sales vs target achievement",
+      "Compare top-performing concepts by profitability"
+    ],
+    "not_sql_only": [
+      "Compare branch sales vs target achievement"
+    ],
+    "heuristic_only": [
+      "Compare sales trend before and after promotions",
+      "Compare branch sales vs target achievement"
+    ]
+  },
+
+  "conversational_compare_ai_queries": {
+    "_comment": "NLQ terminal convo command; memory follow-ups in terminal_openai_nlq_sql ConversationMemory",
+    "source": "test/nlq_faq_conversational_compare.py CONVERSATIONAL_COMPARE_AI_QUERIES",
+    "example_nlp_sql": {
+      "question": "Compare Chennai vs Bangalore sales this month",
+      "view": "dbo.VW_MB_POWERBI_APP_REPORT",
+      "metrics": ["NetAmount", "AppQty", "XnNo"],
+      "filters": ["XnDt MTD", "BranchAlias LIKE city names"]
+    },
+    "questions": [
+      "Compare this with last year",
+      "Compare only Chennai branches",
+      "Compare top 5 categories",
+      "Compare excluding returns",
+      "Compare by quantity instead of revenue",
+      "Compare only premium products",
+      "Compare supplier-wise",
+      "Compare trend month over month",
+      "Compare before and after Diwali",
+      "Compare branch contribution percentage",
+      "Compare Chennai vs Bangalore sales this month"
+    ],
+    "heuristic_only": [
+      "Compare before and after Diwali",
+      "Compare only premium products"
+    ]
+  },
+
+  "few_shot": [
+    "Q: Total net sales today -> sales_lines (SLSXNS), CAST([XnDt] AS date) = CAST(GETDATE() AS date), SUM([NetSlsNetAmount]).",
+    "Q: MTD revenue by branch -> sales_lines, MTD on [XnDt], GROUP BY [BranchAlias], ORDER BY revenue DESC.",
+    "Q: Top category MTD -> sales_lines, GROUP BY [Category] or [CategoryShortName], TOP N ORDER BY SUM([NetSlsNetAmount]) DESC.",
+    "Q: Top salesperson MTD -> salesperson_lines, filter CashmemoDt MTD, GROUP BY [SalesPersonName], SUM([SalesNetAmount]).",
+    "Q: Bills today by branch -> sales_billcount, CAST([CashmemoDt] AS date) = today, SUM([BillCount]) GROUP BY [BranchId].",
+    "Q: Month-wise since Apr 2024 -> sales_lines, monthly GROUP BY DATEFROMPARTS(YEAR([XnDt]),MONTH([XnDt]),1), one scan.",
+    "Q: Stock by branch -> stock (STOCK_REPORT), SUM([StockQty]), GROUP BY [BranchAlias].",
+    "Q: Net purchases MTD -> purchases (PURXNS), PurInvDate MTD, SUM([NetPurNetAmount]).",
+    "Q: Stock transfer in MTD -> stock_transfer_in, filter [XnDt], SUM([StiQty]) by [TargetBranchAlias].",
+    "Q: Supplier contribution % MTD -> USE CTE + window: WITH sup AS (SELECT [SupplierName], SUM([NetSlsNetAmount]) AS Rev FROM dbo.VW_MB_POWERBI_SLSXNS_REPORT WITH (NOLOCK) WHERE [XnDt] >= DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1) AND [XnDt] < DATEADD(DAY,1,CAST(GETDATE() AS DATE)) GROUP BY [SupplierName]) SELECT TOP 500 [SupplierName], Rev, CAST(100.0*Rev/NULLIF(SUM(Rev) OVER(),0) AS decimal(18,4)) AS ContributionPct FROM sup ORDER BY ContributionPct DESC.",
+    "Q: Monthly revenue trend last 12 months -> sales_lines, GROUP BY DATEFROMPARTS(YEAR([XnDt]),MONTH([XnDt]),1), WHERE [XnDt] >= DATEADD(MONTH,-12,DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)) AND [XnDt] < DATEADD(DAY,1,CAST(GETDATE() AS DATE)), ORDER BY MonthStart ASC. NEVER scan all history — always cap at max_history_months months back."
+  ],
+
+  "query_policies": {
+    "_comment": "Enforced by terminal_openai_nlq_sql.py _apply_query_policies(). Override per-run with --no-policy.",
+    "default_period_sales": "mtd",
+    "default_period_note": "When no time period is detected in the question and the query targets a sales/revenue metric, MTD is silently applied. The user sees a yellow notice. Pass --no-policy to disable.",
+    "max_history_months": 24,
+    "max_history_note": "Trend and history queries capped at 24 months back on line-level views. The prompt is annotated with a DATEADD(MONTH,-24,...) start floor so the model cannot scan all history.",
+    "require_date_on_sales_lines": true,
+    "require_date_note": "Guardrail injected into system prompt: never generate a query on SLSXNS without a WHERE on [XnDt] unless user explicitly requests all-time totals.",
+    "heavy_query_patterns": [
+      "forecast",
+      "predict",
+      "all time",
+      "all history",
+      "since beginning",
+      "entire history",
+      "all years"
+    ],
+    "heavy_query_action": "warn",
+    "heavy_query_message": "This question may scan years of line-level data and could time out. Consider adding 'last 12 months' or 'last 24 months'. Proceeding -- use Ctrl+C to cancel.",
+    "blocked_dimensions": ["hour", "hourly"],
+    "blocked_dimensions_message": "Hourly analysis is not supported -- [XnDt] on SLSXNS is DATE only (no time component). Ask for daily trends instead."
+  }
+}

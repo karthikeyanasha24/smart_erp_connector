@@ -1,0 +1,46 @@
+# SmarterP Connector Backend — Python Dependencies
+# Install: pip install -r requirements.txt
+# Note: SQL Server requires ODBC Driver 17 or 18 for SQL Server
+#   Windows: https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server
+#   Ubuntu:  apt-get install -y unixodbc-dev && pip install pyodbc
+
+# ── Web Framework ──────────────────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# ── Data Validation ────────────────────────────────────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# ── SQL Server ─────────────────────────────────────────────────────────────────
+pyodbc==5.2.0
+SQLAlchemy==2.0.36
+
+# ── PostgreSQL (async) ─────────────────────────────────────────────────────────
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+
+# ── AI / LLM ───────────────────────────────────────────────────────────────────
+anthropic==0.40.0
+openai==1.57.4
+
+# ── LangSmith Tracing ──────────────────────────────────────────────────────────
+langsmith==0.2.3
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
+PyJWT==2.10.1
+bcrypt==4.2.1
+
+# ── HTTP / Async ───────────────────────────────────────────────────────────────
+httpx==0.28.1
+anyio==4.7.0
+
+# ── Rate Limiting ──────────────────────────────────────────────────────────────
+slowapi==0.1.9
+
+# ── Utilities ──────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+structlog==24.4.0
+orjson==3.10.12
+python-dateutil==2.9.0

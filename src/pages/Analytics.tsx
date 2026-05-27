@@ -1,0 +1,1057 @@
+import { useMemo, useState, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  AreaChart, Area, LineChart, Line, LabelList,
+  PieChart, Pie, Cell, Sector,
+} from 'recharts';
+import {
+  RefreshCw, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
+  TrendingUp, TrendingDown, ShoppingBag, Users, Receipt, BarChart2, CalendarRange,
+} from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { useAnalyticsPage, prefetchAnalyticsPage, prefetchAnalyticsShell, fetchAndApplySnapshot } from '../hooks/useAnalytics';
+import { fmtLakhs, fmtCount, fmtLakhsAxis, formatChartLabel } from '../lib/format';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const PERIOD_TABS = [
+  { label: 'Today',   period: 'today'   },
+  { label: 'MTD',     period: 'mtd'     },
+  { label: 'QTD',     period: 'qtd'     },
+  { label: 'YTD',     period: 'ytd'     },
+  { label: 'Last 6M', period: 'last_6m' },
+  { label: 'Custom',  period: 'custom'  },
+];
+
+/** Helps explain why rolling 180d revenue may exceed calendar YTD, etc. */
+const PERIOD_WINDOW_HINT: Partial<Record<string, string>> = {
+  today: 'Single day snapshot.',
+  mtd: 'Calendar month-to-date.',
+  qtd: 'Calendar quarter-to-date.',
+  ytd:
+    'Calendar year-to-date (1 Jan–today). Last year compares the same calendar slice.',
+  last_6m:
+    'Rolling last 180 days (today back 179 days), not half a calendar year — it can include last year and total more than YTD.',
+  custom: 'Uses the dates you pick; last year uses the same calendar shift.',
+};
+
+const PIE_COLORS = [
+  '#5882ff','#8B5CF6','#26C6DA','#EC407A',
+  '#66BB6A','#FFA726','#AB47BC','#42A5F5',
+  '#EF5350','#26A69A','#7E57C2','#FF7043',
+  '#29B6F6','#9CCC65','#FFCA28','#78909C',
+];
+
+const KPI_ICONS = [ShoppingBag, BarChart2, Receipt, Users];
+const KPI_COLORS = ['#5882ff','#26C6DA','#FFA726','#8B5CF6'];
+
+// ─── Custom donut active shape ─────────────────────────────────────────────────
+function ActiveShape(props: any) {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, percent } = props;
+  return (
+    <g>
+      <text x={cx} y={cy - 10} textAnchor="middle" fill="var(--text-primary)"
+        style={{ fontSize: 13, fontWeight: 700 }}>
+        {String(payload.name ?? '').slice(0, 14)}
+      </text>
+      <text x={cx} y={cy + 10} textAnchor="middle" fill={fill}
+        style={{ fontSize: 12, fontWeight: 600 }}>
+        {(percent * 100).toFixed(2)}%
+      </text>
+      <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 8}
+        startAngle={startAngle} endAngle={endAngle} fill={fill} />
+      <Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={innerRadius - 1}
+        startAngle={startAngle} endAngle={endAngle} fill={fill} />
+    </g>
+  );
+}
+
+// ─── Glass card wrapper ────────────────────────────────────────────────────────
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const { isDark } = useTheme();
+  return (
+    <div className={`rounded-2xl ${className}`} style={{
+      background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.92)',
+      backdropFilter: 'blur(20px)',
+      border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
+      boxShadow: isDark ? '0 4px 24px rgba(0,0,0,0.25)' : '0 2px 16px rgba(0,0,0,0.06)',
+    }}>
+      {children}
+    </div>
+  );
+}
+
+// ─── Chart tooltip (bars, areas, lines) ───────────────────────────────────────
+function ChartTooltip({ active, payload, label }: any) {
+  const { isDark } = useTheme();
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: isDark ? 'rgba(8,15,26,0.97)' : 'rgba(255,255,255,0.98)',
+      border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+      borderRadius: 10, padding: '10px 14px',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+    }}>
+      <p style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 6, fontWeight: 600 }}>{label}</p>
+      {payload.map((p: any) => {
+        const clr = p.stroke ?? (typeof p.fill === 'string' && !p.fill.startsWith('url') ? p.fill : '#888');
+        return (
+          <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: clr, flexShrink: 0 }} />
+            <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{p.name}:</span>
+            <span style={{ color: clr, fontSize: 11, fontWeight: 700 }}>{fmtLakhs(Number(p.value ?? 0))}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Pie side-legend ──────────────────────────────────────────────────────────
+function PieLegend({ items, isDark }: { items: { name: string; value: number }[]; isDark: boolean }) {
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', maxHeight: 200, alignSelf: 'center' }}>
+      {items.map((item, i) => (
+        <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 4px' }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: 2,
+            background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0,
+          }} />
+          <span style={{
+            fontSize: 11, flex: 1, color: isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {item.name}
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#5882ff', flexShrink: 0 }}>
+            {fmtLakhs(item.value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+export default function Analytics() {
+  const { isDark } = useTheme();
+  const [period, setPeriod] = useState('mtd');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [expandBranches, setExpandBranches] = useState(false);
+  const [expandCategories, setExpandCategories] = useState(false);
+  const [activePieIndex, setActivePieIndex] = useState<number>(0);
+
+  const canFetchCustom = period !== 'custom' || (!!customStart && !!customEnd);
+  const waitingForCustomDates = period === 'custom' && !canFetchCustom;
+  const startDate = period === 'custom' && canFetchCustom ? customStart : undefined;
+  const endDate   = period === 'custom' && canFetchCustom ? customEnd   : undefined;
+
+  const { data, loading, chartLoading, error, refetch } = useAnalyticsPage(
+    canFetchCustom ? period : '__hold__',
+    startDate,
+    endDate,
+  );
+
+  const uiLoading = loading && !data && !waitingForCustomDates;
+
+  useEffect(() => {
+    // fetchAndApplySnapshot seeds analytics-page:{period}:: from the server-side
+    // cache so all period tabs are ready instantly — no loading shimmer on toggle.
+    void fetchAndApplySnapshot();
+    void prefetchAnalyticsShell();
+  }, []);
+
+  const gran = data?.granularity === 'month' ? 'month' as const : 'day' as const;
+
+  const chartData = useMemo(() => {
+    if (!data?.yoyTrend?.length) return [];
+    return data.yoyTrend.map((p) => ({
+      label:   formatChartLabel(p.label ?? p.date ?? '', gran),
+      current: p.current,
+      prior:   p.prior,
+    }));
+  }, [data, gran]);
+
+  const allCategories = data?.categories ?? [];
+
+  // Build clean donut data: top 8 + "Others" grouping
+  // Recompute percentages from revenue so we never show raw backend decimals.
+  const TOP_PIE = expandCategories ? 16 : 8;
+  const pieData = useMemo(() => {
+    if (!allCategories.length) return [];
+    const totalRev = allCategories.reduce((s, c) => s + c.revenue, 0);
+    const top = allCategories.slice(0, TOP_PIE);
+    const rest = allCategories.slice(TOP_PIE);
+    const items = top.map(c => ({
+      name: c.name,
+      revenue: c.revenue,
+      percentage: totalRev > 0 ? (c.revenue / totalRev) * 100 : 0,
+    }));
+    if (rest.length) {
+      const othRev = rest.reduce((s, c) => s + c.revenue, 0);
+      items.push({
+        name: `Others (${rest.length})`,
+        revenue: othRev,
+        percentage: totalRev > 0 ? (othRev / totalRev) * 100 : 0,
+      });
+    }
+    return items;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allCategories, expandCategories, TOP_PIE]);
+
+  const allBranches = data?.branches ?? [];
+  const branchList  = expandBranches ? allBranches : allBranches.slice(0, 20);
+
+  const s = data?.summary;
+  const isError = !!error && !uiLoading;
+  /** After /analytics/dashboard merges, KPIs/LY/customers match transaction totals checksum. */
+  const dashMerged = data?.checksum != null;
+  const lyKpiDisplay =
+    dashMerged || ((s?.ly_sales ?? 0) !== 0) ? fmtLakhs(s?.ly_sales ?? 0) : '—';
+  const customerKpiDisplay = (() => {
+    const c = s?.customers;
+    if (c == null) return '—';
+    if (c === 0 && !dashMerged && (s?.mtd_sales ?? 0) === 0) return '—';
+    // Material sales/invoices but zero distinct IDs usually means CustomerId/Cnt isn’t wired, not real zero.
+    const hasActivity =
+      (s.mtd_sales ?? 0) > 0 &&
+      (((s.bills ?? 0) > 0) || ((s.quantity ?? 0) > 0));
+    if (c === 0 && hasActivity) return '—';
+    return fmtCount(c);
+  })();
+
+  const kpiCards = s ? [
+    { label: period === 'today' ? "Today's Sales" : `${PERIOD_TABS.find(t=>t.period===period)?.label ?? ''} Sales`,
+      value: fmtLakhs(s.mtd_sales), sub: `LY: ${lyKpiDisplay}`,
+      growth: s.sales_growth_pct, icon: KPI_ICONS[0], color: KPI_COLORS[0] },
+    { label: 'Quantity Sold', value: fmtCount(s.quantity), sub: 'Units sold',
+      icon: KPI_ICONS[1], color: KPI_COLORS[1] },
+    { label: 'Bills Generated', value: fmtCount(s.bills), sub: 'Total invoices',
+      icon: KPI_ICONS[2], color: KPI_COLORS[2] },
+    { label: 'Customer Count', value: customerKpiDisplay, sub: 'Unique customers',
+      icon: KPI_ICONS[3], color: KPI_COLORS[3] },
+  ] : [];
+
+  const onPieEnter = useCallback((_: any, index: number) => setActivePieIndex(index), []);
+
+  const showBarLabels = chartData.length <= 31;
+
+  // ── Breakdown chart data ───────────────────────────────────────────────────
+  const daywiseAreaData = useMemo(() =>
+    (data?.daywise ?? []).map(d => ({
+      label: formatChartLabel(d.label || d.date, gran),
+      current: d.sales,
+      prior: d.prior,
+    })),
+    [data?.daywise, gran]);
+
+  const topCategories = useMemo(() =>
+    allCategories.slice(0, 12).map(c => ({ name: c.name.slice(0, 14), value: c.revenue })),
+    [allCategories]);
+
+  const topBranches = useMemo(() =>
+    allBranches.slice(0, 15).map(b => ({ name: b.name.slice(0, 12), value: b.revenue })),
+    [allBranches]);
+
+  const topDepts = useMemo(() =>
+    (data?.departments ?? []).slice(0, 15).map(d => ({ name: d.name.slice(0, 12), value: d.revenue })),
+    [data?.departments]);
+
+  // ── Breakdown renderChart helpers ──────────────────────────────────────────
+  const tooltipStyle = {
+    background: isDark ? 'rgba(8,15,26,0.97)' : 'rgba(255,255,255,0.98)',
+    border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+    borderRadius: 10, fontSize: 11,
+  };
+  const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+  const cursorFill = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
+
+  /** Single-series (category/branch/dept): renders Bar, Line or Pie */
+  function renderSingleSeries(
+    type: 'bar' | 'line' | 'pie',
+    items: { name: string; value: number }[],
+  ): React.ReactNode {
+    if (!items.length) return undefined;
+    const many = items.length > 8;
+    const angle = many ? -38 : 0;
+    const ta = many ? ('end' as const) : ('middle' as const);
+    const mbottom = many ? 58 : 20;
+
+    if (type === 'bar') return (
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={items} barCategoryGap="28%"
+          margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+          <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)', angle, textAnchor: ta }} />
+          <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={50} />
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
+          <Bar dataKey="value" name="Revenue" radius={[4, 4, 0, 0]} maxBarSize={44}>
+            {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    );
+
+    if (type === 'line') return (
+      <ResponsiveContainer width="100%" height={240}>
+        <LineChart data={items} margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+          <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)', angle, textAnchor: ta }} />
+          <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={50} />
+          <Tooltip content={<ChartTooltip />} />
+          <Line type="monotone" dataKey="value" name="Revenue"
+            stroke="#5882ff" strokeWidth={2}
+            dot={{ fill: '#5882ff', r: 3, strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: '#5882ff' }} />
+        </LineChart>
+      </ResponsiveContainer>
+    );
+
+    if (type === 'pie') return (
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <PieChart width={200} height={200}>
+          <Pie data={items} dataKey="value" nameKey="name"
+            cx="50%" cy="50%" innerRadius={55} outerRadius={85}
+            paddingAngle={2} strokeWidth={0}>
+            {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+          </Pie>
+          <Tooltip
+            formatter={(v: number, name) => [fmtLakhs(Number(v)), String(name)]}
+            contentStyle={tooltipStyle} />
+        </PieChart>
+        <PieLegend items={items} isDark={isDark} />
+      </div>
+    );
+    return undefined;
+  }
+
+  /** Day-wise (two series: current + prior): Bar, Area/Line, Pie */
+  function renderDaywise(type: 'bar' | 'line' | 'pie'): React.ReactNode {
+    if (!daywiseAreaData.length) return undefined;
+    const interval = daywiseAreaData.length > 20 ? ('preserveStartEnd' as const) : 0;
+
+    if (type === 'bar') return (
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={daywiseAreaData} barCategoryGap="28%" barGap={3}
+          margin={{ top: 10, right: 8, left: 0, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+          <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+          <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
+          <Bar dataKey="prior" name="Last Year"
+            fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={28} />
+          <Bar dataKey="current" name="Current"
+            fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={28} />
+        </BarChart>
+      </ResponsiveContainer>
+    );
+
+    if (type === 'line') return (
+      <div>
+        <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
+          {[['#5882ff','Current'],['#94a3b8','Last Year']].map(([c,n]) => (
+            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 16, height: 2, borderRadius: 1, background: c }} />
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{n}</span>
+            </div>
+          ))}
+        </div>
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={daywiseAreaData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+            <defs>
+              <linearGradient id="dgCurr" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#5882ff" stopOpacity={0.28} />
+                <stop offset="95%" stopColor="#5882ff" stopOpacity={0.02} />
+              </linearGradient>
+              <linearGradient id="dgPrior" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.18} />
+                <stop offset="95%" stopColor="#94a3b8" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+            <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+            <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
+            <Tooltip content={<ChartTooltip />} />
+            <Area type="monotone" dataKey="prior" name="Last Year"
+              stroke="#94a3b8" strokeWidth={1.5} fill="url(#dgPrior)" dot={false} />
+            <Area type="monotone" dataKey="current" name="Current"
+              stroke="#5882ff" strokeWidth={2} fill="url(#dgCurr)" dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    );
+
+    if (type === 'pie') {
+      const topDays = daywiseAreaData.slice(0, 10).map(d => ({ name: d.label, value: d.current }));
+      return (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <PieChart width={200} height={200}>
+            <Pie data={topDays} dataKey="value" nameKey="name"
+              cx="50%" cy="50%" innerRadius={55} outerRadius={85}
+              paddingAngle={2} strokeWidth={0}>
+              {topDays.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+            </Pie>
+            <Tooltip
+              formatter={(v: number, name) => [fmtLakhs(Number(v)), String(name)]}
+              contentStyle={tooltipStyle} />
+          </PieChart>
+          <PieLegend items={topDays} isDark={isDark} />
+        </div>
+      );
+    }
+    return undefined;
+  }
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold" style={{
+            background: isDark
+              ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)'
+              : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+          }}>Sales Analytics</h1>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            {data?.period_label ?? 'Select a period'} · All values in Lakhs (L)
+          </p>
+          {PERIOD_WINDOW_HINT[period] ? (
+            <p className="text-xs mt-1 max-w-xl leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              {PERIOD_WINDOW_HINT[period]}
+            </p>
+          ) : null}
+        </div>
+        <button type="button" onClick={() => refetch()}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+          style={{
+            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+            border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+            color: 'var(--text-secondary)',
+          }}>
+          <RefreshCw size={12} className={uiLoading ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+
+      {/* ── Period tabs ── */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex items-center gap-1 p-1 rounded-xl"
+          style={{
+            background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+            border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
+          }}>
+          {PERIOD_TABS.map((t) => (
+            <button key={t.period} type="button"
+              onMouseEnter={() => void prefetchAnalyticsPage(t.period)}
+              onFocus={() => void prefetchAnalyticsPage(t.period)}
+              onClick={() => setPeriod(t.period)}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{
+                background: period === t.period
+                  ? isDark ? 'rgba(88,130,255,0.18)' : 'rgba(88,130,255,0.12)'
+                  : 'transparent',
+                color: period === t.period ? '#5882ff' : 'var(--text-muted)',
+                boxShadow: period === t.period ? '0 0 12px rgba(88,130,255,0.3)' : 'none',
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {period === 'custom' && (
+          <div className="flex flex-wrap gap-2 items-center">
+            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+              className="px-3 py-1.5 rounded-xl text-xs outline-none"
+              style={{
+                background: isDark ? 'rgba(255,255,255,0.05)' : 'white',
+                border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.15)',
+                color: 'var(--text-primary)',
+              }} />
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>to</span>
+            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+              className="px-3 py-1.5 rounded-xl text-xs outline-none"
+              style={{
+                background: isDark ? 'rgba(255,255,255,0.05)' : 'white',
+                border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.15)',
+                color: 'var(--text-primary)',
+              }} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Error banner ── */}
+      <AnimatePresence>
+        {isError && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="p-3.5 rounded-xl flex items-center gap-2.5 text-xs"
+            style={{ background: 'rgba(255,184,0,0.08)', border: '1px solid rgba(255,184,0,0.2)', color: '#ffb800' }}>
+            <AlertTriangle size={14} />
+            <span className="font-semibold">Data unavailable —</span>
+            <span style={{ color: 'var(--text-secondary)' }}>{error}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {waitingForCustomDates ? (
+        <Card className="p-12 flex flex-col items-center justify-center text-center gap-3">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+            style={{
+              background: isDark ? 'rgba(88,130,255,0.12)' : 'rgba(88,130,255,0.08)',
+              border: '1px solid rgba(88,130,255,0.2)',
+            }}>
+            <CalendarRange size={22} style={{ color: '#5882ff' }} />
+          </div>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Select a custom date range to display the data
+          </p>
+          <p className="text-xs max-w-sm" style={{ color: 'var(--text-muted)' }}>
+            Choose a start date and end date above, then analytics for that range will load here.
+          </p>
+        </Card>
+      ) : (
+      <>
+      {/* ── KPI cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {uiLoading ? (
+          [...Array(4)].map((_, i) => (
+            <Card key={i} className="p-4">
+              <div className="animate-pulse space-y-2">
+                <div className="h-2.5 rounded w-1/2" style={{ background: 'rgba(128,128,128,0.12)' }} />
+                <div className="h-7 rounded w-3/4" style={{ background: 'rgba(128,128,128,0.1)' }} />
+                <div className="h-2 rounded w-2/3" style={{ background: 'rgba(128,128,128,0.08)' }} />
+              </div>
+            </Card>
+          ))
+        ) : kpiCards.length > 0 ? (
+          kpiCards.map((k, i) => {
+            const Icon = k.icon;
+            return (
+              <motion.div key={k.label}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.07, type: 'spring', stiffness: 280, damping: 26 }}>
+                <Card className="p-4 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
+                    style={{ background: `linear-gradient(90deg, transparent, ${k.color}, transparent)` }} />
+                  <div className="absolute top-0 right-0 w-24 h-24 pointer-events-none rounded-full"
+                    style={{ background: `radial-gradient(circle, ${k.color}18 0%, transparent 70%)`, transform: 'translate(30%,-30%)' }} />
+                  <div className="flex items-start justify-between mb-2">
+                    <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{k.label}</p>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: `${k.color}18`, border: `1px solid ${k.color}30` }}>
+                      <Icon size={13} style={{ color: k.color }} />
+                    </div>
+                  </div>
+                  <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                    {k.value}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{k.sub}</p>
+                  {'growth' in k && k.growth != null && (
+                    <div className="flex items-center gap-1 mt-1.5">
+                      {k.growth >= 0
+                        ? <TrendingUp size={11} style={{ color: '#00e67a' }} />
+                        : <TrendingDown size={11} style={{ color: '#f87171' }} />}
+                      <p className="text-xs font-semibold"
+                        style={{ color: k.growth >= 0 ? '#00e67a' : '#f87171' }}>
+                        {k.growth >= 0 ? '+' : ''}{k.growth}% vs LY
+                      </p>
+                    </div>
+                  )}
+                </Card>
+              </motion.div>
+            );
+          })
+        ) : (
+          !isError && (
+            <div className="col-span-4 text-center py-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+              No data for this period
+            </div>
+          )
+        )}
+      </div>
+
+      {/* ── Checksum strip ── */}
+      {data?.checksum && !chartLoading && (
+        <Card className="px-4 py-2.5 flex items-center gap-2.5">
+          {data.checksum.match
+            ? <CheckCircle2 size={14} style={{ color: '#00e67a', flexShrink: 0 }} />
+            : <AlertTriangle size={14} style={{ color: '#f87171', flexShrink: 0 }} />}
+          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            <span className="font-semibold" style={{ color: data.checksum.match ? '#00e67a' : '#f87171' }}>
+              Σ Checksum {data.checksum.match ? 'validated' : 'mismatch'}
+            </span>
+            {' — '}Trend total: <span className="font-mono">{fmtLakhs(data.checksum.trend_total)}</span>
+            {' · '}Summary: <span className="font-mono">{fmtLakhs(data.checksum.summary_total)}</span>
+          </span>
+        </Card>
+      )}
+
+      {/* ── YoY Bar chart ── */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Sales — Current vs Same Period Last Year
+          </h2>
+          <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-2 rounded-sm" style={{ background: '#5882ff' }} />Current
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-2 rounded-sm" style={{ background: '#94a3b8' }} />Last Year
+            </div>
+          </div>
+        </div>
+        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+          {data?.granularity === 'month' ? 'Month-wise' : 'Day-wise'} · YoY comparison · Labels in Lakhs
+        </p>
+        {chartLoading ? (
+          <div className="h-72 animate-pulse rounded-xl"
+            style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }} />
+        ) : chartData.length === 0 ? (
+          <p className="text-sm py-16 text-center" style={{ color: 'var(--text-muted)' }}>
+            No data for this period
+          </p>
+        ) : (
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={chartData}
+              margin={{ top: showBarLabels ? 28 : 10, right: 12, left: 4, bottom: 4 }}
+              barCategoryGap="28%" barGap={3}>
+              <CartesianGrid strokeDasharray="3 3"
+                stroke={isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                axisLine={false} tickLine={false}
+                interval={data?.granularity === 'day' && chartData.length > 20 ? 'preserveStartEnd' : 0} />
+              <YAxis tickFormatter={fmtLakhsAxis} tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                axisLine={false} tickLine={false} width={52} />
+              <Tooltip content={<ChartTooltip />}
+                cursor={{ fill: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', radius: 4 }} />
+              <Bar dataKey="current" name="Current" fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                {showBarLabels && (
+                  <LabelList
+                    dataKey="current"
+                    position="top"
+                    formatter={(v: number) => fmtLakhsAxis(Number(v))}
+                    style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }}
+                  />
+                )}
+              </Bar>
+              <Bar dataKey="prior" name="Last Year"
+                fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={36} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </Card>
+
+      {/* ── Pie + Branch list ── */}
+      <div className="grid lg:grid-cols-2 gap-4">
+
+        {/* Donut — Category % Contribution */}
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Category % Contribution
+              </h2>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                {allCategories.length} categories · hover slice to highlight
+              </p>
+            </div>
+            <button type="button" onClick={() => setExpandCategories(!expandCategories)}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-all"
+              style={{
+                background: isDark ? 'rgba(88,130,255,0.1)' : 'rgba(88,130,255,0.08)',
+                border: '1px solid rgba(88,130,255,0.2)', color: '#5882ff',
+              }}>
+              {expandCategories ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+              {expandCategories ? `Top 16` : `All ${allCategories.length}`}
+            </button>
+          </div>
+
+          {pieData.length === 0 ? (
+            <p className="text-sm text-center py-20" style={{ color: 'var(--text-muted)' }}>
+              {uiLoading ? 'Loading…' : 'No category data'}
+            </p>
+          ) : (
+            /* Side-by-side: donut (left) + legend (right) */
+            <div style={{ display: 'flex', gap: 20, alignItems: 'center', minHeight: 240 }}>
+
+              {/* Donut */}
+              <div style={{ flexShrink: 0 }}>
+                <PieChart width={220} height={220}>
+                  <Pie
+                    data={pieData}
+                    dataKey="percentage"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={66}
+                    outerRadius={98}
+                    paddingAngle={2}
+                    strokeWidth={0}
+                    activeIndex={activePieIndex}
+                    activeShape={<ActiveShape />}
+                    onMouseEnter={onPieEnter}
+                  >
+                    {pieData.map((_, i) => (
+                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: number, name: string) => [
+                      `${Number(v).toFixed(2)}%  ·  ${fmtLakhs(pieData.find(c => c.name === name)?.revenue ?? 0)}`,
+                      name,
+                    ]}
+                    contentStyle={{
+                      background: isDark ? 'rgba(8,15,26,0.97)' : 'rgba(255,255,255,0.98)',
+                      border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                      borderRadius: 10, fontSize: 11,
+                    }}
+                  />
+                </PieChart>
+              </div>
+
+              {/* Legend */}
+              <div style={{ flex: 1, overflowY: 'auto', maxHeight: 230 }}>
+                {pieData.map((cat, i) => {
+                  const color = PIE_COLORS[i % PIE_COLORS.length];
+                  const isActive = i === activePieIndex;
+                  return (
+                    <div
+                      key={cat.name}
+                      onMouseEnter={() => setActivePieIndex(i)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '5px 8px', borderRadius: 8, cursor: 'default',
+                        background: isActive ? (isDark ? `${color}18` : `${color}12`) : 'transparent',
+                        transition: 'background 0.15s',
+                        marginBottom: 2,
+                      }}
+                    >
+                      {/* Color swatch */}
+                      <div style={{
+                        width: 10, height: 10, borderRadius: 3,
+                        background: color, flexShrink: 0,
+                        boxShadow: isActive ? `0 0 8px ${color}` : 'none',
+                      }} />
+                      {/* Name */}
+                      <span style={{
+                        fontSize: 11, flex: 1,
+                        color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        fontWeight: isActive ? 600 : 400,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {cat.name}
+                      </span>
+                      {/* Revenue */}
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>
+                        {fmtLakhs(cat.revenue)}
+                      </span>
+                      {/* Percentage badge */}
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, flexShrink: 0,
+                        color: color,
+                        minWidth: 40, textAlign: 'right',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}>
+                        {cat.percentage.toFixed(2)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Store-wise sales list */}
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Store-wise Sales</h2>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                {allBranches.length} stores · ranked by revenue
+              </p>
+            </div>
+            <button type="button" onClick={() => setExpandBranches(!expandBranches)}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-all"
+              style={{
+                background: isDark ? 'rgba(88,130,255,0.1)' : 'rgba(88,130,255,0.08)',
+                border: '1px solid rgba(88,130,255,0.2)', color: '#5882ff',
+              }}>
+              {expandBranches ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+              {expandBranches ? 'Top 20' : `All ${allBranches.length}`}
+            </button>
+          </div>
+          {uiLoading ? (
+            <div className="space-y-2">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 animate-pulse">
+                  <div className="h-2.5 flex-1 rounded" style={{ background: 'rgba(128,128,128,0.1)' }} />
+                  <div className="h-2.5 w-20 rounded" style={{ background: 'rgba(128,128,128,0.08)' }} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
+              {branchList.length === 0 ? (
+                <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No branch data</p>
+              ) : (
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
+                      {['#','Store','Revenue','Share'].map(h => (
+                        <th key={h}
+                          className={`pb-2 font-semibold ${h==='Revenue'||h==='Share' ? 'text-right' : 'text-left'} ${h !== '#' ? 'pr-2' : ''}`}
+                          style={{ color: 'var(--text-muted)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {branchList.map((b, i) => {
+                      const pct = Number(b.percentage ?? 0);
+                      const maxPct = Number(branchList[0]?.percentage ?? 1);
+                      return (
+                        <tr key={b.name + i} className="transition-all"
+                          style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(0,0,0,0.04)' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                          <td className="py-2 pr-2 font-mono" style={{ color: 'var(--text-muted)', width: 24 }}>{i + 1}</td>
+                          <td className="py-2 pr-3">
+                            <div className="flex flex-col gap-1">
+                              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{b.name}</span>
+                              <div className="h-1 rounded-full overflow-hidden"
+                                style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
+                                <div className="h-full rounded-full"
+                                  style={{ width: `${Math.min(100, (pct / maxPct) * 100)}%`, background: 'linear-gradient(90deg, #5882ff, #00e67a)' }} />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2 text-right font-semibold tabular-nums" style={{ color: '#5882ff' }}>{fmtLakhs(b.revenue)}</td>
+                          <td className="py-2 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{pct.toFixed(2)}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* ── Detailed breakdown sections with Bar/Line/Pie toggle ── */}
+      <div className="space-y-4">
+
+        <BreakdownTable
+          title="Day-wise Sales"
+          subtitle={`${data?.daywise?.length ?? 0} days · current vs last year`}
+          loading={uiLoading}
+          isDark={isDark}
+          columns={['#', 'Date', 'Label', 'Sales', 'Bills', 'Qty', 'LY Sales']}
+          rows={(data?.daywise ?? []).map((d, i) => [
+            String(i + 1),
+            d.date,
+            formatChartLabel(d.label || d.date, gran),
+            fmtLakhs(d.sales),
+            fmtCount(d.bills),
+            fmtCount(d.quantity),
+            d.prior > 0 ? fmtLakhs(d.prior) : '—',
+          ])}
+          renderChart={renderDaywise}
+        />
+
+        <BreakdownTable
+          title="Category-wise Sales"
+          subtitle={`${allCategories.length} categories · share % and bills`}
+          loading={uiLoading}
+          isDark={isDark}
+          columns={['#', 'Category', 'Sales', 'Share %', 'Bills']}
+          rows={allCategories.map((c, i) => [
+            String(i + 1),
+            c.name,
+            fmtLakhs(c.revenue),
+            c.percentage > 0 ? `${c.percentage.toFixed(2)}%` : '—',
+            (c as any).transactions != null ? fmtCount((c as any).transactions) : '—',
+          ])}
+          renderChart={(type) => renderSingleSeries(type, topCategories)}
+        />
+
+        <BreakdownTable
+          title="Branch-wise Sales"
+          subtitle={`${allBranches.length} branches · ranked by revenue`}
+          loading={uiLoading}
+          isDark={isDark}
+          columns={['#', 'Branch', 'Sales', 'Share %', 'Bills']}
+          rows={allBranches.map((b, i) => [
+            String(i + 1),
+            b.name,
+            fmtLakhs(b.revenue),
+            `${b.percentage.toFixed(2)}%`,
+            (b as any).transactions != null ? fmtCount((b as any).transactions) : '—',
+          ])}
+          renderChart={(type) => renderSingleSeries(type, topBranches)}
+        />
+
+        <BreakdownTable
+          title="Department-wise Sales"
+          subtitle={
+            (data?.departments?.length ?? 0) > 0
+              ? `${data?.departments?.length} departments${uiLoading ? ' · refreshing…' : ''}`
+              : 'Loading departments… (can be slow on first load)'
+          }
+          loading={uiLoading && !(data?.departments?.length)}
+          isDark={isDark}
+          columns={['#', 'Department', 'Sales', 'Share %', 'Bills']}
+          rows={(data?.departments ?? []).map((d, i) => [
+            String(i + 1),
+            d.name,
+            fmtLakhs(d.revenue),
+            `${d.percentage.toFixed(2)}%`,
+            fmtCount((d as any).transactions ?? 0),
+          ])}
+          renderChart={(type) => renderSingleSeries(type, topDepts)}
+        />
+      </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+// ─── Breakdown table with chart type toggle ────────────────────────────────────
+function BreakdownTable({
+  title,
+  subtitle,
+  columns,
+  rows,
+  loading,
+  isDark,
+  renderChart,
+}: {
+  title: string;
+  subtitle: string;
+  columns: string[];
+  rows: string[][];
+  loading: boolean;
+  isDark: boolean;
+  renderChart?: (type: 'bar' | 'line' | 'pie') => React.ReactNode;
+}) {
+  const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
+
+  return (
+    <Card className="p-5">
+      {/* Header row */}
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{subtitle}</p>
+        </div>
+
+        {/* Chart type toggle */}
+        {renderChart && !loading && (
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            {(['bar', 'line', 'pie'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setChartType(t)}
+                style={{
+                  padding: '3px 9px',
+                  borderRadius: 6,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  background: chartType === t
+                    ? '#5882ff'
+                    : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                  color: chartType === t
+                    ? '#fff'
+                    : 'var(--text-muted)',
+                  border: chartType === t
+                    ? 'none'
+                    : `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                  boxShadow: chartType === t ? '0 0 10px rgba(0,184,230,0.35)' : 'none',
+                }}>
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Chart area */}
+      {renderChart && !loading && (
+        <div className="mb-5">
+          {renderChart(chartType) ?? (
+            <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>No chart data</p>
+          )}
+        </div>
+      )}
+
+      {/* Table */}
+      {loading ? (
+        <div className="space-y-2">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-3 rounded animate-pulse"
+              style={{ background: 'rgba(128,128,128,0.1)', width: `${90 - i * 8}%` }} />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No data</p>
+      ) : (
+        <div className="overflow-auto" style={{ maxHeight: 360 }}>
+          <table className="w-full text-xs border-collapse">
+            <thead className="sticky top-0 z-10"
+              style={{ background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.98)' }}>
+              <tr style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)' }}>
+                {columns.map((h) => (
+                  <th key={h}
+                    className={`pb-2 pr-3 font-semibold whitespace-nowrap ${
+                      h === 'Sales' || h === 'Share %' || h === 'Bills' || h === 'Qty' || h === 'LY Sales'
+                        ? 'text-right' : 'text-left'
+                    }`}
+                    style={{ color: 'var(--text-muted)' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri}
+                  style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(0,0,0,0.04)' }}>
+                  {row.map((cell, ci) => (
+                    <td key={ci}
+                      className={`py-2 pr-3 tabular-nums ${ci >= 3 ? 'text-right' : ''}`}
+                      style={{
+                        color: ci === 3 && cell.startsWith('₹') ? '#5882ff'
+                          : ci === 0 ? 'var(--text-muted)' : 'var(--text-primary)',
+                        fontWeight: ci === 3 && cell.startsWith('₹') ? 600 : 400,
+                      }}>
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+             

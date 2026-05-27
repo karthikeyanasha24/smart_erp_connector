@@ -1,0 +1,324 @@
+"""
+AI Insights Engine
+Generates natural-language business insights from query results:
+- Rule-based anomaly detection
+- AI-powered trend narratives
+- Adaptive summaries
+"""
+
+from __future__ import annotations
+
+import json
+import statistics
+from typing import Any, Dict, List, Optional
+
+import anthropic
+
+from src.config import cfg
+from src.utils.logger import logger
+
+# ─── Types ────────────────────────────────────────────────────────────────────
+
+InsightSeverity = str   # "info" | "warning" | "critical"
+
+
+class Insight:
+    def __init__(
+        self,
+        kind: str,
+        title: str,
+        description: str,
+        severity: InsightSeverity = "info",
+        value: Optional[float] = None,
+        change_pct: Optional[float] = None,
+        dimension: Optional[str] = None,
+    ) -> None:
+        self.kind = kind
+        self.title = title
+        self.description = description
+        self.severity = severity
+        self.value = value
+        self.change_pct = change_pct
+        self.dimension = dimension
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "title": self.title,
+            "description": self.description,
+            "severity": self.severity,
+            "value": self.value,
+            "change_pct": self.change_pct,
+            "dimension": self.dimension,
+        }
+
+
+# ─── Rule-Based Anomaly Detection ─────────────────────────────────────────────
+
+def detect_anomalies(
+    records: List[Dict[str, Any]],
+    value_column: str = "Revenue",
+    label_column: Optional[str] = None,
+    z_threshold: float = 2.0,
+) -> List[Insight]:
+    """
+    Z-score based anomaly detection on a numeric series.
+    Returns insights for data points that deviate significantly from the mean.
+    """
+    insights: List[Insight] = []
+
+    values = []
+    for row in records:
+        v = row.get(value_column)
+        if v is not None:
+            try:
+                values.append(float(v))
+            except (TypeError, ValueError):
+                pass
+
+    if len(values) < 4:
+        return insights
+
+    mean = statistics.mean(values)
+    stdev = statistics.stdev(values)
+
+    if stdev == 0:
+        return insights
+
+    for row in records:
+        raw_v = row.get(value_column)
+        if raw_v is None:
+            continue
+        try:
+            v = float(raw_v)
+        except (TypeError, ValueError):
+            continue
+
+        z = (v - mean) / stdev
+        if abs(z) < z_threshold:
+            continue
+
+        label = row.get(label_column or "") if label_column else None
+        dim_str = f" for {label}" if label else ""
+        direction = "spike" if z > 0 else "drop"
+        severity = "critical" if abs(z) > 3.5 else "warning"
+        change_pct = ((v - mean) / mean * 100) if mean else 0
+
+        insights.append(
+            Insight(
+                kind="anomaly",
+                title=f"Revenue {direction}{dim_str}",
+                description=(
+                    f"{value_column}{dim_str} is {abs(change_pct):.1f}% "
+                    f"{'above' if z > 0 else 'below'} average "
+                    f"(value: {v:,.0f}, avg: {mean:,.0f})"
+                ),
+                severity=severity,
+                value=v,
+                change_pct=change_pct,
+                dimension=str(label) if label else None,
+            )
+        )
+
+    return insights[:5]   # Cap to top 5
+
+
+def top_bottom_insights(
+    records: List[Dict[str, Any]],
+    value_column: str = "Revenue",
+    label_column: str = "Branch",
+    top_n: int = 3,
+) -> List[Insight]:
+    """Highlight top and bottom performers."""
+    insights: List[Insight] = []
+    if not records or len(records) < 2:
+        return insights
+
+    def _val(row: Dict[str, Any]) -> float:
+        try:
+            return float(row.get(value_column) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    sorted_rows = sorted(records, key=_val, reverse=True)
+    total = sum(_val(r) for r in records) or 1
+
+    for i, row in enumerate(sorted_rows[:top_n]):
+        v = _val(row)
+        label = row.get(label_column, "Unknown")
+        share = v / total * 100
+        rank = i + 1
+        insights.append(
+            Insight(
+                kind="top_performer",
+                title=f"#{rank} {label}",
+                description=f"{label} contributed {share:.1f}% of total {value_column.lower()} ({v:,.0f}).",
+                severity="info",
+                value=v,
+                dimension=str(label),
+            )
+        )
+
+    # Bottom performer
+    if len(sorted_rows) >= top_n + 1:
+        bottom = sorted_rows[-1]
+        v = _val(bottom)
+        label = bottom.get(label_column, "Unknown")
+        share = v / total * 100
+        insights.append(
+            Insight(
+                kind="low_performer",
+                title=f"Lowest: {label}",
+                description=f"{label} is the lowest performer at {share:.1f}% share ({v:,.0f}).",
+                severity="warning",
+                value=v,
+                dimension=str(label),
+            )
+        )
+
+    return insights
+
+
+def trend_insights(
+    records: List[Dict[str, Any]],
+    value_column: str = "Revenue",
+    date_column: str = "TransactionDate",
+) -> List[Insight]:
+    """Detect growth/decline in a time series."""
+    insights: List[Insight] = []
+    if len(records) < 3:
+        return insights
+
+    values = []
+    for row in records:
+        try:
+            values.append(float(row.get(value_column) or 0))
+        except (TypeError, ValueError):
+            values.append(0.0)
+
+    # Compare first half vs second half
+    mid = len(values) // 2
+    first_half_avg = statistics.mean(values[:mid]) if values[:mid] else 0
+    second_half_avg = statistics.mean(values[mid:]) if values[mid:] else 0
+
+    if first_half_avg == 0:
+        return insights
+
+    change_pct = (second_half_avg - first_half_avg) / first_half_avg * 100
+    direction = "growing" if change_pct > 0 else "declining"
+    severity = "info" if change_pct > 0 else ("warning" if change_pct < -10 else "info")
+
+    insights.append(
+        Insight(
+            kind="trend",
+            title=f"Revenue is {direction}",
+            description=(
+                f"The second half of the period shows a {abs(change_pct):.1f}% "
+                f"{'increase' if change_pct > 0 else 'decrease'} compared to the first half."
+            ),
+            severity=severity,
+            change_pct=change_pct,
+        )
+    )
+    return insights
+
+
+# ─── AI Narrative Summary ──────────────────────────────────────────────────────
+
+_ai_client: Optional[anthropic.AsyncAnthropic] = None
+
+
+def _get_client() -> anthropic.AsyncAnthropic:
+    global _ai_client
+    if _ai_client is None:
+        _ai_client = anthropic.AsyncAnthropic(api_key=cfg.ANTHROPIC_API_KEY)
+    return _ai_client
+
+
+_SUMMARY_SYSTEM = """You are an expert business analyst summarizing ERP data results.
+Write a concise 2-3 sentence business insight narrative about the data.
+Be specific: mention actual numbers, branch names, percentages.
+Tone: professional, decisive, actionable.
+Format: plain paragraph text, no markdown, no bullets."""
+
+
+async def generate_ai_summary(
+    query: str,
+    records: List[Dict[str, Any]],
+    intent_type: str = "aggregate",
+    period_label: str = "this period",
+) -> Optional[str]:
+    """Generate a 2-3 sentence AI narrative about the query result."""
+    if not cfg.ANTHROPIC_API_KEY or not records:
+        return None
+
+    # Limit data sent to AI
+    sample = records[:20]
+    data_str = json.dumps(sample, default=str)
+
+    try:
+        client = _get_client()
+        response = await client.messages.create(
+            model=cfg.ANTHROPIC_MODEL,
+            max_tokens=256,
+            system=_SUMMARY_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f'Query: "{query}"\n'
+                    f"Period: {period_label}\n"
+                    f"Intent: {intent_type}\n"
+                    f"Data ({len(records)} rows):\n{data_str}\n\n"
+                    "Write a business insight summary."
+                ),
+            }],
+        )
+        return (response.content[0].text or "").strip() if response.content else None
+
+    except Exception as exc:
+        logger.warning("AI summary generation failed", error=str(exc))
+        return None
+
+
+# ─── Combined Insight Pipeline ─────────────────────────────────────────────────
+
+async def generate_insights(
+    query: str,
+    records: List[Dict[str, Any]],
+    intent_type: str = "aggregate",
+    period_label: str = "this period",
+    value_column: str = "Revenue",
+    label_column: Optional[str] = None,
+    date_column: str = "TransactionDate",
+) -> Dict[str, Any]:
+    """
+    Full insight pipeline:
+    1. Rule-based anomalies
+    2. Top/bottom performers
+    3. Trend analysis
+    4. AI narrative summary
+    """
+    rule_insights: List[Insight] = []
+
+    if intent_type == "trend":
+        rule_insights.extend(trend_insights(records, value_column, date_column))
+        rule_insights.extend(detect_anomalies(records, value_column, label_column))
+
+    elif intent_type in ("aggregate", "ranking", "distribution"):
+        if label_column:
+            rule_insights.extend(top_bottom_insights(records, value_column, label_column))
+        rule_insights.extend(detect_anomalies(records, value_column, label_column))
+
+    elif intent_type == "comparison":
+        rule_insights.extend(detect_anomalies(records, value_column, label_column))
+
+    # AI summary
+    ai_summary: Optional[str] = None
+    if cfg.AI_ADAPTIVE_SUMMARY and records:
+        ai_summary = await generate_ai_summary(query, records, intent_type, period_label)
+
+    return {
+        "insights": [i.to_dict() for i in rule_insights],
+        "summary": ai_summary,
+        "record_count": len(records),
+    }

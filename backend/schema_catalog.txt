@@ -1,0 +1,774 @@
+SmarterP Connector — Database Schema Catalog
+Database: zRetailHQ0
+Objects: 28 (28 views, 0 tables)
+
+========================================================================
+1. dbo.VW_MB_POWERBI_APP_REPORT — Primary Sales View
+This is the most important view — used for 90% of all analytics.
+Column	Type	Used for
+BranchAlias	varchar	Branch grouping / filter
+Department	varchar	Department full name — hierarchy breakdown
+DepartmentShortName	varchar	Department breakdown
+Category	varchar	Category full name — product hierarchy
+CategoryShortName	varchar	Category breakdown
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Color	varchar	Product color attribute — filter
+Size	varchar	Product size attribute — filter
+Contrast	varchar	Contrast / variant attribute
+Printtypework	varchar	Print / embellishment work type
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Property	varchar	Product property tag (e.g. season, fit)
+Concept	varchar	Merchandise concept — assortment grouping
+Itemcode	varchar	Item code / barcode — product lookup
+ItemMRP	decimal	Item maximum retail price (MRP)
+CostPrice	decimal	Unit cost price
+XnId	varchar	Transaction header ID
+XnNo	varchar	Transaction document number
+XnDt	datetime	Date filter (all period calculations)
+XnDtMonth	varchar	Transaction month label — period grouping
+AppQty	decimal	Application / billed quantity
+MrpValue	decimal	Total MRP value
+CostValue	decimal	Total cost value
+NetAmount	decimal	Net sales amount — primary revenue metric
+CGSTAmount	decimal	Central GST tax amount
+SGSTAmount	decimal	State GST tax amount
+IGSTAmount	decimal	Integrated GST tax amount
+BillCount	int	Number of bills / transactions — footfall KPI
+
+2. dbo.VW_MB_POWERBI_SLS_REPORT — Base Sales Table
+Used for item-level and salesperson analytics.
+Column	Type	Used for
+XnMemoDate	datetime	Sales memo date — date filter
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryShortName	varchar	Category short name — primary filter
+BranchAlias	varchar	Branch name
+SupplierAlias	varchar	Supplier short code — filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierCity	varchar	Supplier city — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Para1Name	varchar	Product parameter 1 name (e.g. fit, style)
+Para2Name	varchar	Product parameter 2 name
+Para2Index	int	Parameter 2 sort / variant index
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Concept	varchar	Merchandise concept — assortment grouping
+ItemId	varchar	Product ID
+ItemMRP	decimal	Item maximum retail price (MRP)
+Property	varchar	Product property tag (e.g. season, fit)
+Para3Name	varchar	Product parameter 3 name
+Para4Name	varchar	Product parameter 4 name
+PurDate	datetime	Purchase date — procurement filter
+NetSlsQty	decimal	Net sales quantity (after returns)
+NetAmount	decimal	Net sales amount — primary revenue metric
+NetSlsCostValue	decimal	Net sales at cost value — margin analysis
+SlsExtCostValue	decimal	Sales extended cost value
+
+3. dbo.VwAISalesData — AI Sales Summary View
+Used for fast trend queries and NLQ.
+Column	Type	Used for
+InvoiceDt	datetime	Date
+InvoiceId	varchar	Invoice header ID
+InvoiceNo	varchar	Invoice number — document reference
+BranchId	char	Branch
+CustomerId	varchar	Customer identifier — filter and joins
+ItemId	varchar	Item / SKU identifier — joins to product master
+SalesPrice	decimal	Unit selling price on invoice line
+Quantity	decimal	Line quantity sold
+SaleAmountBeforeTax	decimal	Sale amount before tax
+TaxAmount	decimal	Tax amount on sale line
+SaleNetAmount	decimal	Sale line net amount
+SalesPersonId	char	Salesperson identifier
+
+4. dbo.VwAIBranch — Branch Master
+Used for Branch Intelligence page and branch lookups.
+Column	Type	Used for
+BranchId	char	Branch identifier
+BranchName	varchar	Full name
+BranchShortName	varchar	Branch abbreviated name
+Address	varchar	Street address line
+Locality	varchar	Locality / neighborhood
+PinCode	varchar	Postal / PIN code
+City	varchar	City — geography filter and breakdown
+State	varchar	State — geography filter and breakdown
+Country	varchar	Country — geography filter
+
+5. dbo.VwAICustomerDetails — Customer View
+Used for new customer KPI.
+Column	Type	Used for
+CustomerId	varchar	Customer ID
+CustomerFirstName	varchar	Customer first name
+CustomerLastName	varchar	Customer last name
+CustomerTitle	varchar	Customer title / salutation
+ContactMobile	varchar	Contact mobile number
+ContactEmail	varchar	Contact email address
+Address	varchar	Street address line
+Address2	varchar	Secondary address line
+Locality	varchar	Locality / neighborhood
+City	varchar	City — geography filter and breakdown
+State	varchar	State — geography filter and breakdown
+Country	varchar	Country — geography filter
+PinCode	varchar	Postal / PIN code
+CustomerGroupName	varchar	Customer group / segment
+BranchName	varchar	Branch full display name
+BirthdayDt	datetime	Customer birthday date
+AnniversaryDt	datetime	Customer anniversary date
+CreditLimit	decimal	Credit limit amount
+ActiveStatus	bit	Active / inactive status flag
+CreatedOn	datetime	Record created timestamp
+LastUpdate	datetime	Record last updated timestamp
+
+6. dbo.VwAIStockData — Inventory View
+Used for Products page and stock queries.
+Column	Type	Used for
+ItemId	varchar	Item ID
+BranchId	char	Branch identifier — filter and joins
+StockQty	decimal	Stock on hand quantity
+
+7. dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID — Salesperson Top-N
+Used for the Top Salespersons chart.
+Column	Type	Used for
+BranchAlias	varchar	Branch
+BranchName	varchar	Branch full display name
+BranchCity	varchar	Branch city — geography breakdown
+BranchState	varchar	Branch state — geography breakdown
+BranchRegion	varchar	Branch region — geographic rollup
+CountryRegion	varchar	Country / region grouping
+BranchAreaManager	varchar	Area manager responsible for branch
+CashmemoDt	datetime	Cash memo / bill date — date filter
+CashmemoNo	varchar	Cash memo / bill number
+CustomerMobileNumber	varchar	Customer mobile phone
+CustomerName	varchar	Customer full name
+CustomerId	char	Customer identifier — filter and joins
+CreatedOn	datetime	Record created timestamp
+SalesPersonName	varchar	Name
+SalespersonEmpId	varchar	Salesperson employee ID
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryShortName	varchar	Category short name — primary filter
+ArticleNo	varchar	Article / style number — product attribute filter
+ColourName	varchar	Product color display name
+ContrastName	varchar	Contrast variant display name
+SizeName	varchar	Product size display name
+PrintTypeWork	varchar	Print / embellishment work type
+Property	varchar	Product property tag (e.g. season, fit)
+SalesQuantity	decimal	Sales quantity
+SalesCost	decimal	Sales cost (COGS) amount
+ItemMRP	decimal	Item maximum retail price (MRP)
+NetAmountBeforeTax	decimal	Net amount before tax
+SalesNetAmount	decimal	Sales net amount (after discounts)
+
+8. dbo.VW_MB_POWERBI_APR_REPORT — Application (APR) Sales Report
+Sales application-level transactions with branch, category, supplier, and item attributes — similar grain to APP_REPORT.
+Column	Type	Used for
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+Department	varchar	Department full name — hierarchy breakdown
+DepartmentShortName	varchar	Department short name — primary filter
+Category	varchar	Category full name — product hierarchy
+CategoryShortName	varchar	Category short name — primary filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Color	varchar	Product color attribute — filter
+Size	varchar	Product size attribute — filter
+Contrast	varchar	Contrast / variant attribute
+Printtypework	varchar	Print / embellishment work type
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Property	varchar	Product property tag (e.g. season, fit)
+Concept	varchar	Merchandise concept — assortment grouping
+Itemcode	varchar	Item code / barcode — product lookup
+ItemMRP	decimal	Item maximum retail price (MRP)
+CostPrice	decimal	Unit cost price
+XnId	varchar	Transaction header ID
+XnNo	varchar	Transaction document number
+XnDt	datetime	Transaction date — primary date filter for sales
+XnDtMonth	varchar	Transaction month label — period grouping
+AppQty	decimal	Application / billed quantity
+MrpValue	decimal	Total MRP value
+CostValue	decimal	Total cost value
+NetAmount	decimal	Net sales amount — primary revenue metric
+BillCount	int	Number of bills / transactions — footfall KPI
+
+9. dbo.VW_MB_POWERBI_BRANCH_LIST — Branch Master List
+Branch dimension for filters, dropdowns, and branch intelligence.
+Column	Type	Used for
+BranchId	char	Branch identifier — filter and joins
+BranchName	varchar	Branch full display name
+ShortName	varchar	Short display name / alias
+Address	varchar	Street address line
+Locality	varchar	Locality / neighborhood
+City	varchar	City — geography filter and breakdown
+State	varchar	State — geography filter and breakdown
+Country	varchar	Country — geography filter
+PinCode	varchar	Postal / PIN code
+ActiveStatus	bit	Active / inactive status flag
+IsWarehouse	bit	Warehouse location flag
+
+10. dbo.VW_MB_POWERBI_CATEGORY_MASTER — Category / Department Hierarchy
+Inventory department, category, and sub-category master for hierarchy filters.
+Column	Type	Used for
+InvSubCategoryId	char	Inventory sub-category ID
+InvSubCategoryName	varchar	Inventory sub-category name
+InvSubCategoryShortName	varchar	Inventory sub-category short name
+InvCategoryId	char	Inventory category ID
+InvCategoryName	varchar	Inventory category name
+InvCategoryShortName	varchar	Inventory category short name
+InvDepartmentId	char	Inventory department ID
+InvDepartmentName	varchar	Inventory department name
+InvDepartmentShortName	varchar	Inventory department short name
+
+11. dbo.VW_MB_POWERBI_CBS_WITH_GIT — Closing Balance Stock with GIT
+Stock on hand plus goods-in-transit by branch, category, and item attributes.
+Column	Type	Used for
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+Department	varchar	Department full name — hierarchy breakdown
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryName	varchar	Category name — product hierarchy
+CategoryShortName	varchar	Category short name — primary filter
+Itemcode	varchar	Item code / barcode — product lookup
+ArticleNo	varchar	Article / style number — product attribute filter
+Color	varchar	Product color attribute — filter
+Size	varchar	Product size attribute — filter
+Contrast	varchar	Contrast / variant attribute
+Printtypework	varchar	Print / embellishment work type
+Property	varchar	Product property tag (e.g. season, fit)
+CostPrice	decimal	Unit cost price
+MRP	decimal	Maximum retail price
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+PurInvoiceDt	datetime	Purchase invoice date
+GitQty	decimal	Goods in transit quantity
+GitCostValue	decimal	Goods in transit cost value
+StockQty	decimal	Stock on hand quantity
+CbsCostValue	decimal	Closing balance stock cost value
+CbsMrpValue	decimal	Closing balance stock MRP value
+
+12. dbo.VW_MB_POWERBI_MIS_SUPPLIER_SLS_DATA — Supplier Sales MIS
+Monthly supplier-wise net sales for MIS and supplier performance dashboards.
+Column	Type	Used for
+XnMemoDate_MONTH	int	Sales memo month (numeric) — period rollup
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryShortName	varchar	Category short name — primary filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+Property	varchar	Product property tag (e.g. season, fit)
+Para4Name	varchar	Product parameter 4 name
+XnMemoDate	datetime	Sales memo date — date filter
+XnMemoDate_MONTHNAME	varchar	Sales memo month name — chart axis
+NetSlsQty	decimal	Net sales quantity (after returns)
+NetSlsCostValue	decimal	Net sales at cost value — margin analysis
+NetAmount	decimal	Net sales amount — primary revenue metric
+NetAmountBeforeTax	decimal	Net amount before tax
+MrpValue	decimal	Total MRP value
+
+13. dbo.VW_MB_POWERBI_PRODUCT_MASTER — Product Master
+Item master with department, category, supplier, fabric, and style attributes.
+Column	Type	Used for
+ItemId	varchar	Item / SKU identifier — joins to product master
+Itemcode	varchar	Item code / barcode — product lookup
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryShortName	varchar	Category short name — primary filter
+SubCategoryName	varchar	Sub-category name
+SubCategoryShortName	varchar	Sub-category short name — filter
+ArticleNo	varchar	Article / style number — product attribute filter
+Colour	varchar	Product color attribute — filter
+size	varchar	Product size attribute — filter
+Para2Index	int	Parameter 2 sort / variant index
+Contrast	varchar	Contrast / variant attribute
+Printypework	varchar	Print / embellishment work type
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierUID	varchar	Supplier unique identifier
+FabricShortName	varchar	Fabric short name
+SubFabricShortName	varchar	Sub-fabric short name
+Property	varchar	Product property tag (e.g. season, fit)
+Collection	varchar	Collection name — seasonal grouping
+Concept	varchar	Merchandise concept — assortment grouping
+SubConceptShortName	varchar	Display name — filter or label
+Dupatta	varchar	Dupatta attribute flag / value
+DupattaShortName	varchar	Dupatta short name
+Silhoutte	varchar	Silhouette style attribute
+Bottom	varchar	Bottom garment type attribute
+NECKLINE	varchar	Neckline style attribute
+SleeveType	varchar	Sleeve type attribute
+Look	varchar	Look / style tag
+INVENTORYTYPE	varchar	Inventory type classification
+PurDate	datetime	Purchase date — procurement filter
+PurInvNo	varchar	Purchase invoice number
+PurInvDt	datetime	Purchase invoice date
+PurChallanNo	varchar	Purchase challan number
+PurchasePrice	decimal	Item purchase / landed cost
+ItemMRP	decimal	Item maximum retail price (MRP)
+ItemWSP	decimal	Item wholesale price (WSP)
+
+14. dbo.VW_MB_POWERBI_PRT_REPORT — Purchase Return Report
+Purchase return transactions by branch, supplier, and item.
+Column	Type	Used for
+PurReturnId	varchar	Purchase return ID
+PurReturnDt	datetime	Purchase return date
+PurInvoiceDt	datetime	Purchase invoice date
+PurInvoiceNo	varchar	Document / reference number
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryShortName	varchar	Category short name — primary filter
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+SupplierAlias	varchar	Supplier short code — filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierCity	varchar	Supplier city — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Para1Name	varchar	Product parameter 1 name (e.g. fit, style)
+Para2Name	varchar	Product parameter 2 name
+Para2Index	int	Parameter 2 sort / variant index
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Concept	varchar	Merchandise concept — assortment grouping
+ItemId	varchar	Item / SKU identifier — joins to product master
+ItemMRP	decimal	Item maximum retail price (MRP)
+Property	varchar	Product property tag (e.g. season, fit)
+Para3Name	varchar	Product parameter 3 name
+Para4Name	varchar	Product parameter 4 name
+PrtQty	decimal	Purchase return quantity
+
+15. dbo.VW_MB_POWERBI_PUR_QTY_WITH_COST — Purchase Quantity with Cost
+Purchase quantity and cost summary by branch, supplier, and category.
+Column	Type	Used for
+PurchaseDt	datetime	Purchase transaction date
+DepartmentShortName	varchar	Department short name — primary filter
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+SupplierAlias	varchar	Supplier short code — filter
+CategoryShortName	varchar	Category short name — primary filter
+PurQty	decimal	Purchase quantity
+PurCost	decimal	Purchase cost amount
+
+16. dbo.VW_MB_POWERBI_PUR_REPORT — Purchase Report
+Purchase receipts by branch, supplier, category, and item attributes.
+Column	Type	Used for
+PurchaseId	varchar	Purchase header ID
+PurchaseDt	datetime	Purchase transaction date
+PurInvoiceDt	datetime	Purchase invoice date
+PurInvoiceNo	varchar	Document / reference number
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryShortName	varchar	Category short name — primary filter
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+SupplierAlias	varchar	Supplier short code — filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierCity	varchar	Supplier city — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Para1Name	varchar	Product parameter 1 name (e.g. fit, style)
+Para2Name	varchar	Product parameter 2 name
+Para2Index	int	Parameter 2 sort / variant index
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Concept	varchar	Merchandise concept — assortment grouping
+ItemId	varchar	Item / SKU identifier — joins to product master
+ItemMRP	decimal	Item maximum retail price (MRP)
+Property	varchar	Product property tag (e.g. season, fit)
+Para3Name	varchar	Product parameter 3 name
+Para4Name	varchar	Product parameter 4 name
+PurQty	decimal	Purchase quantity
+
+17. dbo.VW_MB_POWERBI_PURXNS_REPORT — Purchase Transactions Report
+Detailed purchase and purchase-return transactions with tax breakdown.
+Column	Type	Used for
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+DepartmentName	varchar	Department name — hierarchy breakdown
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryName	varchar	Category name — product hierarchy
+CategoryShortName	varchar	Category short name — primary filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+PurRefNo1	varchar	Purchase reference number 1
+PurRefNo2	varchar	Purchase reference number 2
+ArticleNo	varchar	Article / style number — product attribute filter
+Color	varchar	Product color attribute — filter
+Size	varchar	Product size attribute — filter
+Contrast	varchar	Contrast / variant attribute
+Printtypework	varchar	Print / embellishment work type
+XnType	varchar	Transaction type code (sale, return, etc.)
+XnId	varchar	Transaction header ID
+XnDt	datetime	Transaction date — primary date filter for sales
+PurInvDate	datetime	Date — filter or grouping
+PurInvNo	varchar	Purchase invoice number
+PurChallanDt	datetime	Purchase challan date
+PurChallanNo	varchar	Purchase challan number
+ItemCode	varchar	Item code / barcode — product lookup
+CostPrice	decimal	Unit cost price
+ItemMRP	decimal	Item maximum retail price (MRP)
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Property	varchar	Product property tag (e.g. season, fit)
+Concept	varchar	Merchandise concept — assortment grouping
+PurQty	decimal	Purchase quantity
+PurCostValue	decimal	Purchase cost value
+PurNetAmount	decimal	Purchase net amount
+PurMrpValue	decimal	Purchase MRP value
+PurCGSTAmount	decimal	Purchase CGST amount
+PurSGSTAmount	decimal	Purchase SGST amount
+PurIGSTAmount	decimal	Purchase IGST amount
+PrtQty	decimal	Purchase return quantity
+PrtCostValue	decimal	Purchase return cost value
+PrtNetAmount	decimal	Purchase return net amount
+PrtMrpValue	decimal	Purchase return MRP value
+PrtCGSTAmount	decimal	Monetary amount
+PrtSGSTAmount	decimal	Purchase return SGST amount
+PrtIGSTAmount	decimal	Purchase return IGST amount
+NetPurQty	decimal	Net purchase quantity (purchase − returns)
+NetPurCost	decimal	Net purchase cost
+NetPurNetAmount	decimal	Net purchase net amount
+NetPurCGSTAmount	decimal	Net purchase CGST amount
+NetPurSGSTAmount	decimal	Net purchase SGST amount
+NetPurIGSTAmount	decimal	Net purchase IGST amount
+
+18. dbo.VW_MB_POWERBI_SLS_ARTICLE_REPORT — Sales by Article
+Article-level net sales and quantity for style/Article performance.
+Column	Type	Used for
+CategoryShortName	varchar	Category short name — primary filter
+ArticleNo	varchar	Article / style number — product attribute filter
+XnMemoDate	datetime	Sales memo date — date filter
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+ArticleMRP	decimal	Article-level MRP
+Concept	varchar	Merchandise concept — assortment grouping
+NetSlsQty	decimal	Net sales quantity (after returns)
+NetAmount	decimal	Net sales amount — primary revenue metric
+NetSlsCostValue	decimal	Net sales at cost value — margin analysis
+
+19. dbo.VW_MB_POWERBI_SLS_BILLCOUNT — Sales Bill Count
+Daily bill count per branch — footfall / transaction volume KPI.
+Column	Type	Used for
+BranchId	char	Branch identifier — filter and joins
+CashmemoDt	datetime	Cash memo / bill date — date filter
+BillCount	int	Number of bills / transactions — footfall KPI
+
+20. dbo.VW_MB_POWERBI_SLSXNS_REPORT — Sales Transactions (SLSXNS)
+Sales, returns, and net sales with tax — primary transaction-level sales view.
+Column	Type	Used for
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+Department	varchar	Department full name — hierarchy breakdown
+DepartmentShortName	varchar	Department short name — primary filter
+Category	varchar	Category full name — product hierarchy
+CategoryShortName	varchar	Category short name — primary filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Color	varchar	Product color attribute — filter
+Size	varchar	Product size attribute — filter
+Contrast	varchar	Contrast / variant attribute
+Printtypework	varchar	Print / embellishment work type
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Property	varchar	Product property tag (e.g. season, fit)
+Concept	varchar	Merchandise concept — assortment grouping
+Itemcode	varchar	Item code / barcode — product lookup
+ItemMRP	decimal	Item maximum retail price (MRP)
+CostPrice	decimal	Unit cost price
+XnId	varchar	Transaction header ID
+XnNo	varchar	Transaction document number
+XnDt	datetime	Transaction date — primary date filter for sales
+XnDtMonth	varchar	Transaction month label — period grouping
+SlsQty	decimal	Gross sales quantity
+SlsMrpValue	decimal	Sales MRP value
+SlsCostValue	decimal	Sales cost value
+SlsNetAmount	decimal	Sales net amount
+SlrQty	decimal	Sales return quantity
+SlrMrpValue	decimal	Sales return MRP value
+SlrCostValue	decimal	Sales return cost value
+SlrNetAmount	decimal	Sales return net amount
+NetSlsQty	decimal	Net sales quantity (after returns)
+NetSlsMrpValue	decimal	Net sales MRP value
+NetSlsCostValue	decimal	Net sales at cost value — margin analysis
+NetSlsNetAmount	decimal	Net sales amount after returns — revenue KPI
+CGSTAmount	decimal	Central GST tax amount
+SGSTAmount	decimal	State GST tax amount
+IGSTAmount	decimal	Integrated GST tax amount
+BillCount	int	Number of bills / transactions — footfall KPI
+
+21. dbo.VW_MB_POWERBI_STI_REPORT — Stock Transfer In (STI)
+Inbound stock transfers between branches with item and value detail.
+Column	Type	Used for
+SourceBranchAlias	varchar	Source branch (transfer origin) — filter
+SourceBranchId	char	Source branch ID (transfer origin)
+TargetBranchAlias	varchar	Target branch (transfer destination) — filter
+TargetBranchId	char	Target branch ID (transfer destination)
+Department	varchar	Department full name — hierarchy breakdown
+DepartmentShortName	varchar	Department short name — primary filter
+Category	varchar	Category full name — product hierarchy
+CategoryShortName	varchar	Category short name — primary filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Color	varchar	Product color attribute — filter
+Size	varchar	Product size attribute — filter
+Contrast	varchar	Contrast / variant attribute
+Printtypework	varchar	Print / embellishment work type
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Property	varchar	Product property tag (e.g. season, fit)
+Concept	varchar	Merchandise concept — assortment grouping
+Itemcode	varchar	Item code / barcode — product lookup
+ItemMRP	decimal	Item maximum retail price (MRP)
+CostPrice	decimal	Unit cost price
+XnId	varchar	Transaction header ID
+XnNo	varchar	Transaction document number
+XnDt	datetime	Transaction date — primary date filter for sales
+XnDtMonth	varchar	Transaction month label — period grouping
+StiQty	decimal	Stock transfer in quantity
+MrpValue	decimal	Total MRP value
+CostValue	decimal	Total cost value
+NetAmount	decimal	Net sales amount — primary revenue metric
+CGSTAmount	decimal	Central GST tax amount
+SGSTAmount	decimal	State GST tax amount
+IGSTAmount	decimal	Integrated GST tax amount
+BillCount	int	Number of bills / transactions — footfall KPI
+
+22. dbo.VW_MB_POWERBI_STO_REPORT — Stock Transfer Out (STO)
+Outbound stock transfers between branches with item and value detail.
+Column	Type	Used for
+SourceBranchAlias	varchar	Source branch (transfer origin) — filter
+SourceBranchId	char	Source branch ID (transfer origin)
+TargetBranchAlias	varchar	Target branch (transfer destination) — filter
+TargetBranchId	char	Target branch ID (transfer destination)
+Department	varchar	Department full name — hierarchy breakdown
+DepartmentShortName	varchar	Department short name — primary filter
+Category	varchar	Category full name — product hierarchy
+CategoryShortName	varchar	Category short name — primary filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierCity	varchar	Supplier city — geography
+SupplierState	varchar	Supplier state — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Color	varchar	Product color attribute — filter
+Size	varchar	Product size attribute — filter
+Contrast	varchar	Contrast / variant attribute
+Printtypework	varchar	Print / embellishment work type
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Property	varchar	Product property tag (e.g. season, fit)
+Concept	varchar	Merchandise concept — assortment grouping
+Itemcode	varchar	Item code / barcode — product lookup
+ItemMRP	decimal	Item maximum retail price (MRP)
+CostPrice	decimal	Unit cost price
+XnId	varchar	Transaction header ID
+XnNo	varchar	Transaction document number
+XnDt	datetime	Transaction date — primary date filter for sales
+XnDtMonth	varchar	Transaction month label — period grouping
+StoQty	decimal	Stock transfer out quantity
+MrpValue	decimal	Total MRP value
+CostValue	decimal	Total cost value
+NetAmount	decimal	Net sales amount — primary revenue metric
+CGSTAmount	decimal	Central GST tax amount
+SGSTAmount	decimal	State GST tax amount
+IGSTAmount	decimal	Integrated GST tax amount
+BillCount	int	Number of bills / transactions — footfall KPI
+
+23. dbo.VW_MB_POWERBI_STOCK_REPORT — Stock on Hand Report
+Current stock by branch, supplier, category, and item attributes.
+Column	Type	Used for
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryShortName	varchar	Category short name — primary filter
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+SupplierAlias	varchar	Supplier short code — filter
+SupplierName	varchar	Supplier full name — filter and display
+SupplierCity	varchar	Supplier city — geography
+ArticleNo	varchar	Article / style number — product attribute filter
+Para1Name	varchar	Product parameter 1 name (e.g. fit, style)
+Para2Name	varchar	Product parameter 2 name
+Para2Index	int	Parameter 2 sort / variant index
+Fabric	varchar	Primary fabric attribute
+SubFabric	varchar	Sub-fabric attribute
+Concept	varchar	Merchandise concept — assortment grouping
+ItemId	varchar	Item / SKU identifier — joins to product master
+ItemMRP	decimal	Item maximum retail price (MRP)
+Property	varchar	Product property tag (e.g. season, fit)
+Para3Name	varchar	Product parameter 3 name
+Para4Name	varchar	Product parameter 4 name
+PurInvoiceDt	datetime	Purchase invoice date
+StockQty	decimal	Stock on hand quantity
+
+24. dbo.VW_MB_POWERBI_SUPPLIER_PUR_REPORT — Supplier Purchase Report
+Supplier-wise purchase history with product attributes and pricing.
+Column	Type	Used for
+DepartmentShortName	varchar	Department short name — primary filter
+CategoryShortName	varchar	Category short name — primary filter
+SubCategoryName	varchar	Sub-category name
+SubCategoryShortName	varchar	Sub-category short name — filter
+ArticleNo	varchar	Article / style number — product attribute filter
+Colour	varchar	Product color attribute — filter
+size	varchar	Product size attribute — filter
+Para2Index	int	Parameter 2 sort / variant index
+Contrast	varchar	Contrast / variant attribute
+Printypework	varchar	Print / embellishment work type
+SupplierName	varchar	Supplier full name — filter and display
+SupplierAlias	varchar	Supplier short code — filter
+SupplierUID	varchar	Supplier unique identifier
+BranchAlias	varchar	Branch short name — grouping and filter in reports
+FabricShortName	varchar	Fabric short name
+SubFabricShortName	varchar	Sub-fabric short name
+Property	varchar	Product property tag (e.g. season, fit)
+Collection	varchar	Collection name — seasonal grouping
+Concept	varchar	Merchandise concept — assortment grouping
+SubConceptShortName	varchar	Display name — filter or label
+Dupatta	varchar	Dupatta attribute flag / value
+DupattaShortName	varchar	Dupatta short name
+Silhoutte	varchar	Silhouette style attribute
+Bottom	varchar	Bottom garment type attribute
+NECKLINE	varchar	Neckline style attribute
+SleeveType	varchar	Sleeve type attribute
+Look	varchar	Look / style tag
+INVENTORYTYPE	varchar	Inventory type classification
+PurDate	datetime	Purchase date — procurement filter
+PurInvNo	varchar	Purchase invoice number
+PurInvDt	datetime	Purchase invoice date
+PurRefNo1	varchar	Purchase reference number 1
+PurRefNo2	varchar	Purchase reference number 2
+PurChallanNo	varchar	Purchase challan number
+ItemId	varchar	Item / SKU identifier — joins to product master
+PurchasePrice	decimal	Item purchase / landed cost
+ItemMRP	decimal	Item maximum retail price (MRP)
+ItemWSP	decimal	Item wholesale price (WSP)
+PurQty	decimal	Purchase quantity
+
+25. dbo.VW_MB_POWERBI_VENDOR_MASTER — Vendor / Party Master
+Supplier and vendor master with contact, tax, credit, and MSME details.
+Column	Type	Used for
+PartyId	char	Party / vendor master ID
+PartyName	varchar	Party / vendor full name
+ShortName	varchar	Short display name / alias
+PartyAlias	varchar	Party short alias
+Address	varchar	Street address line
+ExtAddress	varchar	Extended address details
+BusinessName	varchar	Registered business name
+Locality	varchar	Locality / neighborhood
+LocalityCity	varchar	Locality city grouping
+LocalityGroup	varchar	Locality group for regional analysis
+PinCode	varchar	Postal / PIN code
+District	varchar	District — geography breakdown
+City	varchar	City — geography filter and breakdown
+State	varchar	State — geography filter and breakdown
+Country	varchar	Country — geography filter
+ContactEmail1	varchar	Primary contact email
+ContactEmail2	varchar	Secondary contact email
+ContactPhone1	varchar	Primary contact phone
+ContactPhone2	varchar	Secondary contact phone
+ContactWebsite	varchar	Contact website URL
+CreatedOn	datetime	Record created timestamp
+CreditDays	decimal	Credit period in days
+CreditLimit	decimal	Credit limit amount
+DiscountPercentage	decimal	Discount percentage on purchases
+FreightPercentage	decimal	Freight charge percentage
+GstClassification	int	GST classification code
+GstClassificationStr	varchar	GST classification description
+GstEffectiveDt	datetime	GST effective date
+GstStateCode	varchar	GST state code
+IntlGLNNo	varchar	International GLN number
+LocalityId	char	Locality master identifier
+MarginPercentage	decimal	Margin percentage
+MarkupEXP	decimal	Markup on export price
+MarkupMRP	decimal	Markup on MRP
+MarkupWSP	decimal	Markup on wholesale price
+MSMEBizType	int	MSME business type code
+MSMEBizTypeStr	varchar	MSME business type description
+MSMECategory	int	MSME category code
+MSMECategoryStr	varchar	MSME category description
+MSMERegDt	datetime	Date / timestamp — filter or grouping
+MSMERegNo	varchar	Document / reference number
+PartyGroupName	varchar	Party group classification
+TaxGSTINNo	varchar	GSTIN tax registration number
+TaxPanNo	varchar	PAN tax identifier
+TdsFullName	varchar	TDS full description
+TdsId	char	TDS section ID
+TdsName	varchar	TDS section name
+TdsPercentage	decimal	TDS deduction percentage
+
+26. dbo.VwAISalesPerson — AI Salesperson Dimension
+Salesperson lookup for NLQ and salesperson analytics.
+Column	Type	Used for
+SalesPersonId	char	Salesperson identifier
+SalesPersonName	varchar	Salesperson full name — Top-N and performance
+SalesPersonShortName	varchar	Salesperson short name
+
+27. dbo.VwAISupplier — AI Supplier Dimension
+Supplier lookup for NLQ and procurement analytics.
+Column	Type	Used for
+PurPartyId	char	Purchase party (supplier) ID
+PartyName	varchar	Party / vendor full name
+ShortName	varchar	Short display name / alias
+PartyAlias	varchar	Party short alias
+Address	varchar	Street address line
+Locality	varchar	Locality / neighborhood
+PinCode	varchar	Postal / PIN code
+City	varchar	City — geography filter and breakdown
+State	varchar	State — geography filter and breakdown
+Country	varchar	Country — geography filter
+
+28. dbo.VwMstItems — Item Master View
+Complete item master with hierarchy, parameters, supplier, and pricing.
+Column	Type	Used for
+Itemcode	varchar	Item code / barcode — product lookup
+ItemId	varchar	Item / SKU identifier — joins to product master
+ItemMRP	decimal	Item maximum retail price (MRP)
+ItemWSP	decimal	Item wholesale price (WSP)
+ItemEXP	decimal	Item export / extended price
+PurchasePrice	decimal	Item purchase / landed cost
+SKU	varchar	Stock keeping unit code
+ArticleId	char	Article master identifier
+ArticleNo	varchar	Article / style number — product attribute filter
+Description	varchar	Item long description
+ExtDescription	varchar	Item extended description
+ArticleShortName	varchar	Article short display name
+UomId	char	Unit of measure ID
+UomName	varchar	Unit of measure name
+GstUQC	varchar	GST unit quantity code
+UomType	int	Unit of measure type
+CodingType	decimal	Item coding type
+ArticleStockType	decimal	Article stock type classification
+InvDepartmentId	char	Inventory department ID
+InvDepartmentName	varchar	Inventory department name
+InvDepartmentShortName	varchar	Inventory department short name
+InvCategoryId	char	Inventory category ID
+InvCategoryName	varchar	Inventory category name
+InvCategoryShortName	varchar	Inventory category short name
+InvSubCategoryId	char	Inventory sub-category ID
+InvSubCategoryName	varchar	Inventory sub-category name
+InvSubCategoryShortName	varchar	Inventory sub-category short name
+Para1Id	char	Product parameter 1 ID (variant dimension)
+Para1Name	varchar	Product parameter 1 name (e.g. fit, style)
+Para1ShortName	varchar	Product parameter 1 short name
+Para2Id	char	Product parameter 2 ID
+Para2Name	varchar	Product parameter 2 name
+Para2ShortName	varchar	Product parameter 2 short name
+Para3Id	char	Product parameter 3 ID
+Para3Name	varchar	Product parameter 3 name
+Para3ShortName	varchar	Product parameter 3 short name
+Para4Id	char	Product parameter 4 ID
+Para4Name	varchar	Product parameter 4 name
+Para4ShortName	varchar	Product parameter 4 short name
+ExtCategoryName	varchar	Extended / external category label
+PurPartyId	char	Purchase party (supplier) ID
+SupplierName	varchar	Supplier full name — filter and display
+SupplierShortName	varchar	Display name — filter or label
+SupplierAlias	varchar	Supplier short code — filter
+GstClassification	int	GST classification code
+HSNCode	varchar	HSN tax classification code
+PurInvoiceDt	datetime	Purchase invoice date
+PurInvoiceNo	varchar	Document / reference number
+PurchaseId	varchar	Purchase header ID

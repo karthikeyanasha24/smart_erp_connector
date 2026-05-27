@@ -1,0 +1,12 @@
+# Copy to your own path and set OPENAI_SQL_RULES_FILE in .env
+# Plain text — anything here is appended to the model's system prompt.
+
+## Company conventions (edit for your ERP)
+- "Net sales" = SUM(NetSlsNetAmount) on dbo.VW_MB_POWERBI_SLSXNS_REPORT with date on XnDt.
+- Women's department filter: DepartmentShortName often 'SA' or contains 'women' — use LIKE, not '=' unless code is confirmed.
+- Do not compare APP_REPORT revenue to SLSXNS without stating grain difference.
+
+## Few-shot patterns (Question → preferred approach)
+Q: Total sales today → SLSXNS, CAST(XnDt AS date) = CAST(GETDATE() AS date), SUM(NetSlsNetAmount).
+Q: MTD sales → SLSXNS, XnDt from DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1) through end of today (exclusive upper bound with DATEADD(DAY,1,CAST(GETDATE() AS date))).
+Q: Daily trend last N days → SLSXNS, GROUP BY CAST(XnDt AS date), SUM(NetSlsNetAmount), ORDER BY date (not APP_REPORT unless user insists).
