@@ -1,10 +1,10 @@
 /**
  * SmarterPConnector — API Client
- * All calls go to /api/* which Vite proxies to http://localhost:3000/*
- * Falls back to mock data when backend is unreachable.
+ * Dev: /api/* proxied to localhost:3000 (see vite.config.ts).
+ * Prod: set VITE_API_URL to your Render backend (no /api prefix).
  */
 
-const BASE = '/api';
+const BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 // ── Auth token storage ────────────────────────────────────────────────────────
 let _token: string | null = null;
