@@ -446,7 +446,7 @@ export default function Transactions() {
               Recent Transactions
             </h2>
             <p className="text-xs mt-0.5" style={{ color: isDark ? '#8b949e' : '#57606a' }}>
-              {txnLoading ? 'Loading…' : `${totalCount.toLocaleString('en-IN')} records`}
+              {txnLoading && totalCount === 0 ? 'Loading…' : `${totalCount.toLocaleString('en-IN')} records`}
             </p>
           </div>
           <div className="relative w-full sm:max-w-xs">
@@ -483,7 +483,7 @@ export default function Transactions() {
               </tr>
             </thead>
             <tbody>
-              {txnLoading ? (
+              {txnLoading && sortedRows.length === 0 ? (
                 [...Array(8)].map((_, i) => (
                   <tr key={i} style={{ borderBottom: surface.borderSoft }}>
                     {[...Array(7)].map((__, j) => (

@@ -418,6 +418,26 @@ export async function fetchAndApplySnapshot(): Promise<void> {
         cacheSet('txn_summary:mtd', snap.txn_summary_mtd);
       }
 
+      // KPI cache for all analytics tabs (customer count + revenue chips)
+      const _kpiRows: Array<[string, KPIsResponse | null | undefined]> = [
+        ['mtd', snap.mtd_kpis],
+        ['today', snap.today_kpis],
+        ['qtd', snap.qtd_kpis],
+        ['ytd', snap.ytd_kpis],
+        ['last_6m', snap.last6m_kpis],
+      ];
+      for (const [p, kpi] of _kpiRows) {
+        if (!kpi) continue;
+        if (
+          kpi.revenue?.value != null
+          || kpi.transactions?.value != null
+          || kpi.customers?.value != null
+        ) {
+          cacheSet(`kpis:v2:${p}`, kpi);
+          cacheSet(`kpis:${p}`, kpi);
+        }
+      }
+
       // ── Analytics page cache hydration ──────────────────────────────────
       // Seed analytics-page:{period}:: so the Analytics page renders instantly
       // when the user navigates to it — no loading shimmer on any tab.
@@ -434,8 +454,14 @@ export async function fetchAndApplySnapshot(): Promise<void> {
         { period: 'last_6m', dash: snap.last6m_dashboard, kpi: snap.last6m_kpis, departments: snap.departments_last6m },
       ];
       for (const row of _snapPeriods) {
-        if (!row.dash || isEmptyDashboard(row.dash as DashboardResponse)) continue;
-        seedAnalyticsPagePeriod(row.period, row.dash, row.kpi, row.departments ?? []);
+        if (!row.dash) continue;
+        const dash = row.dash as DashboardResponse;
+        const hasContent =
+          !isEmptyDashboard(dash)
+          || (dash.trend?.length ?? 0) > 0
+          || (row.departments?.length ?? 0) > 0;
+        if (!hasContent) continue;
+        seedAnalyticsPagePeriod(row.period, dash, row.kpi, row.departments ?? []);
       }
     } catch {
       // Server offline or cache cold — useDashboardPage falls back gracefully
@@ -490,23 +516,34 @@ function seedAnalyticsPagePeriod(
     return;
   }
 
-  let dashForBuild = dash as DashboardResponse;
-  if (dashForBuild.summary) {
-    dashForBuild = {
-      ...dashForBuild,
-      summary: enrichSummaryFromKpi(dashForBuild.summary, kpi),
-    };
-  }
-
   const split: SplitBundle = {
-    branches: [],
+    branches: (dash.branches ?? []).map((b) => ({
+      branch: b.name,
+      revenue: b.revenue,
+      transactions: 0,
+    })),
     trend: [],
-    categories: [],
+    categories: (dash.categories ?? []).map((c) => ({
+      category: c.name,
+      revenue: c.revenue,
+      percentage: c.percentage ?? 0,
+    })),
     departments: departments ?? [],
     kpis: (kpi ?? {}) as KPIsResponse,
   };
 
-  let built = buildAnalyticsPageData(split, dashForBuild, period);
+  let built = buildAnalyticsPageData(split, dash as DashboardResponse, period);
+  if (built.summary) {
+    built = {
+      ...built,
+      summary: enrichSummaryFromKpi(built.summary, kpi),
+    };
+  } else if (kpi && hasUsableBundleKpis(kpi)) {
+    built = {
+      ...built,
+      summary: enrichSummaryFromKpi(summaryFromKpis(kpi), kpi),
+    };
+  }
   if (existing && !isEmptyAnalyticsPage(existing)) {
     built = carryForwardAnalyticsPartial(built, existing);
   }
@@ -1380,8 +1417,17 @@ export function prefetchAnalyticsPage(
         includeKpis: false,
       });
       const deptP = analytics.departments(period, n).catch(() => ({ departments: [] as DeptPoint[] }));
+      const kpiHint =
+        cacheGet<KPIsResponse>(`kpis:v2:${period}`) ?? cacheGet<KPIsResponse>(`kpis:${period}`);
+      const kpiP = kpiHint
+        ? Promise.resolve(kpiHint)
+        : analytics.kpis(period).catch(() => null);
 
-      const [core, deptRes] = await Promise.all([bundleP, deptP]);
+      const [core, deptRes, kpiRes] = await Promise.all([bundleP, deptP, kpiP]);
+      if (kpiRes) {
+        cacheSet(`kpis:v2:${period}`, kpiRes);
+        cacheSet(`kpis:${period}`, kpiRes);
+      }
       const split: SplitBundle = {
         branches: core.branches ?? [],
         trend: core.trend ?? [],
@@ -1389,11 +1435,14 @@ export function prefetchAnalyticsPage(
         departments: core.departments?.length
           ? core.departments
           : (deptRes.departments ?? []),
-        kpis: {} as KPIsResponse,
+        kpis: (kpiRes ?? {}) as KPIsResponse,
       };
 
       const prevSnap = cacheGet<AnalyticsPageData>(key);
       let built = buildAnalyticsPageData(split, null, period);
+      if (built.summary && kpiRes) {
+        built = { ...built, summary: enrichSummaryFromKpi(built.summary, kpiRes) };
+      }
       if (prevSnap && !isEmptyAnalyticsPage(prevSnap)) {
         built = carryForwardAnalyticsPartial(built, prevSnap);
       }
@@ -1563,6 +1612,18 @@ export function useAnalyticsPage(
       setChartLoading(false);
     });
   }, [period, cacheKey]);
+
+  useEffect(() => {
+    if (period === '__hold__' || period === 'custom') return;
+    return subscribeCacheHydrate(() => {
+      const c = cacheGet<AnalyticsPageData>(cacheKey);
+      if (c && !isEmptyAnalyticsPage(c)) {
+        setData(c);
+        setLoading(false);
+        if (isCompleteAnalyticsPage(c, period)) setChartLoading(false);
+      }
+    });
+  }, [cacheKey, period]);
 
   useEffect(() => {
     if (period === '__hold__') return;

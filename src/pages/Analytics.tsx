@@ -910,7 +910,7 @@ export default function Analytics() {
               ? `${data?.departments?.length} departments${uiLoading ? ' · refreshing…' : ''}`
               : 'Loading departments… (can be slow on first load)'
           }
-          loading={uiLoading && !(data?.departments?.length)}
+          loading={chartLoading && !(data?.departments?.length)}
           isDark={isDark}
           columns={['#', 'Department', 'Sales', 'Share %', 'Bills']}
           rows={(data?.departments ?? []).map((d, i) => [

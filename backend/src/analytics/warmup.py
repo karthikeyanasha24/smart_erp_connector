@@ -112,6 +112,8 @@ async def warmup_all() -> None:
         # Run in parallel; semaphore caps concurrency so SQL Server is not overloaded.
         logger.info("Cache warmup Phase 2 -- QTD + YTD + Last-6M (always on)")
         await asyncio.gather(
+            _safe("kpi:qtd",         get_home_kpis("qtd")),
+            _safe("kpi:last_6m",     get_home_kpis("last_6m")),
             _safe("bundle:qtd",      _prime_breakdown_bundle("qtd")),
             _safe("dashboard:qtd",   get_dashboard("qtd")),
             _safe("bundle:last_6m",  _prime_breakdown_bundle("last_6m")),
@@ -122,6 +124,7 @@ async def warmup_all() -> None:
         # Phase 3: YTD (slowest scan — dedicate a phase so Phase 2 flush happens sooner)
         logger.info("Cache warmup Phase 3 -- YTD (slow full-year scan)")
         await asyncio.gather(
+            _safe("kpi:ytd",       get_home_kpis("ytd")),
             _safe("bundle:ytd",    _prime_breakdown_bundle("ytd")),
             _safe("dashboard:ytd", get_dashboard("ytd")),
         )
