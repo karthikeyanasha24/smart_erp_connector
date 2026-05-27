@@ -1,7 +1,7 @@
 """
 SQL Server Connection Layer
-Uses pyodbc with a thread-pool executor for async compatibility.
-Connection pooling is managed manually since pyodbc has no native async pool.
+- Windows / local: pyodbc + Microsoft ODBC (default when drivers are installed)
+- Render / Linux: pymssql + FreeTDS (set MSSQL_DRIVER=pymssql or use backend/Dockerfile)
 """
 
 from __future__ import annotations
@@ -13,25 +13,49 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-import pyodbc
-
 from src.config import cfg
 from src.utils.logger import logger
 
-# ─── ODBC driver resolution ───────────────────────────────────────────────────
+# ─── Driver selection ─────────────────────────────────────────────────────────
 
 _selected_driver: Optional[str] = None
+_use_pymssql: Optional[bool] = None
+
+DbConnection = Any
 
 
 def _installed_odbc_drivers() -> List[str]:
     try:
+        import pyodbc
+
         return list(pyodbc.drivers())
     except Exception:
         return []
 
 
+def _is_pymssql() -> bool:
+    global _use_pymssql
+    if _use_pymssql is not None:
+        return _use_pymssql
+
+    mode = (cfg.MSSQL_DRIVER or "auto").strip().lower()
+    if mode == "pymssql":
+        _use_pymssql = True
+    elif mode == "pyodbc":
+        _use_pymssql = False
+    else:
+        _use_pymssql = not bool(_installed_odbc_drivers())
+
+    return _use_pymssql
+
+
+def _param_placeholder() -> str:
+    return "%s" if _is_pymssql() else "?"
+
+
+# ─── pyodbc (Microsoft ODBC) ──────────────────────────────────────────────────
+
 def _odbc_drivers_to_try() -> List[str]:
-    """Pick ODBC drivers that exist on this machine (Windows often has only 'SQL Server')."""
     installed = _installed_odbc_drivers()
     candidates = [
         cfg.ODBC_DRIVER,
@@ -53,7 +77,7 @@ def _odbc_drivers_to_try() -> List[str]:
     return ordered
 
 
-def _build_conn_str(driver: str) -> str:
+def _build_odbc_conn_str(driver: str) -> str:
     return (
         f"DRIVER={{{driver}}};"
         f"SERVER={cfg.mssql_server},{cfg.mssql_port};"
@@ -66,14 +90,15 @@ def _build_conn_str(driver: str) -> str:
     )
 
 
-def _connect_pyodbc() -> Tuple[pyodbc.Connection, str]:
-    """Try each installed ODBC driver until one connects."""
+def _connect_pyodbc() -> Tuple[DbConnection, str]:
+    import pyodbc
+
     global _selected_driver
     last_err: Optional[Exception] = None
     for driver in _odbc_drivers_to_try():
         try:
             conn = pyodbc.connect(
-                _build_conn_str(driver),
+                _build_odbc_conn_str(driver),
                 timeout=cfg.mssql_connect_timeout,
                 autocommit=True,
             )
@@ -86,58 +111,97 @@ def _connect_pyodbc() -> Tuple[pyodbc.Connection, str]:
     raise RuntimeError(
         f"Could not connect to SQL Server. Tried: {_odbc_drivers_to_try()}. "
         f"Installed ODBC drivers: {installed or 'none'}. "
-        "Install 'ODBC Driver 18 for SQL Server' or set ODBC_DRIVER=SQL Server in .env"
+        "Install ODBC Driver 18, or set MSSQL_DRIVER=pymssql on Linux/Render."
     ) from last_err
 
 
-# ─── Simple Connection Pool ───────────────────────────────────────────────────
+# ─── pymssql (FreeTDS — no Microsoft ODBC) ────────────────────────────────────
+
+def _connect_pymssql() -> Tuple[DbConnection, str]:
+    import pymssql
+
+    global _selected_driver
+    conn = pymssql.connect(
+        server=cfg.mssql_server,
+        port=cfg.mssql_port,
+        user=cfg.mssql_user,
+        password=cfg.mssql_password,
+        database=cfg.mssql_database,
+        login_timeout=cfg.mssql_connect_timeout,
+        timeout=cfg.mssql_request_timeout,
+        tds_version="7.4",
+    )
+    _selected_driver = "pymssql (FreeTDS)"
+    return conn, _selected_driver
+
+
+def _connect() -> Tuple[DbConnection, str]:
+    if _is_pymssql():
+        return _connect_pymssql()
+    return _connect_pyodbc()
+
+
+def _ping_connection(conn: DbConnection) -> None:
+    if _is_pymssql():
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT 1")
+        finally:
+            cur.close()
+    else:
+        conn.execute("SELECT 1")
+
+
+# ─── Connection pool ───────────────────────────────────────────────────────────
 
 class _ConnectionPool:
-    """
-    Lightweight pyodbc connection pool.
-    Maintains a queue of idle connections with max size enforcement.
-    """
-
     def __init__(self, max_size: int = 10) -> None:
         self._max_size = max_size
-        self._pool: List[pyodbc.Connection] = []
-        self._active = 0
-        self._lock = asyncio.Lock()
-        self._conn_str: str = ""
+        self._pool: List[DbConnection] = []
+        self._odbc_conn_str: str = ""
         self._initialized = False
 
     def initialize(self) -> None:
-        conn, driver = _connect_pyodbc()
-        self._conn_str = _build_conn_str(driver)
+        conn, driver = _connect()
+        if not _is_pymssql() and _selected_driver:
+            self._odbc_conn_str = _build_odbc_conn_str(_selected_driver)
         conn.close()
         self._initialized = True
-        logger.info("SQL Server ODBC driver selected", driver=driver)
+        logger.info(
+            "SQL Server client ready",
+            driver=driver,
+            mode="pymssql" if _is_pymssql() else "pyodbc",
+        )
 
-    def _new_connection(self) -> pyodbc.Connection:
-        if not self._conn_str and _selected_driver:
-            self._conn_str = _build_conn_str(_selected_driver)
-        if not self._conn_str:
+    def _new_connection(self) -> DbConnection:
+        if _is_pymssql():
+            conn, _ = _connect_pymssql()
+            return conn
+
+        import pyodbc
+
+        if not self._odbc_conn_str and _selected_driver:
+            self._odbc_conn_str = _build_odbc_conn_str(_selected_driver)
+        if not self._odbc_conn_str:
             conn, driver = _connect_pyodbc()
-            self._conn_str = _build_conn_str(driver)
+            self._odbc_conn_str = _build_odbc_conn_str(driver)
             return conn
         conn = pyodbc.connect(
-            self._conn_str,
+            self._odbc_conn_str,
             timeout=cfg.mssql_connect_timeout,
             autocommit=True,
         )
         conn.timeout = cfg.mssql_request_timeout
         return conn
 
-    def _get_connection(self) -> pyodbc.Connection:
-        """Get a connection from the pool or create a new one (sync, called in thread)."""
+    def _get_connection(self) -> DbConnection:
         if not self._initialized:
             raise RuntimeError("Connection pool not initialized — call initialize() first")
 
-        # Try a pooled connection
         while self._pool:
             conn = self._pool.pop()
             try:
-                conn.execute("SELECT 1")
+                _ping_connection(conn)
                 return conn
             except Exception:
                 try:
@@ -145,11 +209,9 @@ class _ConnectionPool:
                 except Exception:
                     pass
 
-        # Create new if under limit
         return self._new_connection()
 
-    def _return_connection(self, conn: pyodbc.Connection) -> None:
-        """Return a connection to the pool (sync, called in thread)."""
+    def _return_connection(self, conn: DbConnection) -> None:
         if len(self._pool) < self._max_size:
             try:
                 self._pool.append(conn)
@@ -165,8 +227,7 @@ class _ConnectionPool:
                 pass
 
     @contextmanager
-    def connection(self) -> Generator[pyodbc.Connection, None, None]:
-        """Sync context manager for use inside thread executor."""
+    def connection(self) -> Generator[DbConnection, None, None]:
         conn = self._get_connection()
         try:
             yield conn
@@ -188,9 +249,6 @@ class _ConnectionPool:
 
 
 _pool = _ConnectionPool(max_size=cfg.DB_POOL_MAX)
-_executor = None  # Will use default ThreadPoolExecutor
-
-# Dedicated thread + connection for /health — never waits on the analytics connection pool.
 _health_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mssql-health")
 _mssql_startup_ok = False
 
@@ -198,13 +256,12 @@ _mssql_startup_ok = False
 # ─── Init / Close ─────────────────────────────────────────────────────────────
 
 async def init_mssql() -> None:
-    """Initialize pool and test connectivity."""
     _pool.initialize()
     loop = asyncio.get_event_loop()
 
     def _test() -> None:
         with _pool.connection() as conn:
-            conn.execute("SELECT 1")
+            _ping_connection(conn)
 
     global _mssql_startup_ok
     try:
@@ -215,6 +272,7 @@ async def init_mssql() -> None:
             server=cfg.mssql_server,
             port=cfg.mssql_port,
             database=cfg.mssql_database,
+            client="pymssql" if _is_pymssql() else "pyodbc",
         )
     except Exception as exc:
         _mssql_startup_ok = False
@@ -228,15 +286,13 @@ async def close_mssql() -> None:
     logger.info("SQL Server pool closed")
 
 
-# ─── Query Helpers ────────────────────────────────────────────────────────────
+# ─── Query helpers ─────────────────────────────────────────────────────────────
 
 QueryParams = Dict[str, Any]
-
 Row = Dict[str, Any]
 
 
 def _apply_hints(sql: str, nolock: bool, recompile: bool) -> str:
-    """Inject WITH (NOLOCK) and OPTION (RECOMPILE) hints safely."""
     q = sql.strip()
 
     if nolock and "with (nolock)" not in q.lower():
@@ -253,8 +309,7 @@ def _apply_hints(sql: str, nolock: bool, recompile: bool) -> str:
     return q
 
 
-def _rows_to_dicts(cursor: pyodbc.Cursor) -> List[Row]:
-    """Convert cursor result to list of dicts."""
+def _rows_to_dicts(cursor: Any) -> List[Row]:
     if cursor.description is None:
         return []
     columns = [col[0] for col in cursor.description]
@@ -267,18 +322,18 @@ def _bind_and_execute(
     nolock: bool,
     recompile: bool,
 ) -> Tuple[List[Row], float]:
-    """Run inside thread executor."""
     final_sql = _apply_hints(sql, nolock, recompile)
+    placeholder = _param_placeholder()
 
-    # Replace @name params with ? for pyodbc
     param_values: List[Any] = []
     if params:
         def replace_param(m: re.Match) -> str:
             name = m.group(1)
             if name in params:
                 param_values.append(params[name])
-                return "?"
+                return placeholder
             return m.group(0)
+
         final_sql = re.sub(r"@(\w+)", replace_param, final_sql)
 
     start = time.perf_counter()
@@ -299,10 +354,6 @@ async def execute_query(
     recompile: Optional[bool] = None,
     timeout_ms: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Async SQL Server query execution.
-    Returns {"records": [...], "duration": ms}
-    """
     use_nolock = nolock if nolock is not None else cfg.ANALYTICS_NOLOCK
     use_recompile = recompile if recompile is not None else cfg.ANALYTICS_RECOMPILE
 
@@ -324,18 +375,16 @@ async def execute_query(
 
 
 async def execute_raw(sql: str, params: Optional[QueryParams] = None) -> Dict[str, Any]:
-    """Execute SQL without hint injection (DDL, stored procs, etc.)"""
     return await execute_query(sql, params, nolock=False, recompile=False)
 
 
-# ─── Health Check ─────────────────────────────────────────────────────────────
+# ─── Health check ──────────────────────────────────────────────────────────────
 
 def _health_ping_sync() -> int:
-    """Ping SQL Server on a connection outside the shared pool (fast under load)."""
     start = time.perf_counter()
-    conn, _driver = _connect_pyodbc()
+    conn, _driver = _connect()
     try:
-        conn.execute("SELECT 1 AS ping")
+        _ping_connection(conn)
         return int((time.perf_counter() - start) * 1000)
     finally:
         try:
@@ -353,7 +402,11 @@ async def check_mssql_health() -> Dict[str, Any]:
             loop.run_in_executor(_health_executor, _health_ping_sync),
             timeout=3.0,
         )
-        return {"connected": True, "latency_ms": latency_ms}
+        return {
+            "connected": True,
+            "latency_ms": latency_ms,
+            "client": "pymssql" if _is_pymssql() else "pyodbc",
+        }
     except asyncio.TimeoutError:
         return {
             "connected": True,

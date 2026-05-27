@@ -174,8 +174,10 @@ class Settings(BaseSettings):
     AI_SCHEMA_MAX_TABLES: int = 14
     COGNITIVE_COLUMN_DISCOVERY: bool = True
 
-    # -- ODBC Driver --------------------------------------------------------------
+    # -- SQL Server client (pyodbc on Windows; pymssql/FreeTDS on Render/Linux) ----
     ODBC_DRIVER: str = "ODBC Driver 17 for SQL Server"
+    # auto = pyodbc when ODBC drivers exist, else pymssql
+    MSSQL_DRIVER: str = "auto"
 
 
 @lru_cache()
