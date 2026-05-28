@@ -109,7 +109,13 @@ async def login(body: LoginRequest, request: Request) -> Dict[str, Any]:
 
 @router.get("/me")
 async def me(user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
-    full = await get_user_by_id(user.user_id)
+    # Graceful degradation: if PG is temporarily unavailable, return JWT data
+    # rather than a 500.  The JWT is already validated, so this is safe.
+    try:
+        full = await get_user_by_id(user.user_id)
+    except Exception as exc:
+        logger.warning("/auth/me DB lookup failed — returning JWT data only", error=str(exc))
+        full = None
     return {
         "success": True,
         "user": {

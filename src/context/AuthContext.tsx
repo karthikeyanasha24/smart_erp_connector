@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { auth, setAuthToken, clearAuthToken, getAuthToken } from '../lib/api';
 import { prefetchAll, clearAnalyticsCache, prefetchCriticalDashboard, fetchAndApplySnapshot } from '../hooks/useAnalytics';
 
@@ -19,6 +19,27 @@ interface AuthContextValue {
   canUseAI: boolean;
 }
 
+const CACHED_USER_KEY = 'smarterp_user';
+
+/** Read the last-known user from localStorage — used for optimistic instant render. */
+function readCachedUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(CACHED_USER_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedUser(u: AuthUser) {
+  try { localStorage.setItem(CACHED_USER_KEY, JSON.stringify(u)); } catch { /* ignore */ }
+}
+
+function clearCachedUser() {
+  try { localStorage.removeItem(CACHED_USER_KEY); } catch { /* ignore */ }
+}
+
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
@@ -30,38 +51,81 @@ const AuthContext = createContext<AuthContextValue>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const token = getAuthToken();
+
+  // ── Optimistic initial state ──────────────────────────────────────────────
+  // If a JWT token exists we ASSUME the user is logged in using the last-cached
+  // profile. The page renders immediately — no loading flash, no blank white screen.
+  // We then verify the token with the backend in the background.
+  const cachedUser = token ? readCachedUser() : null;
+
+  const [user, setUser]       = useState<AuthUser | null>(cachedUser);
+  const [loading, setLoading] = useState<boolean>(!cachedUser && !!token);
+  // verifying = true means the silent background re-validation is in flight
+  const verifying = useRef(false);
 
   useEffect(() => {
-    const token = getAuthToken();
     if (!token) {
+      setUser(null);
       setLoading(false);
       return;
     }
+
     setAuthToken(token);
-    auth.me()
-      .then((r) => {
-        setUser(r.user);
-        // Snapshot first (< 20 ms, reads server cache) → then full refresh in background
-        void fetchAndApplySnapshot().then(() => {
-          void prefetchCriticalDashboard();
-          void prefetchAll();
-        });
-      })
-      .catch(() => {
-        clearAuthToken();
-        setUser(null);
-      })
-      .finally(() => setLoading(false));
+
+    // If we already have a cached user, skip the loading state entirely —
+    // just verify silently in the background.
+    if (cachedUser && !verifying.current) {
+      verifying.current = true;
+      auth.me()
+        .then((r) => {
+          setUser(r.user);
+          writeCachedUser(r.user);
+          // Background data prefetch (non-blocking)
+          void fetchAndApplySnapshot().then(() => {
+            void prefetchCriticalDashboard();
+            void prefetchAll();
+          });
+        })
+        .catch(() => {
+          // Token is invalid — sign out silently
+          clearAuthToken();
+          clearCachedUser();
+          setUser(null);
+        })
+        .finally(() => { verifying.current = false; });
+      return;
+    }
+
+    // No cached user but token exists → show minimal loader while we verify
+    if (!cachedUser) {
+      setLoading(true);
+      auth.me()
+        .then((r) => {
+          setUser(r.user);
+          writeCachedUser(r.user);
+          void fetchAndApplySnapshot().then(() => {
+            void prefetchCriticalDashboard();
+            void prefetchAll();
+          });
+        })
+        .catch(() => {
+          clearAuthToken();
+          clearCachedUser();
+          setUser(null);
+        })
+        .finally(() => setLoading(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await auth.login(email, password);
     setAuthToken(res.access_token);
     localStorage.setItem('smarterp_token', res.access_token);
-    setUser(res.user);
-    // Snapshot pre-warms the SWR cache so dashboard renders on first paint
+    const u = res.user as AuthUser;
+    setUser(u);
+    writeCachedUser(u);
     void fetchAndApplySnapshot().then(() => {
       void prefetchCriticalDashboard();
       void prefetchAll();
@@ -70,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearAuthToken();
+    clearCachedUser();
     clearAnalyticsCache();
     setUser(null);
   }, []);
@@ -85,4 +150,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export const useAuth = () => useContext(AuthContext);
+export function useAuth() {
+  return useContext(AuthContext);
+}

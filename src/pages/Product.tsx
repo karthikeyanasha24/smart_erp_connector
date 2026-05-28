@@ -22,8 +22,8 @@ import {
   Package,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { useCategories, fmtRevenue, fmtCount } from '../hooks/useAnalytics';
-import { analytics, TopProductRow, ProductMasterRow } from '../lib/api';
+import { useCategories, fmtRevenue, fmtCount, readCache } from '../hooks/useAnalytics';
+import { analytics, TopProductRow, ProductMasterRow, ProductCatalogResponse, TopProductsResponse } from '../lib/api';
 import { fmtRupees } from '../lib/format';
 
 const TIME_RANGE_MAP: Record<string, string> = {
@@ -57,12 +57,17 @@ export default function Product() {
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
-  const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof analytics.productCatalog>> | null>(null);
-  const [catalogLoading, setCatalogLoading] = useState(true);
+  // Initialise from snapshot cache so the Products page renders instantly.
+  // Cache keys match what fetchAndApplySnapshot seeds from the backend snapshot.
+  const _cachedCatalog = readCache<ProductCatalogResponse>('product_catalog:50:0');
+  const _cachedTop = readCache<TopProductsResponse>('top_products:mtd:15');
+
+  const [catalog, setCatalog] = useState<ProductCatalogResponse | null>(_cachedCatalog);
+  const [catalogLoading, setCatalogLoading] = useState(!_cachedCatalog);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  const [topProducts, setTopProducts] = useState<TopProductRow[]>([]);
-  const [topLoading, setTopLoading] = useState(true);
+  const [topProducts, setTopProducts] = useState<TopProductRow[]>(_cachedTop?.products ?? []);
+  const [topLoading, setTopLoading] = useState(!_cachedTop);
   const [topError, setTopError] = useState<string | null>(null);
 
   const { categories, loading: catLoading, refetch: refetchCat, fromApi: catFromApi } = useCategories(period, 8);
@@ -77,10 +82,22 @@ export default function Product() {
   }, [debouncedSearch]);
 
   const loadCatalog = useCallback(async () => {
+    const offset = (page - 1) * pageSize;
+    const isFirstPageNoSearch = page === 1 && !debouncedSearch;
+
+    // Use snapshot cache for first page load (no search) to avoid a cold SQL Server hit.
+    if (isFirstPageNoSearch) {
+      const cached = readCache<ProductCatalogResponse>('product_catalog:50:0');
+      if (cached?.products?.length) {
+        setCatalog(cached);
+        setCatalogLoading(false);
+        return;
+      }
+    }
+
     setCatalogLoading(true);
     setCatalogError(null);
     try {
-      const offset = (page - 1) * pageSize;
       const res = await analytics.productCatalog({
         search: debouncedSearch || undefined,
         limit: pageSize,
@@ -100,6 +117,16 @@ export default function Product() {
   }, [loadCatalog]);
 
   const loadTop = useCallback(async () => {
+    // Use snapshot cache for MTD top products to avoid a cold SQL Server hit.
+    if (period === 'mtd') {
+      const cached = readCache<TopProductsResponse>('top_products:mtd:15');
+      if (cached?.products?.length) {
+        setTopProducts(cached.products);
+        setTopLoading(false);
+        return;
+      }
+    }
+
     setTopLoading(true);
     setTopError(null);
     try {
@@ -250,7 +277,10 @@ export default function Product() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Top products</h2>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>By revenue · {period.toUpperCase()}</p>
+              <p className="text-xs flex items-center gap-1" style={{ color: topLoading && topProducts.length > 0 ? '#5882ff' : 'var(--text-muted)' }}>
+                {topLoading && topProducts.length > 0 && <RefreshCw size={9} className="animate-spin" />}
+                {topLoading && topProducts.length > 0 ? `Refreshing for ${timeRange}…` : `By revenue · ${period.toUpperCase()}`}
+              </p>
             </div>
             {topError && (
               <span className="text-2xs font-medium px-2 py-1 rounded-lg" style={{ color: '#f87171', background: 'rgba(248,113,113,0.1)' }}>
@@ -270,7 +300,7 @@ export default function Product() {
                 </tr>
               </thead>
               <tbody>
-                {topLoading ? (
+                {topLoading && topProducts.length === 0 ? (
                   [...Array(8)].map((_, i) => (
                     <tr key={i}>
                       {[...Array(6)].map((__, j) => (
@@ -335,7 +365,7 @@ export default function Product() {
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Category mix</h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Share of sales · same period</p>
           </div>
-          {catLoading ? (
+          {catLoading && pieData.length === 0 ? (
             <div className="flex-1 min-h-[220px] flex items-center justify-center">
               <div className="h-40 w-40 rounded-full animate-pulse" style={{ background: 'rgba(128,128,128,0.08)' }} />
             </div>

@@ -136,7 +136,7 @@ function PieLegend({ items, isDark }: { items: { name: string; value: number }[]
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Analytics() {
   const { isDark } = useTheme();
-  const [period, setPeriod] = useState('mtd');
+  const [period, setPeriod] = useState('today');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [expandBranches, setExpandBranches] = useState(false);
@@ -155,6 +155,8 @@ export default function Analytics() {
   );
 
   const uiLoading = loading && !data && !waitingForCustomDates;
+  // For custom range, show a descriptive "fetching..." message while loading.
+  const customFetching = period === 'custom' && canFetchCustom && loading && !data;
 
   useEffect(() => {
     // fetchAndApplySnapshot seeds analytics-page:{period}:: from the server-side
@@ -238,6 +240,23 @@ export default function Analytics() {
 
   const showBarLabels = chartData.length <= 31;
 
+  // Show Last Year series only when at least one point has actual LY data.
+  // After a server restart the bundle returns prior=0 for all points; hiding
+  // the ghost bars prevents misleading "Last Year = 0" on the chart.
+  const hasLyData = useMemo(
+    () => chartData.some((p) => (p.prior ?? 0) > 0),
+    [chartData],
+  );
+
+  // Show a subtle "loading LY data" badge for periods that have YoY comparison
+  // but the dashboard merge hasn't arrived yet (LY bars will appear shortly).
+  const lyLoadingBadge =
+    !hasLyData
+    && !chartLoading
+    && chartData.length > 0
+    && (period === 'qtd' || period === 'ytd' || period === 'last_6m' || period === 'mtd')
+    && !data?.checksum;
+
   // ── Breakdown chart data ───────────────────────────────────────────────────
   const daywiseAreaData = useMemo(() =>
     (data?.daywise ?? []).map(d => ({
@@ -255,9 +274,17 @@ export default function Analytics() {
     allBranches.slice(0, 15).map(b => ({ name: b.name.slice(0, 12), value: b.revenue })),
     [allBranches]);
 
+  const departmentRows = data?.departments ?? [];
+  const deptChartLoading =
+    (chartLoading || loading) && departmentRows.length === 0
+    && ((data?.categories?.length ?? 0) > 0 || (data?.branches?.length ?? 0) > 0);
+
   const topDepts = useMemo(() =>
-    (data?.departments ?? []).slice(0, 15).map(d => ({ name: d.name.slice(0, 12), value: d.revenue })),
-    [data?.departments]);
+    departmentRows.slice(0, 15).map(d => ({
+      name: (d.name || '—').slice(0, 14),
+      value: d.revenue,
+    })),
+    [departmentRows]);
 
   // ── Breakdown renderChart helpers ──────────────────────────────────────────
   const tooltipStyle = {
@@ -519,6 +546,26 @@ export default function Analytics() {
             Choose a start date and end date above, then analytics for that range will load here.
           </p>
         </Card>
+      ) : customFetching ? (
+        <Card className="p-12 flex flex-col items-center justify-center text-center gap-3">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+            style={{
+              background: isDark ? 'rgba(88,130,255,0.12)' : 'rgba(88,130,255,0.08)',
+              border: '1px solid rgba(88,130,255,0.2)',
+            }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5882ff"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className="animate-spin">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+          </div>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Fetching data for {customStart} → {customEnd}
+          </p>
+          <p className="text-xs max-w-sm" style={{ color: 'var(--text-muted)' }}>
+            Querying SQL Server for the selected date range. Large ranges may take a moment…
+          </p>
+        </Card>
       ) : (
       <>
       {/* ── KPI cards ── */}
@@ -601,19 +648,31 @@ export default function Analytics() {
       <Card className="p-5">
         <div className="flex items-center justify-between mb-1">
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Sales — Current vs Same Period Last Year
+            {hasLyData ? 'Sales — Current vs Same Period Last Year' : 'Sales — Current Period'}
           </h2>
           <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-2 rounded-sm" style={{ background: '#5882ff' }} />Current
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-2 rounded-sm" style={{ background: '#94a3b8' }} />Last Year
-            </div>
+            {hasLyData && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-2 rounded-sm" style={{ background: '#94a3b8' }} />Last Year
+              </div>
+            )}
+            {lyLoadingBadge && (
+              <div className="flex items-center gap-1" style={{ color: 'var(--text-muted)', fontSize: 10, opacity: 0.7 }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                Loading last year…
+              </div>
+            )}
           </div>
         </div>
         <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-          {data?.granularity === 'month' ? 'Month-wise' : 'Day-wise'} · YoY comparison · Labels in Lakhs
+          {period === 'today'
+            ? 'Single day snapshot · Labels in Lakhs'
+            : `${data?.granularity === 'month' ? 'Month-wise' : 'Day-wise'} · ${hasLyData ? 'YoY comparison · ' : ''}Labels in Lakhs`}
         </p>
         {chartLoading ? (
           <div className="h-72 animate-pulse rounded-xl"
@@ -646,8 +705,10 @@ export default function Analytics() {
                   />
                 )}
               </Bar>
-              <Bar dataKey="prior" name="Last Year"
-                fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={36} />
+              {hasLyData && (
+                <Bar dataKey="prior" name="Last Year"
+                  fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={36} />
+              )}
             </BarChart>
           </ResponsiveContainer>
         )}
@@ -853,23 +914,26 @@ export default function Analytics() {
       {/* ── Detailed breakdown sections with Bar/Line/Pie toggle ── */}
       <div className="space-y-4">
 
-        <BreakdownTable
-          title="Day-wise Sales"
-          subtitle={`${data?.daywise?.length ?? 0} days · current vs last year`}
-          loading={uiLoading}
-          isDark={isDark}
-          columns={['#', 'Date', 'Label', 'Sales', 'Bills', 'Qty', 'LY Sales']}
-          rows={(data?.daywise ?? []).map((d, i) => [
-            String(i + 1),
-            d.date,
-            formatChartLabel(d.label || d.date, gran),
-            fmtLakhs(d.sales),
-            fmtCount(d.bills),
-            fmtCount(d.quantity),
-            d.prior > 0 ? fmtLakhs(d.prior) : '—',
-          ])}
-          renderChart={renderDaywise}
-        />
+        {/* Day-wise breakdown hidden for Today — single-day view makes row table redundant */}
+        {period !== 'today' && (
+          <BreakdownTable
+            title="Day-wise Sales"
+            subtitle={`${data?.daywise?.length ?? 0} days · current vs last year`}
+            loading={uiLoading}
+            isDark={isDark}
+            columns={['#', 'Date', 'Label', 'Sales', 'Bills', 'Qty', 'LY Sales']}
+            rows={(data?.daywise ?? []).map((d, i) => [
+              String(i + 1),
+              d.date,
+              formatChartLabel(d.label || d.date, gran),
+              fmtLakhs(d.sales),
+              fmtCount(d.bills),
+              fmtCount(d.quantity),
+              d.prior > 0 ? fmtLakhs(d.prior) : '—',
+            ])}
+            renderChart={renderDaywise}
+          />
+        )}
 
         <BreakdownTable
           title="Category-wise Sales"
@@ -906,16 +970,18 @@ export default function Analytics() {
         <BreakdownTable
           title="Department-wise Sales"
           subtitle={
-            (data?.departments?.length ?? 0) > 0
-              ? `${data?.departments?.length} departments${uiLoading ? ' · refreshing…' : ''}`
-              : 'Loading departments… (can be slow on first load)'
+            departmentRows.length > 0
+              ? `${departmentRows.length} departments${deptChartLoading ? ' · loading…' : ''}`
+              : deptChartLoading
+                ? 'Loading department breakdown…'
+                : 'No department data for this period'
           }
-          loading={chartLoading && !(data?.departments?.length)}
+          loading={deptChartLoading}
           isDark={isDark}
           columns={['#', 'Department', 'Sales', 'Share %', 'Bills']}
-          rows={(data?.departments ?? []).map((d, i) => [
+          rows={departmentRows.map((d, i) => [
             String(i + 1),
-            d.name,
+            d.name || '—',
             fmtLakhs(d.revenue),
             `${d.percentage.toFixed(2)}%`,
             fmtCount((d as any).transactions ?? 0),

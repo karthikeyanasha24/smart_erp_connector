@@ -18,7 +18,10 @@ async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: numb
   const token = getAuthToken();
   const timeoutMs = init?.timeoutMs ?? (path.includes('/analytics/') ? 600_000 : 60_000);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(
+    () => controller.abort(new DOMException(`Request timed out after ${Math.round(timeoutMs / 1000)}s`, 'TimeoutError')),
+    timeoutMs,
+  );
   const { timeoutMs: _t, ...rest } = init ?? {};
 
   const res = await fetch(`${BASE}${path}`, {
@@ -238,6 +241,7 @@ export interface NLQRequest {
   query: string;
   conversation_id?: string;
   top_n?: number;
+  provider?: 'claude' | 'openai';
 }
 
 export interface NLQResponse {
@@ -442,6 +446,9 @@ export const analytics = {
     txn_list_mtd: TransactionsResponse | null;
     txn_list_today: TransactionsResponse | null;
     txn_summary_mtd: TransactionSummary | null;
+    // Products page — product master catalog + top products MTD
+    product_catalog?: ProductCatalogResponse | null;
+    top_products_mtd?: TopProductsResponse | null;
   }>('/analytics/snapshot', { timeoutMs: 8_000 }),
 
   transactionSummary: (period = 'mtd') =>
@@ -484,7 +491,7 @@ export const analytics = {
     ),
 
   viewsCatalog: () =>
-    apiFetch<ViewsCatalogResponse>('/analytics/views', { timeoutMs: 60_000 }),
+    apiFetch<ViewsCatalogResponse>('/analytics/views', { timeoutMs: 120_000 }),
 
   viewQuery: (params: { view: string; page?: number; page_size?: number }) => {
     const qs = new URLSearchParams();
@@ -498,7 +505,12 @@ export const analytics = {
 // ── AI / NLQ ──────────────────────────────────────────────────────────────────
 export const ai = {
   query: (body: NLQRequest) =>
-    apiFetch<NLQResponse>('/ai/query', { method: 'POST', body: JSON.stringify(body) }),
+    apiFetch<NLQResponse>('/ai/query', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      // Verified FAQ SQL can run for several minutes on large ERP views.
+      timeoutMs: 900_000,
+    }),
 
   verifiedSuggestions: (limit = 50) =>
     apiFetch<VerifiedSuggestionsResponse>(
@@ -513,7 +525,29 @@ export const ai = {
       method: 'POST',
       body: JSON.stringify({ sql }),
     }),
+
+  pageInsights: (period = 'mtd') =>
+    apiFetch<PageInsightsResponse>(`/ai/page-insights?period=${encodeURIComponent(period)}`),
 };
+
+export interface PageInsight {
+  id: string;
+  type: 'anomaly' | 'forecast' | 'recommendation' | 'alert';
+  title: string;
+  description: string;
+  confidence: number;
+  impact: 'high' | 'medium' | 'low';
+  severity: 'info' | 'warning' | 'critical';
+}
+
+export interface PageInsightsResponse {
+  success: boolean;
+  period: string;
+  insights: PageInsight[];
+  executive_summary: string | null;
+  data_available: boolean;
+  from_cache: boolean;
+}
 
 // ── Public health (no JWT; boot loader) ─────────────────────────────────────────
 const PUBLIC_FETCH_MS = 12_000;

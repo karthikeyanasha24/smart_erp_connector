@@ -177,7 +177,7 @@ def _kpi_cache_ttl_s(period: str) -> Optional[float]:
     """Intraday periods change every minute — do not hold 30m server cache."""
     if period in ("today", "yesterday"):
         return 60.0
-    return None
+    return 14400.0   # 4 hours -- MTD/QTD/YTD/Last6M survive overnight restarts in PG
 
 
 async def get_home_kpis(period: str = "mtd") -> Dict[str, Any]:

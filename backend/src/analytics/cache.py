@@ -27,6 +27,15 @@ def _is_intraday(key: str) -> bool:
     return any(key.startswith(p) for p in _INTRADAY_PREFIXES)
 
 
+def _is_department_chart_key(key: str) -> bool:
+    return "chart:department:" in key
+
+
+def _reject_empty_department_cache(key: str, value: Any) -> bool:
+    """Empty department lists are not cached — they usually mean a failed cold SQL hit."""
+    return _is_department_chart_key(key) and isinstance(value, list) and len(value) == 0
+
+
 # --- Entry --------------------------------------------------------------------
 
 @dataclass
@@ -77,10 +86,18 @@ class AnalyticsCache:
         entry.hits += 1
 
         if entry.is_fresh:
+            if _reject_empty_department_cache(key, entry.value):
+                del self._store[key]
+                self._stats["misses"] += 1
+                return None, False
             self._stats["hits"] += 1
             return entry.value, True
 
         if entry.is_stale_ok:
+            if _reject_empty_department_cache(key, entry.value):
+                del self._store[key]
+                self._stats["misses"] += 1
+                return None, False
             self._stats["stale_hits"] += 1
             return entry.value, False
 
@@ -89,6 +106,9 @@ class AnalyticsCache:
         return None, False
 
     def set(self, key: str, value: Any, ttl_s: Optional[float] = None) -> None:
+        if _reject_empty_department_cache(key, value):
+            self.delete(key)
+            return
         ttl = ttl_s if ttl_s is not None else self._default_ttl_s
         self._store[key] = CacheEntry(value=value, created_at=time.time(), ttl_s=ttl, key=key)
         if not _is_intraday(key):
@@ -243,7 +263,9 @@ class AnalyticsCache:
                 ttl_s,
             )
         except Exception as exc:
-            logger.warning("Cache PG write failed", key=key, error=str(exc))
+            # repr() gives more detail than str() for asyncpg / RuntimeError exceptions
+            err_msg = repr(exc) if not str(exc) else str(exc)
+            logger.warning("Cache PG write failed", key=key, error=err_msg)
 
     async def restore_from_pg(self) -> int:
         """
@@ -286,6 +308,10 @@ class AnalyticsCache:
             try:
                 value = json.loads(row["value_json"])
             except Exception:
+                skipped += 1
+                continue
+
+            if _reject_empty_department_cache(key, value):
                 skipped += 1
                 continue
 

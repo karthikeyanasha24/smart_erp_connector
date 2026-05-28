@@ -35,6 +35,7 @@ class NLQRequest(BaseModel):
     query: str = Field(min_length=2, max_length=1000)
     conversation_id: Optional[str] = None
     top_n: Optional[int] = Field(default=None, ge=1, le=200)
+    provider: str = Field(default="claude", pattern="^(claude|openai)$")
 
 
 class ExplainSQLRequest(BaseModel):
@@ -86,6 +87,7 @@ async def nlq_query(
             user_id=user.user_id,
             conv_id=body.conversation_id,
             top_n_override=body.top_n,
+            provider=body.provider,
         )
 
         return {
@@ -203,6 +205,32 @@ async def remove_conversation(
 
     delete_conversation(conv_id)
     return {"success": True, "message": "Conversation deleted"}
+
+
+@router.get("/page-insights", dependencies=[Depends(require_permission("query:*"))])
+async def page_insights(
+    period: str = "mtd",
+) -> Dict[str, Any]:
+    """
+    Auto-generate AI business insights from cached ERP analytics data.
+    Reads only from in-memory/PG cache — never fires SQL queries directly.
+    Falls back to an empty list if no data is cached yet.
+    """
+    from src.ai.auto_insights import generate_page_insights
+    from fastapi import Query as Q
+    try:
+        return await generate_page_insights(period=period)
+    except Exception as exc:
+        logger.warning("Auto-insights generation failed", error=str(exc))
+        return {
+            "success": False,
+            "period": period,
+            "insights": [],
+            "executive_summary": None,
+            "data_available": False,
+            "from_cache": True,
+            "_error": str(exc),
+        }
 
 
 @router.post("/insights", dependencies=[Depends(require_permission("query:*"))])

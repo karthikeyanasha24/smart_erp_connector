@@ -63,6 +63,25 @@ async def fetch_product_catalog(
     limit = max(5, min(int(limit), 500))
     offset = max(0, min(int(offset), 500_000))
 
+    # Cache the first page (no search, offset=0) so the Products page loads instantly.
+    # TTL: 30 minutes — product master doesn't change frequently.
+    if not search and offset == 0:
+        cache_key = f"product_catalog:v1:{limit}:0"
+        _CATALOG_TTL = 1800  # 30 min
+
+        async def _fetch_catalog() -> Dict[str, Any]:
+            return await _fetch_product_catalog_raw(search, limit, offset)
+
+        return await cache.get_or_fetch(cache_key, _fetch_catalog, ttl_s=_CATALOG_TTL)
+
+    return await _fetch_product_catalog_raw(search, limit, offset)
+
+
+async def _fetch_product_catalog_raw(
+    search: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Dict[str, Any]:
     view = sql_table(cfg.PRODUCT_MASTER_VIEW)
     like = None
     where_extra = ""

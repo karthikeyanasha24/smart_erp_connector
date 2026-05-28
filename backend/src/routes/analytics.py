@@ -13,6 +13,8 @@ GET /analytics/branches/{alias}     — Branch detail + trend
 GET /analytics/health               — DB health check
 POST /analytics/cache/clear         — Clear cache (admin)
 GET /analytics/cache/stats          — Cache stats (admin)
+GET /analytics/views                — List all ERP views from semantic catalog
+GET /analytics/views/query          — Paginate rows from a whitelisted ERP view
 """
 
 from __future__ import annotations
@@ -83,8 +85,26 @@ async def sales_dashboard(
         data = await get_dashboard(period, start_date, end_date)
         return {"success": True, **data}
     except Exception as exc:
-        logger.error("Dashboard fetch failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Dashboard fetch failed", period=period, error=str(exc))
+        # Fallback: if we have ANY cached entry (even stale/expired), return it rather
+        # than a 500 — users see last-known data with a warning instead of a broken page.
+        from src.analytics.cache import cache as _cache
+        cache_key = f"dashboard:v7:{period}:{start_date}:{end_date}"
+        stale_val, _ = _cache.get(cache_key)
+        if stale_val is not None:
+            logger.warning("Returning stale dashboard data due to fetch error", period=period)
+            return {"success": True, **stale_val, "_stale": True, "_error": str(exc)}
+        # No cached entry at all — return empty scaffold so frontend doesn't crash
+        logger.error("No cached dashboard data available, returning empty scaffold", period=period)
+        return {
+            "success": False,
+            "_error": str(exc),
+            "summary": None,
+            "trend": [],
+            "branches": [],
+            "categories": [],
+            "departments": [],
+        }
 
 
 # ─── Snapshot (instant cached data — zero SQL Server latency) ────────────────
@@ -346,6 +366,10 @@ async def analytics_snapshot(
         "chart:category:v2:mtd:8",
     ])
 
+    # Products page — product master catalog page 1 (no search) + top products MTD
+    product_catalog = _first(["product_catalog:v1:50:0"])
+    top_products_mtd = _first(["chart:topproducts:v1:mtd:15"])
+
     has_data = bool(
         mtd_kpis or mtd_dashboard or today_kpis or today_dash
         or qtd_dashboard or ytd_dashboard or last6m_dashboard
@@ -375,6 +399,8 @@ async def analytics_snapshot(
         "txn_list_mtd": txn_list_mtd,
         "txn_list_today": txn_list_today,
         "txn_summary_mtd": txn_summary_mtd,
+        "product_catalog": product_catalog,
+        "top_products_mtd": top_products_mtd,
         "cache_stats": cache.stats(),
     }
 
@@ -391,7 +417,13 @@ async def home_kpis(
         data = await get_home_kpis(period)
         return {"success": True, "period": period, **data}
     except Exception as exc:
-        logger.error("KPI fetch failed", error=str(exc))
+        logger.error("KPI fetch failed", period=period, error=str(exc))
+        from src.analytics.cache import cache as _cache
+        cache_key = f"kpi:v4:{period}"
+        stale_val, _ = _cache.get(cache_key)
+        if stale_val is not None:
+            logger.warning("Returning stale KPI data due to fetch error", period=period)
+            return {"success": True, "period": period, **stale_val, "_stale": True}
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -568,6 +600,15 @@ async def top_products_api(
     user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
     _validate_period(period)
+    n = max(5, min(int(top_n), 80))
+    # Check analytics cache BEFORE entering the SQL semaphore.
+    # fetch_top_products does the same check internally, but run_analytics_sql
+    # acquires the semaphore first — meaning even a cache hit queues behind 3
+    # active SQL queries.  Reading the cache here avoids that delay entirely.
+    cache_key = f"chart:topproducts:v1:{period}:{n}"
+    cached = cache.get(cache_key)
+    if cached:
+        return {"success": True, "period": period, "products": cached}
     try:
         items = await run_analytics_sql(fetch_top_products(period, top_n))
         return {"success": True, "period": period, "products": items}
@@ -671,33 +712,18 @@ async def views_catalog(
 
 @router.get("/views/query")
 async def views_query(
-    view: str = Query(..., min_length=1, description="Semantic view key, e.g. ai_branch"),
+    view: str = Query(..., description="View key from catalog"),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=5, le=500),
+    page_size: int = Query(default=50, ge=1, le=500),
     user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Paginated SELECT * from a catalog view (OFFSET/FETCH)."""
+    """Paginate rows from a whitelisted ERP view."""
     try:
-        data = await run_analytics_sql(fetch_view_page(view, page=page, page_size=page_size))
+        data = await run_analytics_sql(fetch_view_page(view, page, page_size))
         return {"success": True, **data}
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.error("views_query_failed", view=view, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.error("views_query_failed", view=view, page=page, error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
 
-
-# ─── Cache Admin ──────────────────────────────────────────────────────────────
-
-@router.post("/cache/clear", dependencies=[Depends(require_roles("admin"))])
-async def clear_cache(prefix: Optional[str] = None) -> Dict[str, Any]:
-    if prefix:
-        n = cache.invalidate_prefix(prefix)
-        return {"success": True, "cleared": n, "prefix": prefix}
-    n = cache.clear()
-    return {"success": True, "cleared": n}
-
-
-@router.get("/cache/stats", dependencies=[Depends(require_roles("admin", "manager"))])
-async def cache_stats() -> Dict[str, Any]:
-    return {"success": True, "cache": cache.stats()}

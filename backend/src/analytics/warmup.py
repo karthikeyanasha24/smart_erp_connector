@@ -79,6 +79,18 @@ async def warmup_all() -> None:
             logger.warning(f"PG flush after {label} failed", error=str(exc))
 
     try:
+        # Kick off the slow product catalog fetch as a background task immediately —
+        # it takes ~7 min cold so we start it now and await it at the end of Phase 3.
+        # This way it runs in parallel with all dashboard phases instead of blocking them.
+        from src.analytics.products_catalog import fetch_product_catalog, fetch_top_products
+        _products_task = asyncio.create_task(
+            _safe("products:catalog", fetch_product_catalog(limit=50, offset=0))
+        )
+        _top_products_task = asyncio.create_task(
+            _safe("products:top:mtd", fetch_top_products("mtd", 15))
+        )
+        logger.info("Product catalog warmup started in background (runs alongside all phases)")
+
         # Phase 0: KPIs (fast -- 2 SQL queries each, cached after ~5-10s)
         logger.info("Cache warmup Phase 0 -- critical KPIs (today + MTD)")
         await asyncio.gather(
@@ -91,60 +103,79 @@ async def warmup_all() -> None:
             elapsed_s=round((__import__('time').perf_counter() - _t0), 1),
         )
 
-        # Phase 1: MTD + Today dashboards + first-page transactions in parallel.
-        # These are the charts -- once this phase completes the full dashboard is cached.
-        # Transactions page 1 (page_size=12) is also warmed so it loads instantly.
+        # Phase 1: MTD + Today + QTD dashboards + first-page transactions in parallel.
+        # QTD is promoted to Phase 1 because it's the 3rd most-used Analytics tab and
+        # users expect it to load as fast as MTD. The semaphore (max 3 concurrent SQL
+        # queries) ensures SQL Server is not overloaded — extra tasks queue behind it.
         from src.analytics.transactions import get_transactions as _get_txns
-        logger.info("Cache warmup Phase 1 -- today/MTD dashboards + transactions (charts data)")
+        logger.info("Cache warmup Phase 1 -- today/MTD/QTD dashboards + breakdown bundles")
         await asyncio.gather(
             _safe("dashboard:mtd",      get_dashboard("mtd")),
             _safe("dashboard:today",    get_dashboard("today")),
+            _safe("dashboard:qtd",      get_dashboard("qtd")),
+            _safe("bundle:mtd",         _prime_breakdown_bundle("mtd")),
+            _safe("bundle:today",       _prime_breakdown_bundle("today")),
+            _safe("bundle:qtd",         _prime_breakdown_bundle("qtd")),
+            _safe("kpi:qtd",            get_home_kpis("qtd")),
+            _safe("department:mtd",     run_analytics_sql(get_department_chart("mtd"))),
+            _safe("department:today",   run_analytics_sql(get_department_chart("today"))),
             _safe("txns:mtd:p1",        run_analytics_sql(_get_txns("mtd",   1, 12))),
             _safe("txns:today:p1",      run_analytics_sql(_get_txns("today", 1, 12))),
         )
         await _flush("Phase 1")
         logger.info(
-            "Phase 1 complete -- ALL dashboard charts load instantly on next restart",
+            "Phase 1 complete -- ALL dashboard charts + QTD load instantly on next restart",
             elapsed_s=round((__import__('time').perf_counter() - _t0), 1),
         )
 
-        # Phase 2: QTD + YTD + Last-6M (always warm — Analytics tabs need these)
+        # Phase 2: Last-6M (always warm — frequently used Analytics tab)
         # Run in parallel; semaphore caps concurrency so SQL Server is not overloaded.
-        logger.info("Cache warmup Phase 2 -- QTD + YTD + Last-6M (always on)")
+        logger.info("Cache warmup Phase 2 -- Last-6M (always on)")
         await asyncio.gather(
-            _safe("kpi:qtd",         get_home_kpis("qtd")),
-            _safe("kpi:last_6m",     get_home_kpis("last_6m")),
-            _safe("bundle:qtd",      _prime_breakdown_bundle("qtd")),
-            _safe("dashboard:qtd",   get_dashboard("qtd")),
-            _safe("bundle:last_6m",  _prime_breakdown_bundle("last_6m")),
-            _safe("dashboard:last_6m", get_dashboard("last_6m")),
+            _safe("kpi:last_6m",        get_home_kpis("last_6m")),
+            _safe("bundle:last_6m",     _prime_breakdown_bundle("last_6m")),
+            _safe("dashboard:last_6m",  get_dashboard("last_6m")),
+            _safe("department:qtd",     run_analytics_sql(get_department_chart("qtd"))),
         )
         await _flush("Phase 2")
 
-        # Phase 3: YTD (slowest scan — dedicate a phase so Phase 2 flush happens sooner)
-        logger.info("Cache warmup Phase 3 -- YTD (slow full-year scan)")
+        # Phase 3: last_7d + last_30d + YTD + product catalog background tasks.
+        # last_7d and last_30d are always warm now — Transactions and Branch pages use them.
+        logger.info("Cache warmup Phase 3 -- last_7d + last_30d + YTD + products")
         await asyncio.gather(
-            _safe("kpi:ytd",       get_home_kpis("ytd")),
-            _safe("bundle:ytd",    _prime_breakdown_bundle("ytd")),
-            _safe("dashboard:ytd", get_dashboard("ytd")),
+            _safe("kpi:ytd",         get_home_kpis("ytd")),
+            _safe("bundle:ytd",      _prime_breakdown_bundle("ytd")),
+            _safe("dashboard:ytd",   get_dashboard("ytd")),
+            _safe("kpi:last_7d",     get_home_kpis("last_7d")),
+            _safe("bundle:last_7d",  _prime_breakdown_bundle("last_7d")),
+            _safe("dashboard:last_7d", get_dashboard("last_7d")),
+            _products_task,
+            _top_products_task,
         )
         await _flush("Phase 3")
 
+        # Phase 4: last_30d (always on, not deep-mode-only — Transactions page needs it)
+        logger.info("Cache warmup Phase 4 -- last_30d")
+        await asyncio.gather(
+            _safe("kpi:last_30d",       get_home_kpis("last_30d")),
+            _safe("bundle:last_30d",    _prime_breakdown_bundle("last_30d")),
+            _safe("dashboard:last_30d", get_dashboard("last_30d")),
+        )
+        await _flush("Phase 4")
+
         if cfg.ANALYTICS_WARMUP_DEEP:
-            # Phase 4: last_30d detailed breakdown (optional deep mode)
-            logger.info("Cache warmup Phase 4 -- last_30d charts + kpis (deep mode)")
+            # Phase 5: deep charts for last_30d (optional)
+            logger.info("Cache warmup Phase 5 -- last_30d detailed charts (deep mode)")
             await asyncio.gather(
-                _safe("kpi:last_30d",        get_home_kpis("last_30d")),
-                _safe("dashboard:last_30d",  get_dashboard("last_30d")),
                 _safe("trend:last_30d",      get_revenue_trend("last_30d")),
                 _safe("category:last_30d",   get_category_breakdown("last_30d")),
                 _safe("branch:last_30d",     get_branch_chart("last_30d")),
                 _safe("department:last_30d", get_department_chart("last_30d")),
                 _safe("salesperson:last_30d",get_top_salespersons("last_30d")),
             )
-            await _flush("Phase 4")
+            await _flush("Phase 5")
         else:
-            logger.info("Deep warmup (Phase 4) skipped -- set ANALYTICS_WARMUP_DEEP=true to enable")
+            logger.info("Deep warmup (Phase 5) skipped -- set ANALYTICS_WARMUP_DEEP=true to enable")
 
         stats = cache.stats()
         logger.info("Cache warmup complete", **stats)
@@ -201,11 +232,9 @@ async def _prime_breakdown_bundle(period: str) -> None:
         run_analytics_sql(_departments()),
         run_analytics_sql(_kpis()),
     )
-    full = {
-        **lean,
-        "kpis": kpis,
-        "departments": departments,
-    }
+    with_depts = {**lean, "departments": departments}
+    full = {**with_depts, "kpis": kpis}
+    cache.set(f"bundle:v2:{period}:{n}:d1:k0", with_depts)
     cache.set(f"bundle:v2:{period}:{n}:d0:k1", full)
     cache.set(f"bundle:v2:{period}:{n}:d1:k1", full)
     prime_chart_caches_from_bundle(period, full, top_n=n)

@@ -121,6 +121,7 @@ async def process_query(
     user_id: str = "anonymous",
     conv_id: Optional[str] = None,
     top_n_override: Optional[int] = None,
+    provider: str = "claude",
 ) -> NLQResponse:
     start = time.perf_counter()
     warnings: List[str] = []
@@ -237,6 +238,7 @@ async def process_query(
         period_label=date_range.label,
         value_column=col_info["value"],
         label_column=col_info["label"] or None,
+        provider=provider,
     )
 
     narrative = insight_data.get("summary") or (

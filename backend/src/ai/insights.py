@@ -17,6 +17,19 @@ import anthropic
 from src.config import cfg
 from src.utils.logger import logger
 
+# ─── OpenAI client (lazy) ─────────────────────────────────────────────────────
+_openai_client = None
+
+def _get_openai_client():
+    global _openai_client
+    if _openai_client is None:
+        try:
+            from openai import AsyncOpenAI  # type: ignore
+            _openai_client = AsyncOpenAI(api_key=cfg.OPENAI_API_KEY)
+        except ImportError:
+            raise RuntimeError("openai package not installed. Run: pip install openai")
+    return _openai_client
+
 # ─── Types ────────────────────────────────────────────────────────────────────
 
 InsightSeverity = str   # "info" | "warning" | "critical"
@@ -247,36 +260,58 @@ async def generate_ai_summary(
     records: List[Dict[str, Any]],
     intent_type: str = "aggregate",
     period_label: str = "this period",
+    provider: str = "claude",
 ) -> Optional[str]:
-    """Generate a 2-3 sentence AI narrative about the query result."""
-    if not cfg.ANTHROPIC_API_KEY or not records:
+    """Generate a 2-3 sentence AI narrative about the query result.
+
+    Routes to Claude (Anthropic) or ChatGPT (OpenAI) based on `provider`.
+    """
+    if not records:
         return None
 
-    # Limit data sent to AI
     sample = records[:20]
     data_str = json.dumps(sample, default=str)
+    user_content = (
+        f'Query: "{query}"\n'
+        f"Period: {period_label}\n"
+        f"Intent: {intent_type}\n"
+        f"Data ({len(records)} rows):\n{data_str}\n\n"
+        "Write a business insight summary."
+    )
 
     try:
+        if provider == "openai":
+            if not cfg.OPENAI_API_KEY:
+                logger.warning("OpenAI API key not configured, falling back to Claude")
+                provider = "claude"
+            else:
+                oai = _get_openai_client()
+                response = await oai.chat.completions.create(
+                    model=cfg.OPENAI_MODEL,
+                    max_tokens=256,
+                    messages=[
+                        {"role": "system", "content": _SUMMARY_SYSTEM},
+                        {"role": "user", "content": user_content},
+                    ],
+                )
+                text = response.choices[0].message.content or ""
+                logger.info("OpenAI summary generated", model=cfg.OPENAI_MODEL, chars=len(text))
+                return text.strip() or None
+
+        # Claude (default)
+        if not cfg.ANTHROPIC_API_KEY:
+            return None
         client = _get_client()
         response = await client.messages.create(
             model=cfg.ANTHROPIC_MODEL,
             max_tokens=256,
             system=_SUMMARY_SYSTEM,
-            messages=[{
-                "role": "user",
-                "content": (
-                    f'Query: "{query}"\n'
-                    f"Period: {period_label}\n"
-                    f"Intent: {intent_type}\n"
-                    f"Data ({len(records)} rows):\n{data_str}\n\n"
-                    "Write a business insight summary."
-                ),
-            }],
+            messages=[{"role": "user", "content": user_content}],
         )
         return (response.content[0].text or "").strip() if response.content else None
 
     except Exception as exc:
-        logger.warning("AI summary generation failed", error=str(exc))
+        logger.warning("AI summary generation failed", provider=provider, error=str(exc))
         return None
 
 
@@ -290,6 +325,7 @@ async def generate_insights(
     value_column: str = "Revenue",
     label_column: Optional[str] = None,
     date_column: str = "TransactionDate",
+    provider: str = "claude",
 ) -> Dict[str, Any]:
     """
     Full insight pipeline:
@@ -315,7 +351,7 @@ async def generate_insights(
     # AI summary
     ai_summary: Optional[str] = None
     if cfg.AI_ADAPTIVE_SUMMARY and records:
-        ai_summary = await generate_ai_summary(query, records, intent_type, period_label)
+        ai_summary = await generate_ai_summary(query, records, intent_type, period_label, provider)
 
     return {
         "insights": [i.to_dict() for i in rule_insights],

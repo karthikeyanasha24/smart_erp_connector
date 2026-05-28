@@ -6,6 +6,7 @@ Backs the RBAC system, conversation memory, and audit log.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Dict, List, Optional, Callable
 
@@ -14,15 +15,39 @@ import asyncpg
 from src.config import cfg
 from src.utils.logger import logger
 
-# ─── Pool Singleton ───────────────────────────────────────────────────────────
+# ─── Pool Singleton + Circuit Breaker ────────────────────────────────────────
 
 _pool: Optional[asyncpg.Pool] = None
+_pg_unavailable_until: float = 0.0   # epoch seconds; 0 = not in backoff
+_PG_CONNECT_TIMEOUT_S = 10.0         # fail fast — don't block the event loop for 60s
+_PG_BACKOFF_S = 30.0                 # after failure, skip retries for 30 s
+
+
+def _pg_is_circuit_open() -> bool:
+    """True when we are in the backoff window and should skip PG entirely."""
+    return time.time() < _pg_unavailable_until
+
+
+def _trip_circuit() -> None:
+    """Mark PG as unavailable for _PG_BACKOFF_S seconds."""
+    global _pg_unavailable_until
+    _pg_unavailable_until = time.time() + _PG_BACKOFF_S
+    logger.warning(
+        "PostgreSQL circuit open — skipping for %.0fs", _PG_BACKOFF_S,
+    )
 
 
 async def get_pg_pool() -> asyncpg.Pool:
     global _pool
+
     if _pool is not None:
         return _pool
+
+    # Circuit breaker: if a recent connect attempt failed, don't retry yet.
+    if _pg_is_circuit_open():
+        raise RuntimeError(
+            f"PostgreSQL unavailable (circuit open for {int(_pg_unavailable_until - time.time())}s)"
+        )
 
     if not cfg.rbac_url:
         raise RuntimeError("RBAC_DATABASE_URL / DATABASE_URL is not set")
@@ -35,15 +60,23 @@ async def get_pg_pool() -> asyncpg.Pool:
         or "sslmode=require" in url.lower()
     )
 
-    _pool = await asyncpg.create_pool(
-        dsn=url,
-        min_size=2,
-        max_size=10,
-        command_timeout=30,
-        ssl="require" if ssl_required else None,
-    )
-    logger.info("PostgreSQL pool created")
-    return _pool
+    try:
+        _pool = await asyncio.wait_for(
+            asyncpg.create_pool(
+                dsn=url,
+                min_size=1,
+                max_size=10,
+                command_timeout=30,
+                ssl="require" if ssl_required else None,
+            ),
+            timeout=_PG_CONNECT_TIMEOUT_S,
+        )
+        logger.info("PostgreSQL pool created")
+        return _pool
+    except (asyncio.TimeoutError, Exception) as exc:
+        _pool = None
+        _trip_circuit()
+        raise RuntimeError(f"PostgreSQL connect failed: {exc}") from exc
 
 
 async def close_pg_pool() -> None:

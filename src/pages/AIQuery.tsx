@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   Send, Sparkles, Code2, BarChart2, Loader2,
-  Zap, Brain, Terminal, Copy, Check, ArrowRight, Database, ShieldCheck,
+  Zap, Brain, Terminal, Copy, Check, ArrowRight, Database, ShieldCheck, ChevronDown,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { ai, NLQResponse, fetchPublicHealth } from '../lib/api';
@@ -32,6 +32,7 @@ interface Message {
   insights?: Array<{ title?: string; description?: string; severity?: string }>;
   thinking?: string;
   faqTemplateId?: string | null;
+  provider?: 'claude' | 'openai';
   timestamp: string;
 }
 
@@ -196,14 +197,16 @@ function ThinkingBubble({ text }: { text: string }) {
   );
 }
 
-function nlqToMessage(resp: NLQResponse, id: string): Message {
+function nlqToMessage(resp: NLQResponse, id: string, usedProvider: 'claude' | 'openai'): Message {
   const viz = buildNLQVisualization(resp.records ?? [], resp.chart_type);
 
+  const providerLabel = usedProvider === 'openai' ? 'ChatGPT' : 'Claude';
   const thinkingParts = [
     resp.faq_template_id ? `Verified FAQ · ${resp.faq_template_id}` : resp.from_template ? 'Template SQL' : 'Generated SQL',
     `${resp.record_count} rows`,
     resp.period_label || resp.period,
     `${resp.duration_ms}ms`,
+    providerLabel,
   ];
 
   return {
@@ -220,6 +223,7 @@ function nlqToMessage(resp: NLQResponse, id: string): Message {
     insights: (resp.insights ?? []) as Message['insights'],
     thinking: thinkingParts.join(' · '),
     faqTemplateId: resp.faq_template_id,
+    provider: usedProvider,
     timestamp: new Date().toLocaleTimeString(),
   };
 }
@@ -236,6 +240,8 @@ export default function AIQuery() {
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
   const [queryCount, setQueryCount] = useState(0);
   const [lastDurationMs, setLastDurationMs] = useState<number | null>(null);
+  const [provider, setProvider] = useState<'claude' | 'openai'>('claude');
+  const [showProviderMenu, setShowProviderMenu] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -271,12 +277,12 @@ export default function AIQuery() {
     setLoading(true);
 
     try {
-      const resp = await ai.query({ query: msg, conversation_id: conversationId });
+      const resp = await ai.query({ query: msg, conversation_id: conversationId, provider });
       if (resp.conversation_id) setConversationId(resp.conversation_id);
       setQueryCount(c => c + 1);
       setLastDurationMs(resp.duration_ms);
 
-      const aiMsg = nlqToMessage(resp, (Date.now() + 1).toString());
+      const aiMsg = nlqToMessage(resp, (Date.now() + 1).toString(), provider);
       setMessages(prev => [...prev, aiMsg]);
     } catch (err) {
       setMessages(prev => [...prev, {
@@ -439,7 +445,7 @@ export default function AIQuery() {
           border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
         }}
       >
-        <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+        <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
           style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center"
@@ -451,10 +457,88 @@ export default function AIQuery() {
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Verified FAQ SQL → live data → charts & KPI cards</p>
             </div>
           </div>
-          <div className="px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1"
-            style={{ background: 'rgba(0,230,122,0.1)', color: '#00e67a', border: '1px solid rgba(0,230,122,0.2)' }}>
-            <Database size={10} />
-            FAQ templates
+
+          <div className="flex items-center gap-2">
+            {/* Provider toggle */}
+            <div className="relative">
+              <motion.button
+                type="button"
+                onClick={() => setShowProviderMenu(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                style={{
+                  background: provider === 'claude'
+                    ? 'linear-gradient(135deg, rgba(88,130,255,0.15), rgba(139,92,246,0.15))'
+                    : 'linear-gradient(135deg, rgba(16,163,127,0.15), rgba(0,184,230,0.15))',
+                  border: provider === 'claude'
+                    ? '1px solid rgba(88,130,255,0.35)'
+                    : '1px solid rgba(16,163,127,0.35)',
+                  color: provider === 'claude' ? '#818cf8' : '#10a37f',
+                }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+              >
+                <span className="text-base leading-none">{provider === 'claude' ? '⬡' : '⬢'}</span>
+                {provider === 'claude' ? 'Claude' : 'ChatGPT'}
+                <ChevronDown size={11} />
+              </motion.button>
+
+              <AnimatePresence>
+                {showProviderMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                    transition={{ duration: 0.12 }}
+                    className="absolute right-0 top-full mt-1.5 rounded-xl overflow-hidden z-50 min-w-[160px]"
+                    style={{
+                      background: isDark ? '#141929' : 'white',
+                      border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                    }}
+                    onMouseLeave={() => setShowProviderMenu(false)}
+                  >
+                    {([
+                      { key: 'claude', label: 'Claude', sub: 'Anthropic API', icon: '⬡', color: '#818cf8', border: 'rgba(88,130,255,0.3)' },
+                      { key: 'openai', label: 'ChatGPT', sub: 'OpenAI API', icon: '⬢', color: '#10a37f', border: 'rgba(16,163,127,0.3)' },
+                    ] as const).map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => { setProvider(opt.key); setShowProviderMenu(false); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left"
+                        style={{
+                          background: provider === opt.key
+                            ? isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'
+                            : 'transparent',
+                        }}
+                      >
+                        <span className="text-base">{opt.icon}</span>
+                        <div>
+                          <p className="text-xs font-semibold" style={{ color: provider === opt.key ? opt.color : 'var(--text-primary)' }}>
+                            {opt.label}
+                          </p>
+                          <p className="text-2xs" style={{ color: 'var(--text-muted)' }}>{opt.sub}</p>
+                        </div>
+                        {provider === opt.key && (
+                          <div className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: opt.color }} />
+                        )}
+                      </button>
+                    ))}
+                    <div className="px-3.5 py-2 border-t" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
+                      <p className="text-2xs" style={{ color: 'var(--text-muted)' }}>
+                        Affects AI summary &amp; insights generation. SQL always runs against your ERP.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1"
+              style={{ background: 'rgba(0,230,122,0.1)', color: '#00e67a', border: '1px solid rgba(0,230,122,0.2)' }}>
+              <Database size={10} />
+              FAQ templates
+            </div>
           </div>
         </div>
 

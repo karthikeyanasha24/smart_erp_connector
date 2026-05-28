@@ -13,8 +13,9 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
-        timeout: 300000,
-        proxyTimeout: 300000,
+        // NLQ/FAQ queries can legitimately run for several minutes.
+        timeout: 900000,
+        proxyTimeout: 900000,
       },
     },
   },

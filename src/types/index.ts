@@ -9,6 +9,7 @@ export type Page =
   | 'branch'
   | 'product'
   | 'data'
+  | 'erp-views'
   | 'insights'
   | 'settings';
 

@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, BarChart3, MessageSquareCode, ArrowLeftRight,
   FileBarChart, GitBranch, Package, Database, Lightbulb, Settings,
-  ChevronLeft, ChevronRight, Zap, Activity
+  ChevronLeft, ChevronRight, Zap, Activity, Table2,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useNavigation } from '../../context/NavigationContext';
@@ -30,6 +30,7 @@ const ALL_NAV_GROUPS = [
       { id: 'branch' as Page, label: 'Branch Intel', icon: GitBranch, badge: null, roles: undefined },
       { id: 'product' as Page, label: 'Products', icon: Package, badge: null, roles: undefined },
       { id: 'data' as Page, label: 'Data Explorer', icon: Database, badge: null, roles: undefined },
+      { id: 'erp-views' as Page, label: 'ERP Views', icon: Table2, badge: '28', roles: undefined },
     ],
   },
   {

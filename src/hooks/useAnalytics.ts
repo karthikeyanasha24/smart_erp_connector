@@ -92,6 +92,11 @@ function cacheGet<T>(key: string): T | null {
   return e ? (e.data as T) : null;
 }
 
+/** Read an entry from the SWR cache. Returns null on miss. */
+export function readCache<T>(key: string): T | null {
+  return cacheGet<T>(key);
+}
+
 function cacheSet(key: string, data: unknown): void {
   const entry: CacheEntry<unknown> = { data, ts: Date.now() };
   _store.set(key, entry);
@@ -186,14 +191,21 @@ export function useFetch<T>(
   const fetchRef = useRef(fetchFn);
   fetchRef.current = fetchFn;
 
-  // When cache key changes (period switch) — instantly serve new key's cache
+  // When cache key changes (period switch) — instantly serve new key's cache.
+  // Crucially: if the new key has NO cache yet, keep showing the old data (dimmed)
+  // rather than nulling it out — this prevents the "loading forever blank" UX.
   const prevKeyRef = useRef<string | undefined>(cacheKey);
   useEffect(() => {
     if (prevKeyRef.current === cacheKey) return;
     prevKeyRef.current = cacheKey;
     const c = cacheKey ? cacheGet<T>(cacheKey) : null;
-    setData(c);
-    setLoading(!c);
+    if (c) {
+      setData(c);
+      setLoading(false);
+    } else {
+      // No cache for this key — show loading indicator but KEEP old data visible
+      setLoading(true);
+    }
     setError(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey]);
@@ -418,6 +430,33 @@ export async function fetchAndApplySnapshot(): Promise<void> {
         cacheSet('txn_summary:mtd', snap.txn_summary_mtd);
       }
 
+      // ── Branch Intel page instant load ───────────────────────────────────
+      // Seed branches:mtd so Branch.tsx renders immediately without a loading state.
+      if (snap.branches_chart_mtd?.length) {
+        cacheSet('branches:mtd', {
+          success: true,
+          period: 'mtd',
+          branches: snap.branches_chart_mtd,
+        });
+      }
+
+      // ── Products page instant load ────────────────────────────────────────
+      // Seed categories:mtd:8 so the pie chart on Products.tsx renders immediately.
+      if (snap.categories_chart_mtd?.length) {
+        cacheSet('categories:mtd:8', {
+          success: true,
+          period: 'mtd',
+          categories: snap.categories_chart_mtd.slice(0, 8),
+        });
+      }
+      // Seed product catalog page 1 + top products MTD for instant Products page load.
+      if (snap.product_catalog?.products?.length) {
+        cacheSet('product_catalog:50:0', snap.product_catalog);
+      }
+      if (snap.top_products_mtd?.products?.length) {
+        cacheSet('top_products:mtd:15', snap.top_products_mtd);
+      }
+
       // KPI cache for all analytics tabs (customer count + revenue chips)
       const _kpiRows: Array<[string, KPIsResponse | null | undefined]> = [
         ['mtd', snap.mtd_kpis],
@@ -438,6 +477,63 @@ export async function fetchAndApplySnapshot(): Promise<void> {
         }
       }
 
+      // ── Today: derive from MTD when snapshot has no intraday cache ──────────
+      // today_kpis / today_dashboard are intraday keys not persisted to PG, so after
+      // a server restart the snapshot returns null for them until warmup Phase 0+1
+      // complete.  We derive today's numbers from the MTD data we DO have so the
+      // Today tab renders immediately without a loading spinner.
+      let todayDashForSeed = snap.today_dashboard as DashboardResponse | null;
+      let todayKpisForSeed = snap.today_kpis as KPIsResponse | null;
+
+      if (!todayDashForSeed?.summary) {
+        // Path 1: MTD dashboard trend has a point for today
+        const mtdDash = snap.mtd_dashboard as DashboardResponse | null;
+        if (mtdDash?.trend?.length) {
+          const summary = todaySummaryFromMtdDashboard(mtdDash);
+          if (summary) {
+            todayDashForSeed = buildTodayDashboard(summary);
+          }
+        }
+      }
+
+      if (!todayDashForSeed?.summary) {
+        // Path 2: already-cached analytics-page:mtd:: has today's yoyTrend point
+        const todayIso = localTodayIso();
+        const mtdPage = cacheGet<AnalyticsPageData>(analyticsPageCacheKey('mtd'));
+        if (mtdPage?.yoyTrend?.length) {
+          const pt = mtdPage.yoyTrend.find((p) => p.date?.slice(0, 10) === todayIso);
+          if (pt) {
+            todayDashForSeed = buildTodayDashboard({
+              mtd_sales: pt.current,
+              ly_sales: pt.prior ?? 0,
+              sales_growth_pct: null,
+              bills: pt.bills ?? 0,
+              quantity: pt.quantity ?? 0,
+              customers: null,
+            });
+          }
+        }
+      }
+
+      if (todayDashForSeed?.summary && !cacheGet<DashboardResponse>(KEY_DASH_TODAY)?.summary) {
+        cacheSet(KEY_DASH_TODAY, todayDashForSeed);
+      }
+
+      // Synthesise today KPIs from derived dashboard when snapshot KPIs are null
+      if (!todayKpisForSeed && todayDashForSeed?.summary) {
+        const s = todayDashForSeed.summary;
+        todayKpisForSeed = {
+          revenue: { value: s.mtd_sales, prior: s.ly_sales ?? 0, growth: s.sales_growth_pct ?? null },
+          transactions: { value: s.bills, prior: null, growth: null },
+          customers: s.customers != null ? { value: s.customers, prior: null, growth: null } : null,
+        } as KPIsResponse;
+        if (!cacheGet(KEY_KPIS_TODAY)) {
+          cacheSet(KEY_KPIS_TODAY, todayKpisForSeed);
+          cacheSet('kpis:v2:today', todayKpisForSeed);
+          cacheSet('kpis:today', todayKpisForSeed);
+        }
+      }
+
       // ── Analytics page cache hydration ──────────────────────────────────
       // Seed analytics-page:{period}:: so the Analytics page renders instantly
       // when the user navigates to it — no loading shimmer on any tab.
@@ -448,7 +544,7 @@ export async function fetchAndApplySnapshot(): Promise<void> {
         departments: DeptPoint[] | null | undefined;
       }> = [
         { period: 'mtd', dash: snap.mtd_dashboard, kpi: snap.mtd_kpis, departments: snap.departments_mtd },
-        { period: 'today', dash: snap.today_dashboard, kpi: snap.today_kpis, departments: snap.departments_today },
+        { period: 'today', dash: todayDashForSeed, kpi: todayKpisForSeed, departments: snap.departments_today },
         { period: 'qtd', dash: snap.qtd_dashboard, kpi: snap.qtd_kpis, departments: snap.departments_qtd },
         { period: 'ytd', dash: snap.ytd_dashboard, kpi: snap.ytd_kpis, departments: snap.departments_ytd },
         { period: 'last_6m', dash: snap.last6m_dashboard, kpi: snap.last6m_kpis, departments: snap.departments_last6m },
@@ -511,6 +607,7 @@ function seedAnalyticsPagePeriod(
     && !isEmptyAnalyticsPage(existing)
     && isFresh(apKey)
     && isCompleteAnalyticsPage(existing, period)
+    && cachedIsFullyMerged(existing, period)   // also require LY/customer data present
     && (existing.departments?.length || !departments?.length)
   ) {
     return;
@@ -1176,11 +1273,22 @@ function mapBranches(rows: BranchPoint[], total: number): AnalyticsRankRow[] {
   }));
 }
 
+export function mergeDepartmentPoints(
+  page: AnalyticsPageData,
+  deptPoints: DeptPoint[],
+): AnalyticsPageData {
+  if (!deptPoints.length) return page;
+  const total = deptPoints.reduce((s, d) => s + d.revenue, 0);
+  return { ...page, departments: mapDepartments(deptPoints, total) };
+}
+
 function mapDepartments(rows: DeptPoint[], total: number): AnalyticsRankRow[] {
-  return rows.map((d) => ({
-    name: d.department,
+  const filtered = rows.filter((d) => (d.department ?? '').trim().length > 0);
+  const denom = total > 0 ? total : filtered.reduce((s, d) => s + d.revenue, 0);
+  return filtered.map((d) => ({
+    name: d.department.trim(),
     revenue: d.revenue,
-    percentage: pctOfTotal(d.revenue, total),
+    percentage: pctOfTotal(d.revenue, denom),
     transactions: d.transactions ?? null,
   }));
 }
@@ -1332,14 +1440,41 @@ function isEmptyAnalyticsPage(d: AnalyticsPageData | null | undefined): boolean 
   return !(d.daywise?.length || d.categories?.length || d.branches?.length);
 }
 
-/** Periods that need /analytics/dashboard for YoY chart (prior year bars). */
+/**
+ * Periods that need /analytics/dashboard for YoY trend bars.
+ * Today/Yesterday are intentionally excluded: they show no multi-day trend chart
+ * so the bundle + KPI response is sufficient for instant render.
+ */
 const PERIODS_WITH_YOY_DASHBOARD = new Set([
-  'mtd', 'today', 'yesterday', 'qtd', 'ytd', 'last_6m',
+  'mtd', 'qtd', 'ytd', 'last_6m',
 ]);
 
-/** Enough to render KPI cards + charts without waiting for slow dashboard SQL. */
-function isCompleteAnalyticsPage(d: AnalyticsPageData, period: string): boolean {
-  if (d.checksum != null) return true;
+/**
+ * Periods that still need a background dashboard fetch even if they don't
+ * require YoY bars — used to populate customer count and other dashboard-only fields.
+ * Today's dashboard is warmed in Phase 1 so this fetch returns from cache quickly.
+ */
+const PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS = new Set(['today', 'yesterday']);
+
+/** True when category/branch data exists but departments never loaded (stale partial cache). */
+function needsDepartmentBackfill(d: AnalyticsPageData | null | undefined): boolean {
+  if (!d || periodIsCustom(d.period)) return false;
+  const hasOtherBreakdowns =
+    (d.categories?.length ?? 0) > 0 || (d.branches?.length ?? 0) > 0;
+  return hasOtherBreakdowns && (d.departments?.length ?? 0) === 0;
+}
+
+function periodIsCustom(period: string): boolean {
+  return period === 'custom';
+}
+
+/**
+ * True when the page has enough data to render KPI cards + charts.
+ * Intentionally does NOT block on LY data — the chart renders with current-year
+ * bars and updates automatically when the dashboard fetch brings in prior values.
+ */
+function isRenderableAnalyticsPage(d: AnalyticsPageData): boolean {
+  if (needsDepartmentBackfill(d)) return false;
   const hasCharts =
     (d.yoyTrend?.length ?? 0) > 0
     || (d.categories?.length ?? 0) > 0
@@ -1348,6 +1483,22 @@ function isCompleteAnalyticsPage(d: AnalyticsPageData, period: string): boolean 
     (d.summary?.mtd_sales ?? 0) > 0
     || (d.summary?.bills ?? 0) > 0;
   return hasCharts && hasTotals;
+}
+
+/**
+ * True when the page is *fully* complete (dashboard merged, LY present, checksum ok).
+ * Used to decide whether to skip background dashboard re-fetch.
+ * If false, prefetchAnalyticsPage will still fire a dashboard HTTP request in
+ * the background — the component renders immediately via onPartial/subscribePageUpdate.
+ */
+function isCompleteAnalyticsPage(d: AnalyticsPageData, period: string): boolean {
+  if (!isRenderableAnalyticsPage(d)) return false;
+  // Dashboard checksum = fully merged response, nothing left to fetch.
+  if (d.checksum != null) return true;
+  // For YoY periods, still consider "complete enough" once we have trend data —
+  // even if LY is 0.  The dashboard fetch fires anyway (in prefetchAnalyticsPage)
+  // but we don't block the UI on it.
+  return true;
 }
 
 const _prefetchInflight = new Map<string, Promise<AnalyticsPageData | null>>();
@@ -1376,17 +1527,37 @@ function emitPageUpdate(period: string, data: AnalyticsPageData): void {
  * Phase 1: bundle (fast when server cache warm) → paint immediately.
  * Phase 2: departments + dashboard YoY (dashboard HTTP starts in parallel with bundle).
  */
+/** True when cached data is fully merged and no background dashboard fetch is needed. */
+function cachedIsFullyMerged(d: AnalyticsPageData, period: string): boolean {
+  // Dashboard checksum = fully merged — nothing left to fetch.
+  if (d.checksum != null) return true;
+  // For YoY periods, need at least one prior value to skip dashboard re-fetch.
+  if (PERIODS_WITH_YOY_DASHBOARD.has(period)) {
+    return (d.yoyTrend ?? []).some((p) => (p.prior ?? 0) > 0);
+  }
+  // For today/yesterday: need customer count to skip dashboard re-fetch.
+  if (PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period)) {
+    return d.summary?.customers != null;
+  }
+  return true;  // No dashboard needed for this period
+}
+
 export function prefetchAnalyticsPage(
   period: string,
   onPartial?: (data: AnalyticsPageData) => void,
 ): Promise<AnalyticsPageData | null> {
   const key = analyticsPageCacheKey(period);
   const cached = cacheGet<AnalyticsPageData>(key);
+  // Only skip the fetch job when data is fully complete AND has LY values.
+  // If LY is missing for a YoY period, we still need to fire a dashboard fetch
+  // in the background — but the component renders immediately with current data.
   if (
     cached
     && !isEmptyAnalyticsPage(cached)
     && isUsable(key)
     && isCompleteAnalyticsPage(cached, period)
+    && !needsDepartmentBackfill(cached)
+    && cachedIsFullyMerged(cached, period)
   ) {
     onPartial?.(cached);
     return Promise.resolve(cached);
@@ -1404,42 +1575,69 @@ export function prefetchAnalyticsPage(
   }
 
   const job = (async (): Promise<AnalyticsPageData | null> => {
-    const needsDash = PERIODS_WITH_YOY_DASHBOARD.has(period);
+    // Fire dashboard fetch for both YoY periods AND today/yesterday (for customer count).
+    const needsDash =
+      PERIODS_WITH_YOY_DASHBOARD.has(period) ||
+      PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period);
     const dashP = needsDash
       ? analytics.dashboard(period).catch(() => null)
       : Promise.resolve(null);
 
     try {
       const n = API_TOP_N_MAX;
+      // Lean bundle first (fast paint); departments fire in parallel and merge next.
       const bundleP = analytics.bundle(period, {
         topN: n,
-        includeDepartments: true,
+        includeDepartments: false,
         includeKpis: false,
       });
-      const deptP = analytics.departments(period, n).catch(() => ({ departments: [] as DeptPoint[] }));
+      const deptCached = cacheGet<{ departments: DeptPoint[] }>(`departments:${period}:${n}`);
+      const deptP = deptCached
+        ? Promise.resolve(deptCached)
+        : analytics.departments(period, n).catch(() => ({ departments: [] as DeptPoint[] }));
       const kpiHint =
         cacheGet<KPIsResponse>(`kpis:v2:${period}`) ?? cacheGet<KPIsResponse>(`kpis:${period}`);
       const kpiP = kpiHint
         ? Promise.resolve(kpiHint)
         : analytics.kpis(period).catch(() => null);
 
-      const [core, deptRes, kpiRes] = await Promise.all([bundleP, deptP, kpiP]);
+      const [core, kpiRes] = await Promise.all([bundleP, kpiP]);
       if (kpiRes) {
         cacheSet(`kpis:v2:${period}`, kpiRes);
         cacheSet(`kpis:${period}`, kpiRes);
       }
-      const split: SplitBundle = {
+
+      const leanSplit: SplitBundle = {
         branches: core.branches ?? [],
         trend: core.trend ?? [],
         categories: core.categories ?? [],
-        departments: core.departments?.length
-          ? core.departments
-          : (deptRes.departments ?? []),
+        departments: [],
         kpis: (kpiRes ?? {}) as KPIsResponse,
       };
-
       const prevSnap = cacheGet<AnalyticsPageData>(key);
-      let built = buildAnalyticsPageData(split, null, period);
+      let built = buildAnalyticsPageData(leanSplit, null, period);
+      if (built.summary && kpiRes) {
+        built = { ...built, summary: enrichSummaryFromKpi(built.summary, kpiRes) };
+      }
+      if (prevSnap && !isEmptyAnalyticsPage(prevSnap)) {
+        built = carryForwardAnalyticsPartial(built, prevSnap);
+      }
+      if (!isEmptyAnalyticsPage(built)) {
+        cacheSet(key, built);
+        emitPageUpdate(period, built);
+        onPartial?.(built);
+      }
+
+      const deptRes = await deptP;
+      if (deptRes.departments?.length) {
+        cacheSet(`departments:${period}:${n}`, deptRes);
+      }
+      const split: SplitBundle = {
+        ...leanSplit,
+        departments: deptRes.departments ?? [],
+      };
+
+      built = buildAnalyticsPageData(split, null, period);
       if (built.summary && kpiRes) {
         built = { ...built, summary: enrichSummaryFromKpi(built.summary, kpiRes) };
       }
@@ -1602,6 +1800,34 @@ export function useAnalyticsPage(
     setError(null);
   }, [cacheKey, period]);
 
+  // If bundle/snapshot omitted departments, fetch them directly (MTD logs showed no /departments call).
+  useEffect(() => {
+    if (period === '__hold__' || period === 'custom' || !data) return;
+    if (!needsDepartmentBackfill(data)) return;
+
+    let cancelled = false;
+    setChartLoading(true);
+    void analytics
+      .departments(period, API_TOP_N_MAX)
+      .then((res) => {
+        if (cancelled || !(res.departments?.length)) return;
+        const merged = mergeDepartmentPoints(data, res.departments);
+        setData(merged);
+        cacheSet(cacheKey, merged);
+        if (res.departments.length) {
+          cacheSet(`departments:${period}:${API_TOP_N_MAX}`, res);
+        }
+      })
+      .catch(() => { /* keep partial page */ })
+      .finally(() => {
+        if (!cancelled) setChartLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [period, cacheKey, data]);
+
   // Background dashboard merge (customers, LY, checksum) — keep UI in sync after lean bundle paint.
   useEffect(() => {
     if (period === '__hold__' || period === 'custom') return;
@@ -1620,7 +1846,7 @@ export function useAnalyticsPage(
       if (c && !isEmptyAnalyticsPage(c)) {
         setData(c);
         setLoading(false);
-        if (isCompleteAnalyticsPage(c, period)) setChartLoading(false);
+        if (isCompleteAnalyticsPage(c, period) && !needsDepartmentBackfill(c)) setChartLoading(false);
       }
     });
   }, [cacheKey, period]);
@@ -1633,7 +1859,11 @@ export function useAnalyticsPage(
       setData(cached);
       setLoading(false);
       setChartLoading(false);
-      if (isFresh(cacheKey) && isCompleteAnalyticsPage(cached, period)) return;
+      const freshComplete =
+        isFresh(cacheKey)
+        && isCompleteAnalyticsPage(cached, period)
+        && !needsDepartmentBackfill(cached);
+      if (freshComplete) return;
       void run(true);
       return;
     }

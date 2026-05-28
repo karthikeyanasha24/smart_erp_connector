@@ -279,8 +279,8 @@ async def _query_contribution(dr: DateRange, dim: str, limit: int = 50) -> List[
 
 def _dashboard_cache_ttl_s(period: str) -> Optional[float]:
     if period in ("today", "yesterday"):
-        return 60.0
-    return None
+        return 300.0    # 5 min -- intraday data refreshes frequently
+    return 14400.0      # 4 hours -- MTD/QTD/YTD/Last6M survive overnight restarts in PG
 
 
 async def get_dashboard(

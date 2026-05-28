@@ -24,6 +24,13 @@ def _safe_float(val: Any) -> float:
         return 0.0
 
 
+def _chart_ttl_s(period: str) -> float:
+    """Intraday charts refresh every 5 min; historical charts persist 4 h in PG."""
+    if period in ("today", "yesterday"):
+        return 300.0
+    return 14400.0  # 4 hours — survives overnight restarts in PostgreSQL cache
+
+
 # ─── Revenue Trend ────────────────────────────────────────────────────────────
 
 async def get_revenue_trend(period: str = "last_30d") -> List[Dict[str, Any]]:
@@ -95,7 +102,7 @@ async def get_revenue_trend(period: str = "last_30d") -> List[Dict[str, Any]]:
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await cache.get_or_fetch(cache_key, _fetch, ttl_s=_chart_ttl_s(period))
 
 
 # ─── Category Breakdown ───────────────────────────────────────────────────────
@@ -136,7 +143,7 @@ async def get_category_breakdown(period: str = "mtd", top_n: Optional[int] = Non
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await cache.get_or_fetch(cache_key, _fetch, ttl_s=_chart_ttl_s(period))
 
 
 # ─── Branch Bar Chart ─────────────────────────────────────────────────────────
@@ -170,14 +177,14 @@ async def get_branch_chart(period: str = "mtd") -> List[Dict[str, Any]]:
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await cache.get_or_fetch(cache_key, _fetch, ttl_s=_chart_ttl_s(period))
 
 
 # ─── Department Breakdown ─────────────────────────────────────────────────────
 
 async def get_department_chart(period: str = "mtd", top_n: Optional[int] = None) -> List[Dict[str, Any]]:
     n = min(top_n or cfg.ANALYTICS_TOP_N, cfg.ANALYTICS_TOP_N_MAX)
-    cache_key = f"chart:department:v2:{period}:{n}"
+    cache_key = f"chart:department:v3:{period}:{n}"
 
     async def _fetch() -> List[Dict[str, Any]]:
         dr = resolve_date_range(period)
@@ -191,21 +198,30 @@ async def get_department_chart(period: str = "mtd", top_n: Optional[int] = None)
             FROM {sql_table(c.SALES_AI_TABLE)} WITH (NOLOCK)
             WHERE [{dc}] >= @startDate
               AND [{dc}] < DATEADD(day,1,CAST(@endDate AS DATE))
+              AND NULLIF(LTRIM(RTRIM(CAST([{c.SALES_ANALYTICS_DEPARTMENT_DIM}] AS NVARCHAR(200)))), '') IS NOT NULL
             GROUP BY [{c.SALES_ANALYTICS_DEPARTMENT_DIM}]
+            HAVING SUM([{c.SALES_ANALYTICS_AMOUNT_COLUMN}]) > 0
             ORDER BY Revenue DESC
             OPTION (RECOMPILE)
         """
         result = await execute_query(sql, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False)
-        return [
-            {
-                "department": str(r.get("Department", "")),
+        rows: List[Dict[str, Any]] = []
+        for r in result["records"]:
+            name = str(r.get("Department", "")).strip()
+            if not name:
+                continue
+            rows.append({
+                "department": name,
                 "revenue": _safe_float(r.get("Revenue")),
                 "transactions": int(_safe_float(r.get("Transactions"))),
-            }
-            for r in result["records"]
-        ]
+            })
+        if rows:
+            logger.info("Department chart loaded", period=period, count=len(rows))
+        else:
+            logger.warning("Department chart returned no rows", period=period, table=c.SALES_AI_TABLE)
+        return rows
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await cache.get_or_fetch(cache_key, _fetch, ttl_s=_chart_ttl_s(period))
 
 
 # ─── Top Salespersons ─────────────────────────────────────────────────────────
@@ -241,7 +257,7 @@ async def get_top_salespersons(period: str = "mtd", top_n: int = 10) -> List[Dic
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await cache.get_or_fetch(cache_key, _fetch, ttl_s=_chart_ttl_s(period))
 
 
 # ─── Hourly Heatmap ───────────────────────────────────────────────────────────
@@ -279,7 +295,7 @@ async def get_hourly_heatmap(period: str = "last_30d") -> List[Dict[str, Any]]:
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await cache.get_or_fetch(cache_key, _fetch, ttl_s=_chart_ttl_s(period))
 
 
 # ─── Branch Detail ────────────────────────────────────────────────────────────

@@ -30,7 +30,7 @@ def assemble_bundle_from_chart_caches(
         ("trend", f"chart:trend:v4:{period}:{gran}", True),
         ("categories", f"chart:category:v2:{period}:{n}", True),
         ("kpis", f"kpi:v3:{period}", include_kpis),
-        ("departments", f"chart:department:v2:{period}:{n}", include_departments),
+        ("departments", f"chart:department:v3:{period}:{n}", include_departments),
     ]
     payload: Dict[str, Any] = {}
     for name, key, required in specs:
@@ -60,6 +60,6 @@ def prime_chart_caches_from_bundle(
     if payload.get("categories") is not None:
         cache.set(f"chart:category:v2:{period}:{n}", payload["categories"])
     if payload.get("departments") is not None:
-        cache.set(f"chart:department:v2:{period}:{n}", payload["departments"])
+        cache.set(f"chart:department:v3:{period}:{n}", payload["departments"])
     if payload.get("kpis") is not None:
         cache.set(f"kpi:v3:{period}", payload["kpis"])

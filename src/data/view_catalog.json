@@ -1,0 +1,400 @@
+{
+  "database": "zRetailHQ0",
+  "view_categories": {
+    "sales_revenue": [
+      "sales_app",
+      "sales_lines",
+      "sales_memo",
+      "sales_apr",
+      "sales_article",
+      "ai_sales_data",
+      "mis_supplier_sls",
+      "salesperson_lines"
+    ],
+    "footfall": [
+      "sales_billcount",
+      "sales_app",
+      "sales_lines"
+    ],
+    "procurement": [
+      "purchases",
+      "pur_report",
+      "pur_qty_cost",
+      "purchase_returns",
+      "supplier_pur",
+      "mis_supplier_sls"
+    ],
+    "inventory": [
+      "stock",
+      "stock_git",
+      "ai_stock"
+    ],
+    "transfers": [
+      "stock_transfer_in",
+      "stock_transfer_out"
+    ],
+    "masters": [
+      "branch_list",
+      "ai_branch",
+      "category_master",
+      "product_master",
+      "vendor_master",
+      "ai_supplier",
+      "ai_salesperson",
+      "mst_items"
+    ],
+    "customers": [
+      "ai_customer"
+    ]
+  },
+  "views": {
+    "sales_app": {
+      "catalog_no": 1,
+      "fqn": "dbo.VW_MB_POWERBI_APP_REPORT",
+      "purpose": "Primary aggregated sales \u2014 dashboard default; 90% of analytics",
+      "grain": "application summary",
+      "date_col": "XnDt",
+      "amount_col": "NetAmount",
+      "qty_col": "AppQty",
+      "bill_col": "BillCount",
+      "branch_col": "BranchAlias",
+      "column_count": 33
+    },
+    "sales_memo": {
+      "catalog_no": 2,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_REPORT",
+      "purpose": "Memo-level sales with product attributes; margin via NetSlsCostValue",
+      "grain": "sales memo / item",
+      "date_col": "XnMemoDate",
+      "amount_col": "NetAmount",
+      "qty_col": "NetSlsQty",
+      "branch_col": "BranchAlias",
+      "column_count": 24,
+      "note": "Use XnMemoDate for period filters \u2014 not XnDt"
+    },
+    "ai_sales_data": {
+      "catalog_no": 3,
+      "fqn": "dbo.VwAISalesData",
+      "purpose": "Lightweight AI sales summary for fast trends and NLQ",
+      "grain": "invoice line",
+      "date_col": "InvoiceDt",
+      "amount_col": "SaleNetAmount",
+      "qty_col": "Quantity",
+      "bill_col": "InvoiceNo",
+      "branch_col": "BranchId",
+      "column_count": 12
+    },
+    "ai_branch": {
+      "catalog_no": 4,
+      "fqn": "dbo.VwAIBranch",
+      "purpose": "Branch master \u2014 names, geography, address (no sales amounts)",
+      "grain": "dimension",
+      "branch_col": "BranchId",
+      "display_cols": [
+        "BranchName",
+        "BranchShortName",
+        "City",
+        "State"
+      ],
+      "column_count": 10
+    },
+    "ai_customer": {
+      "catalog_no": 5,
+      "fqn": "dbo.VwAICustomerDetails",
+      "purpose": "Customer master \u2014 new customer KPI, contact, credit, branch",
+      "grain": "dimension",
+      "date_col": "CreatedOn",
+      "branch_col": "BranchName",
+      "column_count": 20
+    },
+    "ai_stock": {
+      "catalog_no": 6,
+      "fqn": "dbo.VwAIStockData",
+      "purpose": "Simple stock by ItemId and BranchId \u2014 Products page",
+      "grain": "stock snapshot",
+      "qty_col": "StockQty",
+      "branch_col": "BranchId",
+      "column_count": 3
+    },
+    "salesperson_lines": {
+      "catalog_no": 7,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "purpose": "Top salespersons chart \u2014 has SalesPersonName and CashmemoDt",
+      "grain": "cash memo line",
+      "date_col": "CashmemoDt",
+      "amount_col": "SalesNetAmount",
+      "qty_col": "SalesQuantity",
+      "bill_col": "CashmemoNo",
+      "branch_col": "BranchAlias",
+      "column_count": 33,
+      "note": "Preferred for salesperson ranking \u2014 not SLSXNS"
+    },
+    "sales_apr": {
+      "catalog_no": 8,
+      "fqn": "dbo.VW_MB_POWERBI_APR_REPORT",
+      "purpose": "Application (APR) sales \u2014 similar grain to APP_REPORT",
+      "grain": "application summary",
+      "date_col": "XnDt",
+      "amount_col": "NetAmount",
+      "qty_col": "AppQty",
+      "bill_col": "BillCount",
+      "branch_col": "BranchAlias",
+      "column_count": 31
+    },
+    "branch_list": {
+      "catalog_no": 9,
+      "fqn": "dbo.VW_MB_POWERBI_BRANCH_LIST",
+      "purpose": "Branch dimension for filters, dropdowns, branch intelligence",
+      "grain": "dimension",
+      "branch_col": "BranchId",
+      "display_cols": [
+        "BranchName",
+        "ShortName",
+        "City",
+        "State"
+      ],
+      "column_count": 11
+    },
+    "category_master": {
+      "catalog_no": 10,
+      "fqn": "dbo.VW_MB_POWERBI_CATEGORY_MASTER",
+      "purpose": "Department / category / sub-category hierarchy master",
+      "grain": "dimension",
+      "display_cols": [
+        "InvDepartmentShortName",
+        "InvCategoryShortName",
+        "InvSubCategoryShortName"
+      ],
+      "column_count": 9
+    },
+    "stock_git": {
+      "catalog_no": 11,
+      "fqn": "dbo.VW_MB_POWERBI_CBS_WITH_GIT",
+      "purpose": "Closing balance stock plus goods-in-transit (GIT)",
+      "grain": "stock + GIT snapshot",
+      "date_col": "PurInvoiceDt",
+      "qty_col": "StockQty",
+      "amount_col": "CbsCostValue",
+      "branch_col": "BranchAlias",
+      "column_count": 24,
+      "extra_cols": [
+        "GitQty",
+        "GitCostValue",
+        "CbsMrpValue"
+      ]
+    },
+    "mis_supplier_sls": {
+      "catalog_no": 12,
+      "fqn": "dbo.VW_MB_POWERBI_MIS_SUPPLIER_SLS_DATA",
+      "purpose": "Monthly supplier-wise net sales MIS",
+      "grain": "supplier-month",
+      "date_col": "XnMemoDate",
+      "amount_col": "NetAmount",
+      "qty_col": "NetSlsQty",
+      "column_count": 16
+    },
+    "product_master": {
+      "catalog_no": 13,
+      "fqn": "dbo.VW_MB_POWERBI_PRODUCT_MASTER",
+      "purpose": "Item master \u2014 style, fabric, supplier, MRP (not transactional)",
+      "grain": "dimension",
+      "date_col": "PurDate",
+      "display_cols": [
+        "Itemcode",
+        "ArticleNo",
+        "ItemMRP",
+        "PurchasePrice"
+      ],
+      "column_count": 37
+    },
+    "purchase_returns": {
+      "catalog_no": 14,
+      "fqn": "dbo.VW_MB_POWERBI_PRT_REPORT",
+      "purpose": "Purchase return transactions by branch and supplier",
+      "grain": "purchase return line",
+      "date_col": "PurReturnDt",
+      "qty_col": "PrtQty",
+      "branch_col": "BranchAlias",
+      "column_count": 24
+    },
+    "pur_qty_cost": {
+      "catalog_no": 15,
+      "fqn": "dbo.VW_MB_POWERBI_PUR_QTY_WITH_COST",
+      "purpose": "Purchase quantity and cost summary",
+      "grain": "purchase summary",
+      "date_col": "PurchaseDt",
+      "qty_col": "PurQty",
+      "amount_col": "PurCost",
+      "branch_col": "BranchAlias",
+      "column_count": 7
+    },
+    "pur_report": {
+      "catalog_no": 16,
+      "fqn": "dbo.VW_MB_POWERBI_PUR_REPORT",
+      "purpose": "Purchase receipts by branch, supplier, category, item",
+      "grain": "purchase receipt line",
+      "date_col": "PurchaseDt",
+      "qty_col": "PurQty",
+      "bill_col": "PurchaseId",
+      "branch_col": "BranchAlias",
+      "column_count": 24
+    },
+    "purchases": {
+      "catalog_no": 17,
+      "fqn": "dbo.VW_MB_POWERBI_PURXNS_REPORT",
+      "purpose": "Detailed purchase and return transactions with tax breakdown",
+      "grain": "purchase transaction line",
+      "date_col": "PurInvDate",
+      "amount_col": "NetPurNetAmount",
+      "qty_col": "NetPurQty",
+      "branch_col": "BranchAlias",
+      "column_count": 51,
+      "extra_cols": [
+        "PurNetAmount",
+        "PrtNetAmount",
+        "NetPurCost"
+      ]
+    },
+    "sales_article": {
+      "catalog_no": 18,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_ARTICLE_REPORT",
+      "purpose": "Article/style-level net sales performance",
+      "grain": "article",
+      "date_col": "XnMemoDate",
+      "amount_col": "NetAmount",
+      "qty_col": "NetSlsQty",
+      "column_count": 10
+    },
+    "sales_billcount": {
+      "catalog_no": 19,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_BILLCOUNT",
+      "purpose": "Daily bill count per branch \u2014 footfall / transaction volume",
+      "grain": "branch-day",
+      "date_col": "CashmemoDt",
+      "bill_col": "BillCount",
+      "branch_col": "BranchId",
+      "column_count": 3
+    },
+    "sales_lines": {
+      "catalog_no": 20,
+      "fqn": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "purpose": "Canonical net sales lines \u2014 MTD/today revenue, returns, tax (preferred for revenue KPIs)",
+      "grain": "sales transaction line",
+      "date_col": "XnDt",
+      "amount_col": "NetSlsNetAmount",
+      "qty_col": "NetSlsQty",
+      "bill_col": "XnNo",
+      "line_col": "XnId",
+      "branch_col": "BranchAlias",
+      "column_count": 42,
+      "note": "XnDt is DATE only \u2014 no hourly analysis"
+    },
+    "stock_transfer_in": {
+      "catalog_no": 21,
+      "fqn": "dbo.VW_MB_POWERBI_STI_REPORT",
+      "purpose": "Inbound stock transfers between branches",
+      "grain": "transfer in line",
+      "date_col": "XnDt",
+      "qty_col": "StiQty",
+      "amount_col": "NetAmount",
+      "branch_col": "TargetBranchAlias",
+      "column_count": 36,
+      "extra_cols": [
+        "SourceBranchAlias",
+        "SourceBranchId",
+        "TargetBranchId"
+      ]
+    },
+    "stock_transfer_out": {
+      "catalog_no": 22,
+      "fqn": "dbo.VW_MB_POWERBI_STO_REPORT",
+      "purpose": "Outbound stock transfers between branches",
+      "grain": "transfer out line",
+      "date_col": "XnDt",
+      "qty_col": "StoQty",
+      "amount_col": "NetAmount",
+      "branch_col": "SourceBranchAlias",
+      "column_count": 36,
+      "extra_cols": [
+        "TargetBranchAlias",
+        "SourceBranchId",
+        "TargetBranchId"
+      ]
+    },
+    "stock": {
+      "catalog_no": 23,
+      "fqn": "dbo.VW_MB_POWERBI_STOCK_REPORT",
+      "purpose": "Current stock on hand by branch, supplier, category, item",
+      "grain": "stock snapshot",
+      "date_col": "PurInvoiceDt",
+      "qty_col": "StockQty",
+      "branch_col": "BranchAlias",
+      "column_count": 20
+    },
+    "supplier_pur": {
+      "catalog_no": 24,
+      "fqn": "dbo.VW_MB_POWERBI_SUPPLIER_PUR_REPORT",
+      "purpose": "Supplier-wise purchase history with product attributes",
+      "grain": "supplier purchase line",
+      "date_col": "PurDate",
+      "qty_col": "PurQty",
+      "branch_col": "BranchAlias",
+      "column_count": 40
+    },
+    "vendor_master": {
+      "catalog_no": 25,
+      "fqn": "dbo.VW_MB_POWERBI_VENDOR_MASTER",
+      "purpose": "Vendor/party master \u2014 contact, tax, credit, MSME (no transactions)",
+      "grain": "dimension",
+      "display_cols": [
+        "PartyName",
+        "PartyAlias",
+        "City",
+        "State",
+        "TaxGSTINNo"
+      ],
+      "column_count": 47
+    },
+    "ai_salesperson": {
+      "catalog_no": 26,
+      "fqn": "dbo.VwAISalesPerson",
+      "purpose": "Salesperson dimension lookup",
+      "grain": "dimension",
+      "display_cols": [
+        "SalesPersonId",
+        "SalesPersonName",
+        "SalesPersonShortName"
+      ],
+      "column_count": 3
+    },
+    "ai_supplier": {
+      "catalog_no": 27,
+      "fqn": "dbo.VwAISupplier",
+      "purpose": "Supplier dimension lookup for procurement NLQ",
+      "grain": "dimension",
+      "branch_col": "PurPartyId",
+      "display_cols": [
+        "PartyName",
+        "PartyAlias",
+        "City",
+        "State"
+      ],
+      "column_count": 11
+    },
+    "mst_items": {
+      "catalog_no": 28,
+      "fqn": "dbo.VwMstItems",
+      "purpose": "Complete item master \u2014 hierarchy, parameters, supplier, pricing",
+      "grain": "dimension",
+      "date_col": "PurInvoiceDt",
+      "display_cols": [
+        "Itemcode",
+        "ItemId",
+        "ArticleNo",
+        "ItemMRP",
+        "PurchasePrice"
+      ],
+      "column_count": 50
+    }
+  }
+}
