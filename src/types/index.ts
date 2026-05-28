@@ -8,6 +8,7 @@ export type Page =
   | 'reports'
   | 'branch'
   | 'product'
+  | 'data'
   | 'insights'
   | 'settings';
 

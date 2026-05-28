@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, BarChart3, MessageSquareCode, ArrowLeftRight,
-  FileBarChart, GitBranch, Package, Lightbulb, Settings,
+  FileBarChart, GitBranch, Package, Database, Lightbulb, Settings,
   ChevronLeft, ChevronRight, Zap, Activity
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
@@ -29,6 +29,7 @@ const ALL_NAV_GROUPS = [
       { id: 'transactions' as Page, label: 'Transactions', icon: ArrowLeftRight, badge: null, roles: undefined },
       { id: 'branch' as Page, label: 'Branch Intel', icon: GitBranch, badge: null, roles: undefined },
       { id: 'product' as Page, label: 'Products', icon: Package, badge: null, roles: undefined },
+      { id: 'data' as Page, label: 'Data Explorer', icon: Database, badge: null, roles: undefined },
     ],
   },
   {

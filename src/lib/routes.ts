@@ -8,6 +8,7 @@ export const ROUTES: Record<Page, string> = {
   reports: '/reports',
   branch: '/branch',
   product: '/product',
+  data: '/data',
   insights: '/insights',
   settings: '/settings',
 };

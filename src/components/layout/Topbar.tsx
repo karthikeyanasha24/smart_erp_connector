@@ -16,6 +16,7 @@ const pageLabels: Record<string, string> = {
   reports: 'Reports',
   branch: 'Branch Intelligence',
   product: 'Product Analytics',
+  data: 'Data Explorer',
   insights: 'AI Insights',
   settings: 'Settings',
 };

@@ -160,6 +160,46 @@ export interface ProductMasterRow {
   PurchasePrice?: number | null;
 }
 
+export interface CatalogViewMeta {
+  key: string;
+  fqn: string;
+  short_name: string;
+  catalog_no?: number;
+  purpose: string;
+  grain?: string;
+  column_count?: number;
+  date_col?: string;
+  amount_col?: string;
+  branch_col?: string;
+  note?: string;
+}
+
+export interface ViewsCatalogResponse {
+  success: boolean;
+  database: string;
+  view_count: number;
+  views: CatalogViewMeta[];
+  categories: Record<string, string[]>;
+}
+
+export interface ViewQueryResponse {
+  success: boolean;
+  view_key: string;
+  fqn: string;
+  short_name: string;
+  purpose: string;
+  page: number;
+  page_size: number;
+  total_count: number;
+  total_raw: number;
+  total_pages: number;
+  capped: boolean;
+  hard_cap: number;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  duration_ms: number;
+}
+
 export interface ProductCatalogResponse {
   success: boolean;
   total_count: number;
@@ -394,6 +434,10 @@ export const analytics = {
     departments_qtd?: DeptPoint[] | null;
     departments_ytd?: DeptPoint[] | null;
     departments_last6m?: DeptPoint[] | null;
+    // Branch Intel page — seeds branches:mtd SWR key (plain list from chart cache)
+    branches_chart_mtd?: BranchPoint[] | null;
+    // Products page — seeds categories:mtd:8 SWR key (plain list from chart cache)
+    categories_chart_mtd?: CategoryPoint[] | null;
     // Transactions page 1 — seeded into SWR cache so Transactions page loads instantly
     txn_list_mtd: TransactionsResponse | null;
     txn_list_today: TransactionsResponse | null;
@@ -438,6 +482,17 @@ export const analytics = {
       `/analytics/products/top?period=${encodeURIComponent(period)}&top_n=${topN}`,
       { timeoutMs: 600_000 },
     ),
+
+  viewsCatalog: () =>
+    apiFetch<ViewsCatalogResponse>('/analytics/views', { timeoutMs: 60_000 }),
+
+  viewQuery: (params: { view: string; page?: number; page_size?: number }) => {
+    const qs = new URLSearchParams();
+    qs.set('view', params.view);
+    if (params.page != null) qs.set('page', String(params.page));
+    if (params.page_size != null) qs.set('page_size', String(params.page_size));
+    return apiFetch<ViewQueryResponse>(`/analytics/views/query?${qs}`, { timeoutMs: 600_000 });
+  },
 };
 
 // ── AI / NLQ ──────────────────────────────────────────────────────────────────

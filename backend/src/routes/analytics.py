@@ -35,6 +35,7 @@ from src.analytics.charts import (
 )
 from src.analytics.products_catalog import fetch_product_catalog, fetch_top_products
 from src.analytics.transactions import get_transactions, get_transaction_summary
+from src.analytics.view_explorer import fetch_view_page, list_catalog_views
 from src.analytics.concurrency import run_analytics_sql
 from src.analytics.dashboard import get_dashboard
 from src.analytics.cache import cache
@@ -122,7 +123,10 @@ async def analytics_snapshot(
         b = _bundle_with_departments(period)
         if b and b.get("departments"):
             return b["departments"]
-        return _first([f"chart:department:v2:{period}:{n}" for n in [100, 50, 30]])
+        return _first(
+            [f"chart:department:v3:{period}:{n}" for n in [100, 50, 30]]
+            + [f"chart:department:v2:{period}:{n}" for n in [100, 50, 30]]
+        )
     _dash_candidates_mtd  = [
         "dashboard:v7:mtd:None:None",
         "dashboard:v4:mtd:None:None",
@@ -329,6 +333,19 @@ async def analytics_snapshot(
     departments_ytd    = _departments_cached("ytd")
     departments_last6m = _departments_cached("last_6m")
 
+    # Branch Intel page — seed branches:mtd SWR key so Branch page loads instantly
+    # chart:branch:v2:mtd is a plain list [{branch, revenue, transactions}]
+    branches_chart_mtd = _first(["chart:branch:v2:mtd"])
+
+    # Products page — seed categories:mtd:8 SWR key (top-8 categories for pie chart)
+    # chart:category:v2:mtd:{n} is a plain list [{category, revenue, transactions, percentage}]
+    categories_chart_mtd = _first([
+        "chart:category:v2:mtd:100",
+        "chart:category:v2:mtd:50",
+        "chart:category:v2:mtd:30",
+        "chart:category:v2:mtd:8",
+    ])
+
     has_data = bool(
         mtd_kpis or mtd_dashboard or today_kpis or today_dash
         or qtd_dashboard or ytd_dashboard or last6m_dashboard
@@ -353,6 +370,8 @@ async def analytics_snapshot(
         "departments_qtd": departments_qtd,
         "departments_ytd": departments_ytd,
         "departments_last6m": departments_last6m,
+        "branches_chart_mtd": branches_chart_mtd,
+        "categories_chart_mtd": categories_chart_mtd,
         "txn_list_mtd": txn_list_mtd,
         "txn_list_today": txn_list_today,
         "txn_summary_mtd": txn_summary_mtd,
@@ -633,6 +652,39 @@ async def transactions_list(
     except Exception as exc:
         logger.error("transactions_list_failed", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ─── View catalog / data explorer ────────────────────────────────────────────
+
+@router.get("/views")
+async def views_catalog(
+    user: TokenPayload = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """List all whitelisted ERP views from the semantic catalog."""
+    try:
+        data = list_catalog_views()
+        return {"success": True, **data}
+    except Exception as exc:
+        logger.error("views_catalog_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/views/query")
+async def views_query(
+    view: str = Query(..., min_length=1, description="Semantic view key, e.g. ai_branch"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=5, le=500),
+    user: TokenPayload = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Paginated SELECT * from a catalog view (OFFSET/FETCH)."""
+    try:
+        data = await run_analytics_sql(fetch_view_page(view, page=page, page_size=page_size))
+        return {"success": True, **data}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("views_query_failed", view=view, error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # ─── Cache Admin ──────────────────────────────────────────────────────────────
