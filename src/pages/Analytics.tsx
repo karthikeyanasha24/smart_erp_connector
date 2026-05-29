@@ -10,7 +10,7 @@ import {
   TrendingUp, TrendingDown, ShoppingBag, Users, Receipt, BarChart2, CalendarRange,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { useAnalyticsPage, prefetchAnalyticsPage, prefetchAnalyticsShell, fetchAndApplySnapshot } from '../hooks/useAnalytics';
+import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtLakhsAxis, formatChartLabel } from '../lib/format';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -159,10 +159,11 @@ export default function Analytics() {
   const customFetching = period === 'custom' && canFetchCustom && loading && !data;
 
   useEffect(() => {
-    // fetchAndApplySnapshot seeds analytics-page:{period}:: from the server-side
-    // cache so all period tabs are ready instantly — no loading shimmer on toggle.
+    // fetchAndApplySnapshot seeds the analytics-page cache from the backend snapshot.
+    // Called here to ensure the Analytics page gets fresh data after navigation.
+    // We do NOT call prefetchAnalyticsShell() — that fires all 5 periods simultaneously
+    // causing a request storm. Each period loads on-demand when the tab is clicked.
     void fetchAndApplySnapshot();
-    void prefetchAnalyticsShell();
   }, []);
 
   const gran = data?.granularity === 'month' ? 'month' as const : 'day' as const;
@@ -568,6 +569,24 @@ export default function Analytics() {
         </Card>
       ) : (
       <>
+      {/* ── Today: no-sales banner ── */}
+      {period === 'today' && !uiLoading && s && (s.mtd_sales ?? 0) === 0 && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm"
+          style={{
+            background: isDark ? 'rgba(255,184,0,0.08)' : 'rgba(255,184,0,0.07)',
+            border: '1px solid rgba(255,184,0,0.25)',
+            color: '#ffb800',
+          }}
+        >
+          <span style={{ fontSize: 16 }}>🌙</span>
+          <span>
+            <strong>No sales recorded today yet.</strong>{' '}
+            The store may not have opened or transactions haven&apos;t been processed.
+            Switch to <strong>MTD</strong> for the latest data, or check back once sales begin.
+          </span>
+        </div>
+      )}
       {/* ── KPI cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {uiLoading ? (

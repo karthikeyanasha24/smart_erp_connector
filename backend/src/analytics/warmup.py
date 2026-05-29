@@ -13,7 +13,7 @@ from src.config import cfg
 from src.utils.logger import logger
 from src.analytics.cache import cache
 from src.analytics.cache_prime import prime_chart_caches_from_bundle
-from src.analytics.concurrency import run_analytics_sql
+from src.analytics.concurrency import run_warmup_sql
 
 
 _warmup_running = False
@@ -117,10 +117,10 @@ async def warmup_all() -> None:
             _safe("bundle:today",       _prime_breakdown_bundle("today")),
             _safe("bundle:qtd",         _prime_breakdown_bundle("qtd")),
             _safe("kpi:qtd",            get_home_kpis("qtd")),
-            _safe("department:mtd",     run_analytics_sql(get_department_chart("mtd"))),
-            _safe("department:today",   run_analytics_sql(get_department_chart("today"))),
-            _safe("txns:mtd:p1",        run_analytics_sql(_get_txns("mtd",   1, 12))),
-            _safe("txns:today:p1",      run_analytics_sql(_get_txns("today", 1, 12))),
+            _safe("department:mtd",     run_warmup_sql(get_department_chart("mtd"))),
+            _safe("department:today",   run_warmup_sql(get_department_chart("today"))),
+            _safe("txns:mtd:p1",        run_warmup_sql(_get_txns("mtd",   1, 12))),
+            _safe("txns:today:p1",      run_warmup_sql(_get_txns("today", 1, 12))),
         )
         await _flush("Phase 1")
         logger.info(
@@ -135,7 +135,7 @@ async def warmup_all() -> None:
             _safe("kpi:last_6m",        get_home_kpis("last_6m")),
             _safe("bundle:last_6m",     _prime_breakdown_bundle("last_6m")),
             _safe("dashboard:last_6m",  get_dashboard("last_6m")),
-            _safe("department:qtd",     run_analytics_sql(get_department_chart("qtd"))),
+            _safe("department:qtd",     run_warmup_sql(get_department_chart("qtd"))),
         )
         await _flush("Phase 2")
 
@@ -213,9 +213,9 @@ async def _prime_breakdown_bundle(period: str) -> None:
 
     # Lean bundle first (matches test/breakdown_fetch.py -- 3 SQL queries).
     branches, trend, categories = await asyncio.gather(
-        run_analytics_sql(_branches()),
-        run_analytics_sql(_trend()),
-        run_analytics_sql(_categories()),
+        run_warmup_sql(_branches()),
+        run_warmup_sql(_trend()),
+        run_warmup_sql(_categories()),
     )
     lean = {
         "success": True,
@@ -229,8 +229,8 @@ async def _prime_breakdown_bundle(period: str) -> None:
     prime_chart_caches_from_bundle(period, lean, top_n=n)
 
     departments, kpis = await asyncio.gather(
-        run_analytics_sql(_departments()),
-        run_analytics_sql(_kpis()),
+        run_warmup_sql(_departments()),
+        run_warmup_sql(_kpis()),
     )
     with_depts = {**lean, "departments": departments}
     full = {**with_depts, "kpis": kpis}

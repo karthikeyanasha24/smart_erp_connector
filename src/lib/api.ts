@@ -49,6 +49,28 @@ async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: numb
   return res.json() as Promise<T>;
 }
 
+// ── In-flight GET deduplication ───────────────────────────────────────────────
+// Prevents the same URL from being fetched concurrently multiple times.
+// When useDashboardPage, fetchAndApplySnapshot, and prefetchAnalyticsShell all
+// fire analytics.kpis('mtd') simultaneously, only ONE HTTP request goes out.
+// The promise is shared; all callers get the same resolved value.
+// The entry is deleted as soon as the request settles, so the next explicit
+// re-fetch (e.g. Refresh button) goes through normally.
+const _getInflight = new Map<string, Promise<unknown>>();
+
+function apiFetchDeduped<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  // Only deduplicate GET requests (no body, idempotent).
+  const method = (init?.method ?? 'GET').toUpperCase();
+  if (method !== 'GET') return apiFetch<T>(path, init);
+
+  const existing = _getInflight.get(path) as Promise<T> | undefined;
+  if (existing) return existing;
+
+  const p = apiFetch<T>(path, init).finally(() => _getInflight.delete(path));
+  _getInflight.set(path, p as Promise<unknown>);
+  return p;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface KPIValue {
   value: number | null;
@@ -194,13 +216,17 @@ export interface ViewQueryResponse {
   page: number;
   page_size: number;
   total_count: number;
-  total_raw: number;
+  total_raw: number | null;
   total_pages: number;
   capped: boolean;
   hard_cap: number;
   columns: string[];
   rows: Record<string, unknown>[];
   duration_ms: number;
+  /** True when COUNT(*) was skipped for speed (dimension views). */
+  count_skipped?: boolean;
+  /** True when another page of rows may exist. */
+  has_more?: boolean;
 }
 
 export interface ProductCatalogResponse {
@@ -353,28 +379,32 @@ export const auth = {
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 export const analytics = {
+  // Note: all GET endpoints below use apiFetchDeduped — concurrent identical
+  // calls (e.g. from useDashboardPage + fetchAndApplySnapshot + prefetchAnalyticsShell)
+  // share a single in-flight HTTP request instead of firing N copies.
+
   dashboard: (period = 'mtd', startDate?: string, endDate?: string) => {
     const qs = new URLSearchParams({ period });
     if (startDate) qs.set('start_date', startDate);
     if (endDate) qs.set('end_date', endDate);
-    return apiFetch<DashboardResponse>(`/analytics/dashboard?${qs}`, { timeoutMs: 600_000 });
+    return apiFetchDeduped<DashboardResponse>(`/analytics/dashboard?${qs}`, { timeoutMs: 600_000 });
   },
 
   kpis: (period = 'mtd') =>
-    apiFetch<KPIsResponse>(`/analytics/kpis?period=${period}`, { timeoutMs: 600_000 }),
+    apiFetchDeduped<KPIsResponse>(`/analytics/kpis?period=${period}`, { timeoutMs: 600_000 }),
 
   trend: (period = 'last_30d') =>
-    apiFetch<{ success: boolean; period: string; trend: TrendPoint[] }>(
+    apiFetchDeduped<{ success: boolean; period: string; trend: TrendPoint[] }>(
       `/analytics/trend?period=${period}`
     ),
 
   categories: (period = 'mtd', topN = 10) =>
-    apiFetch<{ success: boolean; period: string; categories: CategoryPoint[] }>(
+    apiFetchDeduped<{ success: boolean; period: string; categories: CategoryPoint[] }>(
       `/analytics/categories?period=${period}&top_n=${topN}`
     ),
 
   branches: (period = 'mtd') =>
-    apiFetch<{ success: boolean; period: string; branches: BranchPoint[] }>(
+    apiFetchDeduped<{ success: boolean; period: string; branches: BranchPoint[] }>(
       `/analytics/branches?period=${period}`
     ),
 
@@ -388,37 +418,37 @@ export const analytics = {
     qs.set('top_n', String(topN));
     qs.set('include_departments', opts?.includeDepartments ? 'true' : 'false');
     qs.set('include_kpis', opts?.includeKpis ? 'true' : 'false');
-    return apiFetch<AnalyticsBundleResponse>(`/analytics/bundle?${qs}`, { timeoutMs: 600_000 });
+    return apiFetchDeduped<AnalyticsBundleResponse>(`/analytics/bundle?${qs}`, { timeoutMs: 600_000 });
   },
 
   departments: (period = 'mtd', topN = 10) =>
-    apiFetch<{ success: boolean; period: string; departments: DeptPoint[] }>(
+    apiFetchDeduped<{ success: boolean; period: string; departments: DeptPoint[] }>(
       `/analytics/departments?period=${period}&top_n=${topN}`
     ),
 
   salespersons: (period = 'mtd', topN = 10) =>
-    apiFetch<{ success: boolean; period: string; salespersons: SalespersonPoint[] }>(
+    apiFetchDeduped<{ success: boolean; period: string; salespersons: SalespersonPoint[] }>(
       `/analytics/salespersons?period=${period}&top_n=${topN}`
     ),
 
   heatmap: (period = 'last_30d') =>
-    apiFetch<{ success: boolean; period: string; heatmap: HeatmapPoint[] }>(
+    apiFetchDeduped<{ success: boolean; period: string; heatmap: HeatmapPoint[] }>(
       `/analytics/heatmap?period=${period}`
     ),
 
   branchDetail: (alias: string, period = 'last_14d') =>
-    apiFetch<Record<string, unknown>>(
+    apiFetchDeduped<Record<string, unknown>>(
       `/analytics/branches/${encodeURIComponent(alias)}?period=${encodeURIComponent(period)}`,
     ),
 
-  health: () => apiFetch<Record<string, unknown>>('/analytics/health'),
+  health: () => apiFetchDeduped<Record<string, unknown>>('/analytics/health'),
 
   /**
    * Instant snapshot — reads ONLY from server-side cache (PostgreSQL / memory).
    * Never waits for SQL Server. Responds in < 20 ms.
    * Use this to paint the dashboard on every page load, then refresh in background.
    */
-  snapshot: () => apiFetch<{
+  snapshot: () => apiFetchDeduped<{
     success: boolean;
     has_data: boolean;
     source: string;
@@ -493,12 +523,13 @@ export const analytics = {
   viewsCatalog: () =>
     apiFetch<ViewsCatalogResponse>('/analytics/views', { timeoutMs: 120_000 }),
 
-  viewQuery: (params: { view: string; page?: number; page_size?: number }) => {
+  viewQuery: (params: { view: string; page?: number; page_size?: number; skip_count?: boolean }) => {
     const qs = new URLSearchParams();
     qs.set('view', params.view);
     if (params.page != null) qs.set('page', String(params.page));
     if (params.page_size != null) qs.set('page_size', String(params.page_size));
-    return apiFetch<ViewQueryResponse>(`/analytics/views/query?${qs}`, { timeoutMs: 600_000 });
+    if (params.skip_count) qs.set('skip_count', 'true');
+    return apiFetch<ViewQueryResponse>(`/analytics/views/query?${qs}`, { timeoutMs: 120_000 });
   },
 };
 
@@ -513,7 +544,7 @@ export const ai = {
     }),
 
   verifiedSuggestions: (limit = 50) =>
-    apiFetch<VerifiedSuggestionsResponse>(
+    apiFetchDeduped<VerifiedSuggestionsResponse>(
       `/ai/verified-suggestions?limit=${encodeURIComponent(String(limit))}`,
     ),
 
@@ -527,7 +558,7 @@ export const ai = {
     }),
 
   pageInsights: (period = 'mtd') =>
-    apiFetch<PageInsightsResponse>(`/ai/page-insights?period=${encodeURIComponent(period)}`),
+    apiFetch<PageInsightsResponse>(`/ai/page-insights?period=${encodeURIComponent(period)}`, { timeoutMs: 45_000 }),
 };
 
 export interface PageInsight {

@@ -16,7 +16,12 @@ import anthropic
 from src.config import cfg
 from src.utils.logger import logger
 from src.utils.date_utils import detect_period
-from src.ai.schema import infer_relevant_tables
+from src.ai.schema_catalog import select_relevant_views, get_compact_view_index
+
+
+def infer_relevant_tables(query: str) -> List[str]:
+    """Returns the short_names of views most relevant to the query."""
+    return [v["short_name"] for v in select_relevant_views(query, max_views=3)]
 
 # ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,31 +154,40 @@ def extract_intent_fast(query: str) -> ExtractedIntent:
 
 # ─── AI Intent Extractor ──────────────────────────────────────────────────────
 
-_INTENT_SYSTEM = """You are an ERP analytics query classifier.
-Given a natural language query about business data (sales, inventory, customers),
-extract a structured intent as JSON.
+def _build_intent_system() -> str:
+    view_index = get_compact_view_index()
+    return f"""You are an ERP analytics query classifier for a retail business (database: zRetailHQ0).
+Given a natural language query, extract a structured intent as JSON.
+
+{view_index}
 
 Output ONLY valid JSON with this shape:
-{
+{{
   "intent": "<aggregate|trend|comparison|ranking|detail|kpi|distribution|forecast|anomaly>",
-  "period": "<period string: today|yesterday|mtd|ytd|qtd|last_7d|last_30d|last_month|last_quarter|last_year>",
-  "compare_with": "<optional comparison period or null>",
-  "dimension": "<branch|category|department|salesperson|item|null>",
-  "metric": "<revenue|customer_count|transaction_count|quantity|stock_quantity|discount|profit>",
-  "filters": {},
+  "period": "<today|yesterday|mtd|ytd|qtd|last_7d|last_30d|last_month|last_quarter|last_year>",
+  "compare_with": "<comparison period or null>",
+  "dimension": "<branch|category|department|salesperson|item|supplier|customer|null>",
+  "metric": "<revenue|customer_count|transaction_count|quantity|stock_quantity|discount|profit|purchase_value>",
+  "filters": {{}},
   "top_n": <number or null>,
+  "tables": ["<primary view short_name>", "<secondary view if needed>"],
   "chart_type": "<bar|line|area|pie|donut|scatter|heatmap|table|kpi_card>",
   "confidence": <0.0-1.0>,
   "needs_clarification": "<question if ambiguous or null>"
-}
+}}
 
 Rules:
 - Default period to "mtd" if none mentioned
-- For trend queries: area or line chart
+- For trend/daily/over-time queries: area or line chart
 - For rankings/top-N: bar chart
-- For distributions: pie or donut
-- For single KPIs: kpi_card
+- For distributions/breakdowns: pie or donut
+- For single KPIs (total, count): kpi_card
+- For tables/lists/detail: table
+- Use the view index above to pick the most relevant tables[] for the query
 - confidence 0.9+ for clear queries, 0.5-0.7 for ambiguous"""
+
+
+_INTENT_SYSTEM: str = ""  # built lazily to avoid import-time catalog load
 
 _ai_client: Optional[anthropic.AsyncAnthropic] = None
 
@@ -189,6 +203,10 @@ async def extract_intent_ai(
     query: str,
     conversation_context: Optional[str] = None,
 ) -> ExtractedIntent:
+    global _INTENT_SYSTEM
+    if not _INTENT_SYSTEM:
+        _INTENT_SYSTEM = _build_intent_system()
+
     client = _get_client()
 
     user_msg = query
@@ -198,7 +216,7 @@ async def extract_intent_ai(
     try:
         response = await client.messages.create(
             model=cfg.ANTHROPIC_MODEL,
-            max_tokens=512,
+            max_tokens=600,
             system=_INTENT_SYSTEM,
             messages=[{"role": "user", "content": user_msg}],
         )

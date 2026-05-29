@@ -715,11 +715,16 @@ async def views_query(
     view: str = Query(..., description="View key from catalog"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
+    skip_count: Optional[bool] = Query(
+        None,
+        description="Skip row count (fast). Default: auto for dimension/master views.",
+    ),
     user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Paginate rows from a whitelisted ERP view."""
     try:
-        data = await run_analytics_sql(fetch_view_page(view, page, page_size))
+        # Do not use run_analytics_sql — view browse must not queue behind dashboard warmup.
+        data = await fetch_view_page(view, page, page_size, skip_count=skip_count)
         return {"success": True, **data}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

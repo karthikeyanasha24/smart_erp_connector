@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, BarChart, Bar,
@@ -6,7 +6,9 @@ import {
 } from 'recharts';
 import {
   Send, Sparkles, Code2, BarChart2, Loader2,
-  Zap, Brain, Terminal, Copy, Check, ArrowRight, Database, ShieldCheck, ChevronDown,
+  Zap, Brain, Terminal, Copy, Check, ArrowRight, Database, ShieldCheck,
+  ChevronDown, ThumbsUp, ThumbsDown, BookMarked, Star, Plus, Trash2,
+  Search, X, LayoutTemplate, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { ai, NLQResponse, fetchPublicHealth } from '../lib/api';
@@ -19,6 +21,40 @@ import {
 import verifiedQueriesFallback from '../data/verified_nlq_queries.json';
 
 const PIE_COLORS = ['#00b8e6', '#00e67a', '#ffb800', '#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#4ade80'];
+
+// ── Predefined templates (hardcoded, always available) ────────────────────────
+const PREDEFINED_TEMPLATES: QueryTemplate[] = [
+  { id: 'tpl_1', label: 'Top branches by revenue', question: 'Show top 10 branches by revenue this month', category: 'Revenue', builtin: true },
+  { id: 'tpl_2', label: 'Daily revenue trend', question: 'Show daily revenue trend for the last 30 days', category: 'Trends', builtin: true },
+  { id: 'tpl_3', label: 'Category breakdown', question: 'Break down sales by product category this quarter', category: 'Products', builtin: true },
+  { id: 'tpl_4', label: 'Top salespersons', question: 'Who are the top 10 salespersons by revenue MTD?', category: 'Sales', builtin: true },
+  { id: 'tpl_5', label: 'Customer count', question: 'How many unique customers made purchases this month?', category: 'Customers', builtin: true },
+  { id: 'tpl_6', label: 'Avg order value', question: 'What is the average order value by branch this quarter?', category: 'Revenue', builtin: true },
+  { id: 'tpl_7', label: 'Revenue vs last year', question: 'Compare this month\'s revenue to the same period last year', category: 'Trends', builtin: true },
+  { id: 'tpl_8', label: 'Department performance', question: 'Show revenue by department for the current month', category: 'Departments', builtin: true },
+];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface QueryTemplate {
+  id: string;
+  label: string;
+  question: string;
+  category: string;
+  builtin: boolean;
+  sql?: string;
+  savedAt?: string;
+}
+
+interface ApprovedQuery {
+  id: string;
+  question: string;
+  sql: string;
+  savedAt: string;
+}
+
+type Feedback = 'up' | 'down' | null;
+type LeftTab = 'suggestions' | 'templates';
 
 interface Message {
   id: string;
@@ -34,7 +70,64 @@ interface Message {
   faqTemplateId?: string | null;
   provider?: 'claude' | 'openai';
   timestamp: string;
+  feedback?: Feedback;
+  /** If this reply reused an approved SQL, store the original approved question */
+  reusedFrom?: string;
+  /** The user question that generated this AI reply (for saving) */
+  userQuestion?: string;
 }
+
+// ── Similarity helpers ────────────────────────────────────────────────────────
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'may', 'might', 'can', 'of', 'in', 'on', 'at', 'to', 'for',
+  'with', 'by', 'from', 'and', 'or', 'but', 'not', 'this', 'that',
+  'what', 'how', 'who', 'me', 'my', 'i', 'show', 'get', 'give',
+]);
+
+function tokenize(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(t => t.length > 2 && !STOP_WORDS.has(t)),
+  );
+}
+
+function jaccardSimilarity(a: string, b: string): number {
+  const tokA = tokenize(a);
+  const tokB = tokenize(b);
+  if (!tokA.size && !tokB.size) return 1;
+  if (!tokA.size || !tokB.size) return 0;
+  const intersection = [...tokA].filter(t => tokB.has(t)).length;
+  const union = new Set([...tokA, ...tokB]).size;
+  return intersection / union;
+}
+
+// ── LocalStorage helpers ──────────────────────────────────────────────────────
+
+const LS_APPROVED = 'smarterp_approved_queries';
+const LS_TEMPLATES = 'smarterp_user_templates';
+
+function loadApproved(): ApprovedQuery[] {
+  try { return JSON.parse(localStorage.getItem(LS_APPROVED) ?? '[]'); } catch { return []; }
+}
+
+function saveApproved(list: ApprovedQuery[]) {
+  localStorage.setItem(LS_APPROVED, JSON.stringify(list.slice(0, 200)));
+}
+
+function loadUserTemplates(): QueryTemplate[] {
+  try { return JSON.parse(localStorage.getItem(LS_TEMPLATES) ?? '[]'); } catch { return []; }
+}
+
+function saveUserTemplates(list: QueryTemplate[]) {
+  localStorage.setItem(LS_TEMPLATES, JSON.stringify(list.slice(0, 100)));
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function SQLBlock({ sql }: { sql: string }) {
   const { isDark } = useTheme();
@@ -72,37 +165,20 @@ function KPICards({ cards }: { cards: KPICard[] }) {
     <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
       {cards.map(card => (
         <div key={card.label} className="rounded-xl px-3 py-2.5"
-          style={{
-            background: isDark ? 'rgba(0,184,230,0.08)' : 'rgba(0,184,230,0.06)',
-            border: isDark ? '1px solid rgba(0,184,230,0.15)' : '1px solid rgba(0,184,230,0.12)',
-          }}>
-          <p className="text-2xs uppercase tracking-wide truncate" style={{ color: 'var(--text-muted)' }} title={card.label}>
-            {card.label}
-          </p>
-          <p className="text-base font-bold mt-0.5 tabular-nums" style={{ color: 'var(--text-primary)' }}>
-            {card.value}
-          </p>
+          style={{ background: isDark ? 'rgba(0,184,230,0.08)' : 'rgba(0,184,230,0.06)', border: isDark ? '1px solid rgba(0,184,230,0.15)' : '1px solid rgba(0,184,230,0.12)' }}>
+          <p className="text-2xs uppercase tracking-wide truncate" style={{ color: 'var(--text-muted)' }} title={card.label}>{card.label}</p>
+          <p className="text-base font-bold mt-0.5 tabular-nums" style={{ color: 'var(--text-primary)' }}>{card.value}</p>
         </div>
       ))}
     </div>
   );
 }
 
-function ResultChart({
-  type,
-  data,
-  valueKey,
-}: {
-  type: 'bar' | 'area' | 'line' | 'pie';
-  data: ChartPoint[];
-  valueKey: string;
-}) {
+function ResultChart({ type, data, valueKey }: { type: 'bar' | 'area' | 'line' | 'pie'; data: ChartPoint[]; valueKey: string }) {
   const { isDark } = useTheme();
   if (!data.length) return null;
-
   const tick = { fill: 'var(--text-muted)', fontSize: 9 };
   const tooltipFmt = (v: number) => [formatChartValue(v), valueKey];
-
   return (
     <div className="mt-3 rounded-xl p-4"
       style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
@@ -114,12 +190,8 @@ function ResultChart({
         <ResponsiveContainer width="100%" height="100%">
           {type === 'pie' ? (
             <PieChart>
-              <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) =>
-                `${String(name).slice(0, 8)} ${((percent ?? 0) * 100).toFixed(0)}%`
-              }>
-                {data.map((_, i) => (
-                  <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
+              <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) => `${String(name).slice(0, 8)} ${((percent ?? 0) * 100).toFixed(0)}%`}>
+                {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
               </Pie>
               <Tooltip formatter={(v: number) => formatChartValue(v)} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
@@ -166,17 +238,13 @@ function ResultTable({ columns, rows }: { columns: string[]; rows: string[][] })
       <table className="w-full text-xs min-w-[280px]">
         <thead>
           <tr style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}>
-            {columns.map(col => (
-              <th key={col} className="px-3 py-2 text-left font-semibold whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{col}</th>
-            ))}
+            {columns.map(col => <th key={col} className="px-3 py-2 text-left font-semibold whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{col}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.04)' }}>
-              {row.map((cell, j) => (
-                <td key={j} className="px-3 py-2 whitespace-nowrap" style={{ color: j === 0 ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{cell}</td>
-              ))}
+              {row.map((cell, j) => <td key={j} className="px-3 py-2 whitespace-nowrap" style={{ color: j === 0 ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{cell}</td>)}
             </tr>
           ))}
         </tbody>
@@ -197,71 +265,221 @@ function ThinkingBubble({ text }: { text: string }) {
   );
 }
 
-function nlqToMessage(resp: NLQResponse, id: string, usedProvider: 'claude' | 'openai'): Message {
-  const viz = buildNLQVisualization(resp.records ?? [], resp.chart_type);
+// ── Toast notification ────────────────────────────────────────────────────────
 
+function Toast({ message, type, visible }: { message: string; type: 'success' | 'error'; visible: boolean }) {
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold text-white shadow-lg"
+          style={{ background: type === 'success' ? 'linear-gradient(135deg, #00b8e6, #00e67a)' : 'linear-gradient(135deg, #ef4444, #f97316)' }}
+        >
+          {type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+          {message}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ── NLQ → Message converter ───────────────────────────────────────────────────
+
+function nlqToMessage(resp: NLQResponse, id: string, usedProvider: 'claude' | 'openai', userQuestion: string, reusedFrom?: string): Message {
+  const viz = buildNLQVisualization(resp.records ?? [], resp.chart_type);
   const providerLabel = usedProvider === 'openai' ? 'ChatGPT' : 'Claude';
   const thinkingParts = [
-    resp.faq_template_id ? `Verified FAQ · ${resp.faq_template_id}` : resp.from_template ? 'Template SQL' : 'Generated SQL',
+    reusedFrom ? '♻️ Approved SQL reused' : resp.faq_template_id ? `Verified FAQ · ${resp.faq_template_id}` : resp.from_template ? 'Template SQL' : 'Generated SQL',
     `${resp.record_count} rows`,
     resp.period_label || resp.period,
     `${resp.duration_ms}ms`,
     providerLabel,
   ];
-
   return {
     id,
     role: 'ai',
     content: resp.summary || resp.description || 'Query executed successfully.',
     sql: resp.sql,
     chartType: viz.chartType,
-    chart: viz.chartType !== 'none' && viz.chartData.length
-      ? { data: viz.chartData, valueKey: viz.valueKey }
-      : undefined,
+    chart: viz.chartType !== 'none' && viz.chartData.length ? { data: viz.chartData, valueKey: viz.valueKey } : undefined,
     kpiCards: viz.kpiCards.length ? viz.kpiCards : undefined,
     table: viz.table,
     insights: (resp.insights ?? []) as Message['insights'],
-    thinking: thinkingParts.join(' · '),
+    thinking: thinkingParts.filter(Boolean).join(' · '),
     faqTemplateId: resp.faq_template_id,
     provider: usedProvider,
     timestamp: new Date().toLocaleTimeString(),
+    feedback: null,
+    reusedFrom,
+    userQuestion,
   };
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function AIQuery() {
   const { isDark } = useTheme();
+
+  // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSQL, setShowSQL] = useState<Record<string, boolean>>({});
-  const [suggestions, setSuggestions] = useState<string[]>(verifiedQueriesFallback as string[]);
-  const [suggestionFilter, setSuggestionFilter] = useState('');
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
   const [queryCount, setQueryCount] = useState(0);
   const [lastDurationMs, setLastDurationMs] = useState<number | null>(null);
   const [provider, setProvider] = useState<'claude' | 'openai'>('claude');
   const [showProviderMenu, setShowProviderMenu] = useState(false);
+
+  // Suggestions state
+  const [suggestions, setSuggestions] = useState<string[]>(verifiedQueriesFallback as string[]);
+  const [suggestionFilter, setSuggestionFilter] = useState('');
+
+  // Left panel tabs
+  const [leftTab, setLeftTab] = useState<LeftTab>('suggestions');
+
+  // Templates (predefined + user-saved)
+  const [userTemplates, setUserTemplates] = useState<QueryTemplate[]>(() => loadUserTemplates());
+  const [templateFilter, setTemplateFilter] = useState('');
+  const [addingTemplate, setAddingTemplate] = useState(false);
+  const [newTplLabel, setNewTplLabel] = useState('');
+  const [newTplQuestion, setNewTplQuestion] = useState('');
+  const [newTplCategory, setNewTplCategory] = useState('Custom');
+
+  // Approved queries (semantic SQL reuse)
+  const [approvedQueries, setApprovedQueries] = useState<ApprovedQuery[]>(() => loadApproved());
+
+  // Toast
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
   useEffect(() => {
     ai.verifiedSuggestions(50)
       .then(r => { if (r.queries?.length) setSuggestions(r.queries); })
-      .catch(() => { /* keep JSON fallback */ });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     fetchPublicHealth().then(h => setDbConnected(h?.mssql?.connected ?? false));
   }, []);
 
-  const filteredSuggestions = suggestions.filter(s =>
-    !suggestionFilter.trim() || s.toLowerCase().includes(suggestionFilter.toLowerCase()),
-  );
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
+  // ── Semantic match ─────────────────────────────────────────────────────────
+  const SIMILARITY_THRESHOLD = 0.65; // Jaccard 0.65 ≈ "very similar question"
+
+  const findApprovedMatch = useCallback((query: string): ApprovedQuery | null => {
+    let best: ApprovedQuery | null = null;
+    let bestScore = SIMILARITY_THRESHOLD;
+    for (const aq of approvedQueries) {
+      const score = jaccardSimilarity(query, aq.question);
+      if (score > bestScore) { bestScore = score; best = aq; }
+    }
+    return best;
+  }, [approvedQueries]);
+
+  // ── Feedback (thumbs) ──────────────────────────────────────────────────────
+  const handleFeedback = useCallback((msgId: string, fb: Feedback) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId) return m;
+      if (fb === 'up' && m.sql && m.userQuestion) {
+        // Save to approved queries
+        const newApproved: ApprovedQuery = {
+          id: `aq_${Date.now()}`,
+          question: m.userQuestion,
+          sql: m.sql,
+          savedAt: new Date().toISOString(),
+        };
+        setApprovedQueries(prev => {
+          // Remove duplicates of same question
+          const deduped = prev.filter(q => jaccardSimilarity(q.question, m.userQuestion!) < 0.9);
+          const updated = [newApproved, ...deduped];
+          saveApproved(updated);
+          return updated;
+        });
+        showToast('SQL approved and saved for reuse ✓');
+      } else if (fb === 'down') {
+        showToast('Feedback noted — SQL not saved', 'error');
+      }
+      return { ...m, feedback: m.feedback === fb ? null : fb };
+    }));
+  }, [showToast]);
+
+  // ── Template management ────────────────────────────────────────────────────
+  const allTemplates = useMemo(() => [
+    ...PREDEFINED_TEMPLATES,
+    ...userTemplates,
+  ], [userTemplates]);
+
+  const filteredTemplates = useMemo(() => {
+    const q = templateFilter.trim().toLowerCase();
+    if (!q) return allTemplates;
+    return allTemplates.filter(t =>
+      t.label.toLowerCase().includes(q) ||
+      t.question.toLowerCase().includes(q) ||
+      t.category.toLowerCase().includes(q),
+    );
+  }, [allTemplates, templateFilter]);
+
+  const saveTemplate = useCallback(() => {
+    if (!newTplLabel.trim() || !newTplQuestion.trim()) return;
+    const tpl: QueryTemplate = {
+      id: `user_${Date.now()}`,
+      label: newTplLabel.trim(),
+      question: newTplQuestion.trim(),
+      category: newTplCategory.trim() || 'Custom',
+      builtin: false,
+      savedAt: new Date().toISOString(),
+    };
+    setUserTemplates(prev => {
+      const updated = [tpl, ...prev];
+      saveUserTemplates(updated);
+      return updated;
+    });
+    setNewTplLabel(''); setNewTplQuestion(''); setNewTplCategory('Custom');
+    setAddingTemplate(false);
+    showToast('Template saved');
+  }, [newTplLabel, newTplQuestion, newTplCategory, showToast]);
+
+  const deleteTemplate = useCallback((id: string) => {
+    setUserTemplates(prev => {
+      const updated = prev.filter(t => t.id !== id);
+      saveUserTemplates(updated);
+      return updated;
+    });
+  }, []);
+
+  // ── Save message as template ───────────────────────────────────────────────
+  const saveAsTemplate = useCallback((msg: Message) => {
+    if (!msg.userQuestion) return;
+    const tpl: QueryTemplate = {
+      id: `user_${Date.now()}`,
+      label: msg.userQuestion.slice(0, 40),
+      question: msg.userQuestion,
+      category: 'Saved',
+      builtin: false,
+      sql: msg.sql,
+      savedAt: new Date().toISOString(),
+    };
+    setUserTemplates(prev => {
+      const updated = [tpl, ...prev];
+      saveUserTemplates(updated);
+      return updated;
+    });
+    showToast('Query saved as template');
+  }, [showToast]);
+
+  // ── Send message ───────────────────────────────────────────────────────────
   const sendMessage = useCallback(async (text?: string) => {
     const msg = text ?? input.trim();
     if (!msg || loading) return;
@@ -276,13 +494,16 @@ export default function AIQuery() {
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
+    // Check for approved SQL match
+    const approvedMatch = findApprovedMatch(msg);
+    const queryText = approvedMatch ? approvedMatch.question : msg;
+
     try {
-      const resp = await ai.query({ query: msg, conversation_id: conversationId, provider });
+      const resp = await ai.query({ query: queryText, conversation_id: conversationId, provider });
       if (resp.conversation_id) setConversationId(resp.conversation_id);
       setQueryCount(c => c + 1);
       setLastDurationMs(resp.duration_ms);
-
-      const aiMsg = nlqToMessage(resp, (Date.now() + 1).toString(), provider);
+      const aiMsg = nlqToMessage(resp, (Date.now() + 1).toString(), provider, msg, approvedMatch?.question);
       setMessages(prev => [...prev, aiMsg]);
     } catch (err) {
       setMessages(prev => [...prev, {
@@ -290,22 +511,41 @@ export default function AIQuery() {
         role: 'ai',
         content: `Query failed: ${err instanceof Error ? err.message : 'Unknown error'}. Check login and SQL Server connection.`,
         timestamp: new Date().toLocaleTimeString(),
+        userQuestion: msg,
       }]);
     } finally {
       setLoading(false);
     }
-  }, [input, loading, conversationId]);
+  }, [input, loading, conversationId, provider, findApprovedMatch]);
 
+  // ── Filter suggestions ─────────────────────────────────────────────────────
+  const filteredSuggestions = suggestions.filter(s =>
+    !suggestionFilter.trim() || s.toLowerCase().includes(suggestionFilter.toLowerCase()),
+  );
+
+  // ── Render AI message extras ───────────────────────────────────────────────
   const renderAiResults = (msg: Message) => (
     <div className="w-full mt-1 space-y-0">
       {msg.thinking && <ThinkingBubble text={msg.thinking} />}
-      {msg.faqTemplateId && (
+
+      {/* Reused SQL badge */}
+      {msg.reusedFrom && (
+        <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-medium"
+          style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.25)' }}>
+          <CheckCircle2 size={10} />
+          Matched approved SQL
+        </div>
+      )}
+
+      {/* Verified FAQ badge */}
+      {msg.faqTemplateId && !msg.reusedFrom && (
         <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-medium"
           style={{ background: 'rgba(0,230,122,0.1)', color: '#00e67a', border: '1px solid rgba(0,230,122,0.25)' }}>
           <ShieldCheck size={10} />
           Verified FAQ SQL
         </div>
       )}
+
       {msg.kpiCards && <KPICards cards={msg.kpiCards} />}
       {msg.chart && msg.chartType && msg.chartType !== 'none' && (
         <ResultChart type={msg.chartType as 'bar' | 'area' | 'line' | 'pie'} data={msg.chart.data} valueKey={msg.chart.valueKey} />
@@ -314,7 +554,8 @@ export default function AIQuery() {
       {msg.insights && msg.insights.length > 0 && (
         <div className="mt-2 space-y-1">
           {msg.insights.slice(0, 3).map((ins, i) => (
-            <p key={i} className="text-xs px-2 py-1 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', color: 'var(--text-secondary)' }}>
+            <p key={i} className="text-xs px-2 py-1 rounded-lg"
+              style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', color: 'var(--text-secondary)' }}>
               {ins.title ? <span className="font-semibold">{ins.title}: </span> : null}
               {ins.description}
             </p>
@@ -338,25 +579,85 @@ export default function AIQuery() {
           </AnimatePresence>
         </div>
       )}
+
+      {/* Feedback row */}
+      <div className="flex items-center gap-2 mt-3 pt-2.5"
+        style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}>
+        <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>Was this helpful?</span>
+        <motion.button
+          type="button"
+          onClick={() => handleFeedback(msg.id, 'up')}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
+          style={{
+            background: msg.feedback === 'up' ? 'rgba(0,230,122,0.15)' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+            color: msg.feedback === 'up' ? '#00e67a' : 'var(--text-muted)',
+            border: msg.feedback === 'up' ? '1px solid rgba(0,230,122,0.3)' : isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
+          }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <ThumbsUp size={10} />
+          {msg.feedback === 'up' ? 'Approved' : 'Approve'}
+        </motion.button>
+        <motion.button
+          type="button"
+          onClick={() => handleFeedback(msg.id, 'down')}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
+          style={{
+            background: msg.feedback === 'down' ? 'rgba(239,68,68,0.12)' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+            color: msg.feedback === 'down' ? '#f87171' : 'var(--text-muted)',
+            border: msg.feedback === 'down' ? '1px solid rgba(239,68,68,0.25)' : isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
+          }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <ThumbsDown size={10} />
+          {msg.feedback === 'down' ? 'Not helpful' : 'Not helpful'}
+        </motion.button>
+        {msg.sql && msg.userQuestion && (
+          <motion.button
+            type="button"
+            onClick={() => saveAsTemplate(msg)}
+            className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
+            style={{
+              background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+              color: 'var(--text-muted)',
+              border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
+            }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <Star size={10} />
+            Save as template
+          </motion.button>
+        )}
+      </div>
     </div>
   );
+
+  // ── Template category color ────────────────────────────────────────────────
+  const categoryColor: Record<string, string> = {
+    Revenue: '#00b8e6', Trends: '#00e67a', Products: '#ffb800',
+    Sales: '#a78bfa', Customers: '#f472b6', Departments: '#fb923c',
+    Saved: '#00b8e6', Custom: '#94a3b8',
+  };
 
   return (
     <div className="flex gap-4 h-[calc(100vh-108px)]">
 
-      {/* Left: suggestions */}
+      {/* Toast */}
+      <Toast message={toast?.message ?? ''} type={toast?.type ?? 'success'} visible={!!toast} />
+
+      {/* ── Left panel ──────────────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
         className="w-72 flex-shrink-0 flex flex-col gap-3 min-h-0"
       >
+        {/* Stats card */}
         <div className="rounded-2xl p-4 flex-shrink-0"
-          style={{
-            background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.85)',
-            backdropFilter: 'blur(20px)',
-            border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
-          }}>
+          style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}>
           <div className="flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center"
               style={{ background: 'linear-gradient(135deg, rgba(0,184,230,0.2), rgba(0,230,122,0.2))', border: '1px solid rgba(0,184,230,0.2)' }}>
@@ -367,7 +668,7 @@ export default function AIQuery() {
               <div className="flex items-center gap-1">
                 <div className={`w-1.5 h-1.5 rounded-full ${dbConnected ? 'bg-accent-400 animate-pulse' : 'bg-amber-400'}`} />
                 <p className="text-2xs" style={{ color: dbConnected ? '#00e67a' : '#ffb800' }}>
-                  {dbConnected === null ? 'Checking DB…' : dbConnected ? 'SQL Server connected' : 'DB offline'}
+                  {dbConnected === null ? 'Checking…' : dbConnected ? 'SQL Server connected' : 'DB offline'}
                 </p>
               </div>
             </div>
@@ -384,67 +685,232 @@ export default function AIQuery() {
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Verified prompts</span>
-              <span className="text-xs font-bold" style={{ color: '#00e67a' }}>{suggestions.length}</span>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Approved SQLs</span>
+              <span className="text-xs font-bold" style={{ color: '#00e67a' }}>{approvedQueries.length}</span>
             </div>
           </div>
         </div>
 
-        <div className="rounded-2xl p-4 flex-1 flex flex-col min-h-0 overflow-hidden"
-          style={{
-            background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.85)',
-            backdropFilter: 'blur(20px)',
-            border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
-          }}>
-          <div className="flex items-center gap-1.5 mb-2 flex-shrink-0">
-            <ShieldCheck size={12} style={{ color: '#00e67a' }} />
-            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-              Top {suggestions.length} verified queries
-            </p>
+        {/* Tabs + panel */}
+        <div className="rounded-2xl flex-1 flex flex-col min-h-0 overflow-hidden"
+          style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}>
+
+          {/* Tab bar */}
+          <div className="flex flex-shrink-0" style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
+            {([
+              { id: 'suggestions' as LeftTab, label: 'Suggestions', icon: ShieldCheck },
+              { id: 'templates' as LeftTab, label: 'Templates', icon: LayoutTemplate },
+            ] as const).map(tab => {
+              const Icon = tab.icon;
+              const isActive = leftTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setLeftTab(tab.id)}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-semibold"
+                  style={{
+                    color: isActive ? '#00b8e6' : 'var(--text-muted)',
+                    borderBottom: isActive ? '2px solid #00b8e6' : '2px solid transparent',
+                  }}
+                >
+                  <Icon size={11} />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
-          <input
-            type="search"
-            placeholder="Filter suggestions…"
-            value={suggestionFilter}
-            onChange={e => setSuggestionFilter(e.target.value)}
-            className="w-full mb-2 px-3 py-1.5 rounded-lg text-xs outline-none flex-shrink-0"
-            style={{
-              background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
-              color: 'var(--text-primary)',
-            }}
-          />
-          <div className="space-y-1.5 overflow-y-auto flex-1 scrollbar-none pr-0.5">
-            {filteredSuggestions.map((s, i) => (
-              <motion.button
-                key={`${i}-${s.slice(0, 24)}`}
-                onClick={() => sendMessage(s)}
-                disabled={loading}
-                className="w-full text-left px-3 py-2 rounded-xl text-xs flex items-start gap-2 disabled:opacity-50"
-                style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}
-                whileHover={{ borderColor: 'rgba(0,184,230,0.3)', background: isDark ? 'rgba(0,184,230,0.06)' : 'rgba(0,184,230,0.04)' }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Zap size={10} className="flex-shrink-0 mt-0.5 text-primary-400" />
-                <span style={{ color: 'var(--text-secondary)' }}>{s}</span>
-              </motion.button>
-            ))}
-          </div>
+
+          {/* Suggestions tab */}
+          {leftTab === 'suggestions' && (
+            <div className="flex flex-col flex-1 min-h-0 p-3">
+              <div className="flex items-center gap-1.5 mb-2 flex-shrink-0">
+                <ShieldCheck size={12} style={{ color: '#00e67a' }} />
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  {suggestions.length} verified queries
+                </p>
+              </div>
+              <div className="relative mb-2 flex-shrink-0">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                <input
+                  type="search"
+                  placeholder="Filter suggestions…"
+                  value={suggestionFilter}
+                  onChange={e => setSuggestionFilter(e.target.value)}
+                  className="w-full pl-7 pr-3 py-1.5 rounded-lg text-xs outline-none"
+                  style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
+                />
+              </div>
+              <div className="space-y-1.5 overflow-y-auto flex-1 scrollbar-none pr-0.5">
+                {filteredSuggestions.map((s, i) => (
+                  <motion.button
+                    key={`${i}-${s.slice(0, 24)}`}
+                    onClick={() => sendMessage(s)}
+                    disabled={loading}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs flex items-start gap-2 disabled:opacity-50"
+                    style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}
+                    whileHover={{ borderColor: 'rgba(0,184,230,0.3)', background: isDark ? 'rgba(0,184,230,0.06)' : 'rgba(0,184,230,0.04)' }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <Zap size={10} className="flex-shrink-0 mt-0.5" style={{ color: '#00b8e6' }} />
+                    <span style={{ color: 'var(--text-secondary)' }}>{s}</span>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Templates tab */}
+          {leftTab === 'templates' && (
+            <div className="flex flex-col flex-1 min-h-0 p-3">
+              <div className="flex items-center justify-between mb-2 flex-shrink-0">
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  {allTemplates.length} templates
+                </p>
+                <motion.button
+                  type="button"
+                  onClick={() => setAddingTemplate(v => !v)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
+                  style={{ background: 'rgba(0,184,230,0.1)', color: '#00b8e6', border: '1px solid rgba(0,184,230,0.2)' }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {addingTemplate ? <X size={10} /> : <Plus size={10} />}
+                  {addingTemplate ? 'Cancel' : 'New'}
+                </motion.button>
+              </div>
+
+              {/* Add template form */}
+              <AnimatePresence>
+                {addingTemplate && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex-shrink-0 mb-2 space-y-1.5 overflow-hidden"
+                  >
+                    <input
+                      type="text"
+                      placeholder="Template name…"
+                      value={newTplLabel}
+                      onChange={e => setNewTplLabel(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
+                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Category (e.g. Revenue)…"
+                      value={newTplCategory}
+                      onChange={e => setNewTplCategory(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
+                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
+                    />
+                    <textarea
+                      placeholder="Question / prompt…"
+                      value={newTplQuestion}
+                      onChange={e => setNewTplQuestion(e.target.value)}
+                      rows={2}
+                      className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none resize-none"
+                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
+                    />
+                    <motion.button
+                      type="button"
+                      onClick={saveTemplate}
+                      disabled={!newTplLabel.trim() || !newTplQuestion.trim()}
+                      className="w-full py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg, #00b8e6, #00e67a)' }}
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      Save Template
+                    </motion.button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Template search */}
+              <div className="relative mb-2 flex-shrink-0">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                <input
+                  type="search"
+                  placeholder="Search templates…"
+                  value={templateFilter}
+                  onChange={e => setTemplateFilter(e.target.value)}
+                  className="w-full pl-7 pr-3 py-1.5 rounded-lg text-xs outline-none"
+                  style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
+                />
+              </div>
+
+              {/* Template list */}
+              <div className="space-y-1.5 overflow-y-auto flex-1 scrollbar-none pr-0.5">
+                {filteredTemplates.map(tpl => {
+                  const color = categoryColor[tpl.category] ?? '#94a3b8';
+                  return (
+                    <motion.div
+                      key={tpl.id}
+                      className="group relative px-3 py-2 rounded-xl text-xs"
+                      style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}
+                      whileHover={{ borderColor: `${color}50` }}
+                    >
+                      <div className="flex items-start gap-2 pr-5">
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1" style={{ background: color }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{tpl.label}</p>
+                          <p className="text-2xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{tpl.category}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 mt-1.5">
+                        <motion.button
+                          type="button"
+                          onClick={() => sendMessage(tpl.question)}
+                          disabled={loading}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-semibold disabled:opacity-50"
+                          style={{ background: `${color}18`, color }}
+                          whileHover={{ scale: 1.04 }}
+                          whileTap={{ scale: 0.96 }}
+                        >
+                          <ArrowRight size={9} />
+                          Run
+                        </motion.button>
+                        <motion.button
+                          type="button"
+                          onClick={() => setInput(tpl.question)}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-semibold"
+                          style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}
+                          whileHover={{ scale: 1.04 }}
+                          whileTap={{ scale: 0.96 }}
+                        >
+                          Edit
+                        </motion.button>
+                        {!tpl.builtin && (
+                          <motion.button
+                            type="button"
+                            onClick={() => deleteTemplate(tpl.id)}
+                            className="ml-auto flex items-center px-1.5 py-0.5 rounded-md text-2xs opacity-0 group-hover:opacity-100"
+                            style={{ color: '#f87171' }}
+                            whileHover={{ scale: 1.1 }}
+                          >
+                            <Trash2 size={9} />
+                          </motion.button>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </motion.div>
 
-      {/* Main chat */}
+      {/* ── Main chat ────────────────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.1 }}
         className="flex-1 flex flex-col rounded-2xl overflow-hidden min-w-0"
-        style={{
-          background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.85)',
-          backdropFilter: 'blur(20px)',
-          border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
-        }}
+        style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}
       >
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
           style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
           <div className="flex items-center gap-3">
@@ -454,11 +920,22 @@ export default function AIQuery() {
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>AI Query Workspace</h2>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Verified FAQ SQL → live data → charts & KPI cards</p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Approve answers to reuse SQL · Templates for saved queries
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Approved queries count */}
+            {approvedQueries.length > 0 && (
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
+                style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.25)' }}>
+                <BookMarked size={10} />
+                {approvedQueries.length} approved
+              </div>
+            )}
+
             {/* Provider toggle */}
             <div className="relative">
               <motion.button
@@ -469,9 +946,7 @@ export default function AIQuery() {
                   background: provider === 'claude'
                     ? 'linear-gradient(135deg, rgba(88,130,255,0.15), rgba(139,92,246,0.15))'
                     : 'linear-gradient(135deg, rgba(16,163,127,0.15), rgba(0,184,230,0.15))',
-                  border: provider === 'claude'
-                    ? '1px solid rgba(88,130,255,0.35)'
-                    : '1px solid rgba(16,163,127,0.35)',
+                  border: provider === 'claude' ? '1px solid rgba(88,130,255,0.35)' : '1px solid rgba(16,163,127,0.35)',
                   color: provider === 'claude' ? '#818cf8' : '#10a37f',
                 }}
                 whileHover={{ scale: 1.02 }}
@@ -481,7 +956,6 @@ export default function AIQuery() {
                 {provider === 'claude' ? 'Claude' : 'ChatGPT'}
                 <ChevronDown size={11} />
               </motion.button>
-
               <AnimatePresence>
                 {showProviderMenu && (
                   <motion.div
@@ -490,44 +964,30 @@ export default function AIQuery() {
                     exit={{ opacity: 0, y: -6, scale: 0.96 }}
                     transition={{ duration: 0.12 }}
                     className="absolute right-0 top-full mt-1.5 rounded-xl overflow-hidden z-50 min-w-[160px]"
-                    style={{
-                      background: isDark ? '#141929' : 'white',
-                      border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-                    }}
+                    style={{ background: isDark ? '#141929' : 'white', border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}
                     onMouseLeave={() => setShowProviderMenu(false)}
                   >
                     {([
-                      { key: 'claude', label: 'Claude', sub: 'Anthropic API', icon: '⬡', color: '#818cf8', border: 'rgba(88,130,255,0.3)' },
-                      { key: 'openai', label: 'ChatGPT', sub: 'OpenAI API', icon: '⬢', color: '#10a37f', border: 'rgba(16,163,127,0.3)' },
+                      { key: 'claude', label: 'Claude', sub: 'Anthropic API', icon: '⬡', color: '#818cf8' },
+                      { key: 'openai', label: 'ChatGPT', sub: 'OpenAI API', icon: '⬢', color: '#10a37f' },
                     ] as const).map(opt => (
                       <button
                         key={opt.key}
                         type="button"
                         onClick={() => { setProvider(opt.key); setShowProviderMenu(false); }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left"
-                        style={{
-                          background: provider === opt.key
-                            ? isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'
-                            : 'transparent',
-                        }}
+                        style={{ background: provider === opt.key ? isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' : 'transparent' }}
                       >
                         <span className="text-base">{opt.icon}</span>
                         <div>
-                          <p className="text-xs font-semibold" style={{ color: provider === opt.key ? opt.color : 'var(--text-primary)' }}>
-                            {opt.label}
-                          </p>
+                          <p className="text-xs font-semibold" style={{ color: provider === opt.key ? opt.color : 'var(--text-primary)' }}>{opt.label}</p>
                           <p className="text-2xs" style={{ color: 'var(--text-muted)' }}>{opt.sub}</p>
                         </div>
-                        {provider === opt.key && (
-                          <div className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: opt.color }} />
-                        )}
+                        {provider === opt.key && <div className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: opt.color }} />}
                       </button>
                     ))}
                     <div className="px-3.5 py-2 border-t" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-                      <p className="text-2xs" style={{ color: 'var(--text-muted)' }}>
-                        Affects AI summary &amp; insights generation. SQL always runs against your ERP.
-                      </p>
+                      <p className="text-2xs" style={{ color: 'var(--text-muted)' }}>Affects AI summary &amp; insights. SQL runs against your ERP.</p>
                     </div>
                   </motion.div>
                 )}
@@ -542,6 +1002,7 @@ export default function AIQuery() {
           </div>
         </div>
 
+        {/* Messages */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-none">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-5 py-8">
@@ -553,10 +1014,10 @@ export default function AIQuery() {
                 <Brain size={36} style={{ color: '#00b8e6' }} />
               </motion.div>
               <div className="text-center max-w-lg">
-                <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Ask with verified retail SQL</h3>
+                <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Ask your ERP anything</h3>
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  Pick any of the {suggestions.length} tested prompts on the left, or type your own question.
-                  Results show KPI cards, charts, and tables from your SQL Server warehouse — not sample data.
+                  Pick from the {suggestions.length} verified prompts on the left, use a template, or type your own.
+                  Approve answers with 👍 to save SQL for instant reuse on similar questions.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 justify-center max-w-2xl">
@@ -579,9 +1040,13 @@ export default function AIQuery() {
               animate={{ opacity: 1, y: 0 }}
               className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
             >
-              <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0`}
-                style={msg.role === 'ai' ? { background: 'linear-gradient(135deg, #00b8e6, #00e67a)', boxShadow: '0 0 12px rgba(0,184,230,0.3)' } : { background: 'rgba(0,184,230,0.15)' }}>
-                {msg.role === 'ai' ? <Sparkles size={13} className="text-white" /> : <span className="text-xs font-bold text-primary-400">You</span>}
+              <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={msg.role === 'ai'
+                  ? { background: 'linear-gradient(135deg, #00b8e6, #00e67a)', boxShadow: '0 0 12px rgba(0,184,230,0.3)' }
+                  : { background: 'rgba(0,184,230,0.15)' }}>
+                {msg.role === 'ai'
+                  ? <Sparkles size={13} className="text-white" />
+                  : <span className="text-xs font-bold" style={{ color: '#00b8e6' }}>You</span>}
               </div>
               <div className={`max-w-3xl flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                 <div className={`rounded-2xl px-4 py-3 ${msg.role === 'user' ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}
@@ -619,14 +1084,15 @@ export default function AIQuery() {
           <div ref={bottomRef} />
         </div>
 
+        {/* Input bar */}
         <div className="p-4 flex-shrink-0"
           style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
           <div className="flex gap-3 items-end">
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder="Ask a verified question or type your own…"
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }}
+              placeholder="Ask anything… Approved SQL will be reused for similar questions."
               rows={1}
               className="flex-1 px-4 py-3 rounded-2xl text-sm resize-none outline-none scrollbar-none"
               style={{
@@ -637,12 +1103,10 @@ export default function AIQuery() {
               }}
             />
             <motion.button
-              onClick={() => sendMessage()}
+              onClick={() => void sendMessage()}
               disabled={!input.trim() || loading}
               className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
-              style={{
-                background: input.trim() && !loading ? 'linear-gradient(135deg, #00b8e6, #00e67a)' : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-              }}
+              style={{ background: input.trim() && !loading ? 'linear-gradient(135deg, #00b8e6, #00e67a)' : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}
               whileTap={input.trim() && !loading ? { scale: 0.95 } : {}}>
               <Send size={15} className="text-white" />
             </motion.button>

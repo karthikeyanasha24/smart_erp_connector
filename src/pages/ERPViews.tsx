@@ -178,6 +178,7 @@ function RowBrowser({
     }
   }, [view.key]);
 
+  // Load on open — backend skips COUNT(*) for dimension views (e.g. VwAIBranch).
   useEffect(() => {
     void load(1, pageSize);
   }, [load, pageSize]);
@@ -236,7 +237,7 @@ function RowBrowser({
           {result && (
             <span className="text-xs px-3 py-1.5 rounded-full"
               style={{ background: 'rgba(0,230,122,0.1)', border: '1px solid rgba(0,230,122,0.2)', color: '#00e67a' }}>
-              {fmtCount(totalCount)} rows
+              {result.count_skipped ? `${fmtCount(totalCount)}+ rows` : `${fmtCount(totalCount)} rows`}
             </span>
           )}
           {/* Page size picker */}
@@ -428,7 +429,7 @@ function RowBrowser({
             })}
 
             <motion.button
-              disabled={page >= totalPages || loading}
+              disabled={loading || !(result?.has_more ?? page < totalPages)}
               onClick={() => goToPage(page + 1)}
               className="p-2 rounded-lg disabled:opacity-40"
               style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}

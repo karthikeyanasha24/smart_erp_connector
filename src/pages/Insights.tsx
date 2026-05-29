@@ -54,15 +54,21 @@ export default function Insights() {
   const [loading, setLoading]                 = useState(true);
   const [lastRefreshed, setLastRefreshed]     = useState<string>('');
   const [dataAvailable, setDataAvailable]     = useState(true);
+  const [fallbackReason, setFallbackReason]   = useState<string | null>(null);
 
   const fetchInsights = useCallback(async (p: string) => {
     setLoading(true);
+    setFallbackReason(null);
     try {
       const resp = await ai.pageInsights(p);
       setInsights(resp.insights ?? []);
       setExecSummary(resp.executive_summary ?? null);
       setDataAvailable(resp.data_available);
       setLastRefreshed(new Date().toLocaleTimeString());
+      // Backend fell back to a different period (e.g. today → mtd)
+      if ((resp as Record<string, unknown>)['_fallback_reason']) {
+        setFallbackReason(String((resp as Record<string, unknown>)['_fallback_reason']));
+      }
     } catch {
       setInsights([]);
       setDataAvailable(false);
@@ -150,6 +156,22 @@ export default function Insights() {
             }}>
             <Brain size={16} style={{ color: '#00b8e6', flexShrink: 0, marginTop: 1 }} />
             <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>{execSummary}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Fallback period banner (e.g. today → mtd) */}
+      <AnimatePresence>
+        {fallbackReason && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            className="rounded-2xl px-5 py-3 flex items-center gap-3"
+            style={{
+              background: 'rgba(255,184,0,0.08)',
+              border: '1px solid rgba(255,184,0,0.25)',
+            }}>
+            <Clock size={14} style={{ color: '#ffb800', flexShrink: 0 }} />
+            <p className="text-sm" style={{ color: '#ffb800' }}>{fallbackReason}</p>
           </motion.div>
         )}
       </AnimatePresence>

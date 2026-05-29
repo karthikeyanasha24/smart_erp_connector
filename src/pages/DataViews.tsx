@@ -420,8 +420,12 @@ export default function DataViews() {
                 {[
                   {
                     label: 'Total rows',
-                    value: fmtCount(result.total_count),
-                    sub: result.capped ? `Capped at ${fmtCount(result.hard_cap)}` : 'in view',
+                    value: result.count_skipped ? `${fmtCount(result.total_count)}+` : fmtCount(result.total_count),
+                    sub: result.count_skipped
+                      ? 'Fast mode — full count skipped'
+                      : result.capped
+                        ? `Capped at ${fmtCount(result.hard_cap)}`
+                        : 'in view',
                     color: '#5882ff',
                   },
                   {
@@ -456,7 +460,35 @@ export default function DataViews() {
             )}
           </AnimatePresence>
 
-          {/* data table */}
+          {/* empty columns state — view returned no schema (view is empty or timed out) */}
+          {result && result.columns.length === 0 && !loading && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 rounded-2xl" style={card}>
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                style={{ background: 'rgba(251,146,60,0.1)', border: '1px solid rgba(251,146,60,0.2)' }}
+              >
+                <AlertTriangle size={24} style={{ color: '#fb923c' }} />
+              </div>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                View returned no columns
+              </p>
+              <p className="text-xs text-center max-w-sm" style={{ color: 'var(--text-muted)' }}>
+                This view appears to be empty, or the SQL Server query returned no schema.
+                Try a different view, or use a smaller page size.
+              </p>
+              <button
+                type="button"
+                onClick={handleLoad}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold"
+                style={{ background: 'rgba(88,130,255,0.1)', color: '#5882ff', border: '1px solid rgba(88,130,255,0.2)' }}
+              >
+                <RefreshCw size={12} />
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* data table — keep visible while paginating */}
           <AnimatePresence>
             {result && result.columns.length > 0 && (
               <motion.div
@@ -518,7 +550,18 @@ export default function DataViews() {
                       </tr>
                     </thead>
                     <tbody>
-                      {result.rows.map((row, ri) => (
+                      {result.rows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={result.columns.length}
+                            className="text-center py-10 text-xs"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            No rows returned for page {result.page}.
+                            {result.page > 1 ? ' Try going back to page 1.' : ' This view may be empty.'}
+                          </td>
+                        </tr>
+                      ) : result.rows.map((row, ri) => (
                         <tr
                           key={ri}
                           style={{
@@ -602,7 +645,10 @@ export default function DataViews() {
                     </div>
                     <button
                       type="button"
-                      disabled={result.page >= result.total_pages || loading}
+                      disabled={
+                        loading
+                        || (!(result.has_more ?? result.page < result.total_pages))
+                      }
                       onClick={() => void runQuery(result.page + 1)}
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40"
                       style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: 'var(--text-primary)' }}
@@ -634,12 +680,15 @@ export default function DataViews() {
             </div>
           )}
 
-          {/* loading state */}
-          {loading && (
+          {/* loading state — only full-screen when no data yet */}
+          {loading && !result && (
             <div className="flex-1 flex items-center justify-center rounded-2xl" style={card}>
               <div className="flex flex-col items-center gap-3">
                 <Loader2 size={28} className="animate-spin" style={{ color: '#5882ff' }} />
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading page {page}…</p>
+                <p className="text-xs text-center max-w-sm" style={{ color: 'var(--text-muted)' }}>
+                  Branch and master views load without a full table scan. Large sales views may take longer.
+                </p>
               </div>
             </div>
           )}

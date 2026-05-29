@@ -3,11 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   User, Bell, Shield, Palette, Database, Brain, Globe,
   ChevronRight, Sun, Moon, Check, Lock, Key, Mail,
-  Activity, Sparkles, Users, Plus, Trash2, Edit3, X, Loader2
+  Activity, Sparkles, Users, Plus, Trash2, Edit3, X, Loader2,
+  RefreshCw, Server, Cpu, HardDrive, Wifi, WifiOff,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { auth, type ManagedUser } from '../lib/api';
+import { auth, analytics, type ManagedUser } from '../lib/api';
 
 const stagger = { animate: { transition: { staggerChildren: 0.06 } } };
 const item = {
@@ -139,6 +140,28 @@ export default function Settings() {
       await loadUsers();
     } catch { /* silent */ }
   };
+
+  // ── System health state ───────────────────────────────────────────────────
+  const [health, setHealth] = useState<Record<string, any> | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState('');
+
+  const loadHealth = useCallback(async () => {
+    setHealthLoading(true);
+    setHealthError('');
+    try {
+      const res = await analytics.health();
+      setHealth(res);
+    } catch (e) {
+      setHealthError(e instanceof Error ? e.message : 'Health check failed');
+    } finally {
+      setHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === 'data') void loadHealth();
+  }, [activeSection, loadHealth]);
 
   const [settings, setSettings] = useState({
     emailNotifs: true,
@@ -572,45 +595,160 @@ export default function Settings() {
 
     data: (
       <div className="space-y-5">
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Connected Integrations</h3>
-        {[
-          { name: 'PostgreSQL', type: 'Database', status: 'connected', color: '#336791' },
-          { name: 'Apache Kafka', type: 'Stream', status: 'connected', color: '#00b8e6' },
-          { name: 'Stripe API', type: 'Payment', status: 'connected', color: '#635bff' },
-          { name: 'Salesforce', type: 'CRM', status: 'disconnected', color: '#00a1e0' },
-        ].map(integration => (
-          <div key={integration.name} className="flex items-center gap-3 p-3.5 rounded-2xl"
-            style={{ border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white"
-              style={{ background: integration.color }}>
-              {integration.name[0]}
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{integration.name}</p>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{integration.type}</p>
-            </div>
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-              integration.status === 'connected' ? 'bg-accent-500/10 text-accent-400' : 'bg-error-500/10 text-error-400'
-            }`}>{integration.status}</span>
-          </div>
-        ))}
-        <div style={{ paddingTop: 16, borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
-          <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Data Retention</p>
-          <div className="flex items-center gap-2">
-            {['30', '60', '90', '180', '365'].map(d => (
-              <button key={d}
-                onClick={() => setSettings(prev => ({ ...prev, dataRetention: d }))}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                style={{
-                  background: settings.dataRetention === d ? 'rgba(0,184,230,0.15)' : isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
-                  border: settings.dataRetention === d ? '1px solid rgba(0,184,230,0.3)' : isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)',
-                  color: settings.dataRetention === d ? '#00b8e6' : 'var(--text-secondary)',
-                }}>
-                {d}d
-              </button>
-            ))}
-          </div>
+        {/* Header with refresh */}
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>System Status</h3>
+          <motion.button
+            type="button"
+            onClick={() => void loadHealth()}
+            disabled={healthLoading}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold"
+            style={{ background: isDark ? 'rgba(0,184,230,0.08)' : 'rgba(0,184,230,0.06)', color: '#00b8e6', border: '1px solid rgba(0,184,230,0.2)' }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+          >
+            <RefreshCw size={11} className={healthLoading ? 'animate-spin' : ''} />
+            Refresh
+          </motion.button>
         </div>
+
+        {healthError && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
+            style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
+            <WifiOff size={12} />{healthError}
+          </div>
+        )}
+
+        {healthLoading && !health && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 size={20} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
+          </div>
+        )}
+
+        {/* Overall banner */}
+        {health && (
+          <div className="p-3.5 rounded-2xl flex items-center gap-3"
+            style={{
+              background: health.success ? 'rgba(0,230,122,0.06)' : 'rgba(239,68,68,0.06)',
+              border: health.success ? '1px solid rgba(0,230,122,0.2)' : '1px solid rgba(239,68,68,0.2)',
+            }}>
+            {health.success
+              ? <Wifi size={16} style={{ color: '#00e67a' }} />
+              : <WifiOff size={16} style={{ color: '#f87171' }} />}
+            <div>
+              <p className="text-sm font-semibold" style={{ color: health.success ? '#00e67a' : '#f87171' }}>
+                {health.success ? 'All systems operational' : 'Degraded — SQL Server offline'}
+              </p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                ERP analytics pipeline status
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Data sources */}
+        {health && (() => {
+          const mssql = (health.mssql as Record<string, any>) ?? {};
+          const pg    = (health.postgres as Record<string, any>) ?? {};
+          const cacheStats = (health.cache as Record<string, any>) ?? {};
+
+          const sources = [
+            {
+              name: 'SQL Server (ERP)',
+              type: 'Primary data source',
+              icon: Server,
+              ok: !!mssql.connected,
+              detail: mssql.connected
+                ? `${mssql.database ?? 'connected'}`
+                : (mssql.error ?? 'Offline'),
+              color: '#00b8e6',
+            },
+            {
+              name: 'PostgreSQL (Cache)',
+              type: 'Cache persistence layer',
+              icon: HardDrive,
+              ok: !!pg.connected,
+              detail: pg.connected
+                ? `${pg.database ?? 'connected'}`
+                : (pg.error ?? 'Offline'),
+              color: '#336791',
+            },
+            {
+              name: 'FastAPI Backend',
+              type: 'Analytics API server',
+              icon: Cpu,
+              ok: true,
+              detail: 'Responding normally',
+              color: '#00e67a',
+            },
+            {
+              name: 'AI Engine (Claude)',
+              type: 'Natural language query & insights',
+              icon: Brain,
+              ok: true,
+              detail: 'claude-3-5-sonnet',
+              color: '#a78bfa',
+            },
+          ];
+
+          return (
+            <div className="space-y-2.5">
+              {sources.map(src => {
+                const Icon = src.icon;
+                return (
+                  <div key={src.name} className="flex items-center gap-3 p-3.5 rounded-2xl"
+                    style={{ border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: `${src.color}18` }}>
+                      <Icon size={15} style={{ color: src.color }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{src.name}</p>
+                      <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{src.type} · {src.detail}</p>
+                    </div>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+                      style={{
+                        background: src.ok ? 'rgba(0,230,122,0.1)' : 'rgba(239,68,68,0.1)',
+                        color: src.ok ? '#00e67a' : '#f87171',
+                      }}>
+                      {src.ok ? 'Connected' : 'Offline'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        {/* Cache stats */}
+        {health && (() => {
+          const cs = (health.cache as Record<string, any>) ?? {};
+          const entries  = cs.entries  ?? 0;
+          const hits     = cs.hits     ?? 0;
+          const misses   = cs.misses   ?? 0;
+          const hitRate  = (hits + misses) > 0 ? Math.round(hits / (hits + misses) * 100) : 0;
+          const memKb    = cs.memory_kb != null ? `${Math.round(cs.memory_kb / 1024 * 10) / 10} MB` : null;
+
+          return (
+            <div style={{ paddingTop: 16, borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
+              <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Cache Statistics</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { label: 'Entries', value: String(entries) },
+                  { label: 'Hit Rate', value: `${hitRate}%` },
+                  { label: 'Hits', value: String(hits) },
+                  { label: 'Memory', value: memKb ?? '—' },
+                ].map(stat => (
+                  <div key={stat.label} className="p-3 rounded-xl text-center"
+                    style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.05)' }}>
+                    <p className="text-base font-bold tabular-nums" style={{ color: '#00b8e6' }}>{stat.value}</p>
+                    <p className="text-2xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{stat.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     ),
   };

@@ -55,13 +55,24 @@ _WARNINGS = [
 ]
 
 
+def _normalize_sql(sql: str) -> str:
+    """Strip trailing semicolons and the leading semicolon used in T-SQL CTE convention (;WITH ...)."""
+    s = sql.strip()
+    # Strip trailing semicolons
+    s = s.rstrip(";").strip()
+    # Strip a single leading semicolon (common T-SQL CTE guard: ;WITH cte AS (...) SELECT ...)
+    if s.startswith(";"):
+        s = s[1:].strip()
+    return s
+
+
 def validate_sql_safety(sql: str) -> ValidationResult:
     errors: List[str] = []
     warnings: List[str] = []
-    trimmed = sql.strip()
+    trimmed = _normalize_sql(sql)
 
-    # Must start with SELECT
-    if not re.match(r"^\s*SELECT\b", trimmed, re.IGNORECASE):
+    # Must start with SELECT or WITH (CTEs: WITH cte AS (...) SELECT ...)
+    if not re.match(r"^\s*(SELECT|WITH)\b", trimmed, re.IGNORECASE):
         errors.append("Query must be a SELECT statement")
 
     # Check blocklist
@@ -81,9 +92,12 @@ def validate_sql_safety(sql: str) -> ValidationResult:
 def validate_sql_structure(sql: str) -> List[str]:
     issues: List[str] = []
 
+    # Normalize first (same stripping applied in validate_sql_safety)
+    normalized = _normalize_sql(sql)
+
     # Balanced parentheses
     depth = 0
-    for ch in sql:
+    for ch in normalized:
         if ch == "(":
             depth += 1
         elif ch == ")":
@@ -91,12 +105,12 @@ def validate_sql_structure(sql: str) -> List[str]:
         if depth < 0:
             issues.append("Unbalanced parentheses")
             break
-    if depth != 0:
+    if depth != 0 and "Unbalanced parentheses" not in issues:
         issues.append("Unbalanced parentheses")
 
     # Balanced square brackets
     bracket = 0
-    for ch in sql:
+    for ch in normalized:
         if ch == "[":
             bracket += 1
         elif ch == "]":
@@ -104,8 +118,14 @@ def validate_sql_structure(sql: str) -> List[str]:
     if bracket != 0:
         issues.append("Unbalanced square brackets")
 
-    # Stray semicolons (not at end)
-    if re.search(r";(?!\s*$)", sql):
+    # Only flag semicolons that begin a new SQL statement (genuine stacked-query injection).
+    # A bare semicolon between CTE definitions or at the end is already stripped by _normalize_sql.
+    # We look for: semicolon followed by optional whitespace then a statement-starting keyword.
+    if re.search(
+        r";\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC(?:UTE)?|TRUNCATE|MERGE)\b",
+        normalized,
+        re.IGNORECASE,
+    ):
         issues.append("Stray semicolon — potential stacked query injection")
 
     return issues
@@ -156,7 +176,8 @@ async def correct_sql(
         )
 
         corrected = (response.content[0].text or "").strip() if response.content else ""
-        if not corrected or not re.match(r"^\s*SELECT\b", corrected, re.IGNORECASE):
+        corrected = _normalize_sql(corrected)
+        if not corrected or not re.match(r"^\s*(SELECT|WITH)\b", corrected, re.IGNORECASE):
             logger.warning("SQL correction returned invalid result")
             return None
 
@@ -174,22 +195,23 @@ async def validate_and_correct(
     original_query: str,
     allow_correction: bool = True,
 ) -> ValidationResult:
-    # Step 1: Safety
+    # Step 1: Safety (also normalizes the SQL — strips leading/trailing semicolons)
     safety = validate_sql_safety(sql)
+    clean_sql = safety.sql or sql  # use the normalized version for all further checks
     if not safety.valid:
-        return ValidationResult(valid=False, sql=sql, errors=safety.errors, warnings=safety.warnings)
+        return ValidationResult(valid=False, sql=clean_sql, errors=safety.errors, warnings=safety.warnings)
 
-    # Step 2: Structure
-    struct_errors = validate_sql_structure(sql)
+    # Step 2: Structure (operates on the already-normalized SQL)
+    struct_errors = validate_sql_structure(clean_sql)
     all_errors = safety.errors + struct_errors
 
     if not all_errors:
-        return ValidationResult(valid=True, sql=sql, errors=[], warnings=safety.warnings)
+        return ValidationResult(valid=True, sql=clean_sql, errors=[], warnings=safety.warnings)
 
     # Step 3: AI correction
     if allow_correction:
         logger.info("Attempting SQL self-correction", errors=all_errors)
-        corrected = await correct_sql(sql, all_errors, original_query)
+        corrected = await correct_sql(clean_sql, all_errors, original_query)
 
         if corrected:
             re_safety = validate_sql_safety(corrected)
@@ -203,4 +225,4 @@ async def validate_and_correct(
                     corrected=True,
                 )
 
-    return ValidationResult(valid=False, sql=sql, errors=all_errors, warnings=safety.warnings)
+    return ValidationResult(valid=False, sql=clean_sql, errors=all_errors, warnings=safety.warnings)

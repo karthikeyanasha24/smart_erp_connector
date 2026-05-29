@@ -22,6 +22,7 @@ from src.db.mssql import init_mssql, close_mssql
 from src.auth.rbac import init_rbac
 from src.analytics.warmup import start_background_warmer, stop_background_warmer
 from src.middleware.error import register_error_handlers
+from src.spa_static import register_spa_static
 
 # --- Routes -------------------------------------------------------------------
 from src.routes.auth import router as auth_router
@@ -156,15 +157,6 @@ def create_app() -> FastAPI:
     app.include_router(ai_router)
     app.include_router(analytics_router)
 
-    @app.get("/", include_in_schema=False)
-    async def root() -> Dict[str, Any]:
-        return {
-            "product": "SmarterPConnector",
-            "version": "2.0.0",
-            "status": "operational",
-            "docs": "/docs" if cfg.is_dev else None,
-        }
-
     @app.get("/health", include_in_schema=False)
     async def health() -> Dict[str, Any]:
         from src.analytics.warmup import is_warmup_running, is_warmup_complete
@@ -193,6 +185,19 @@ def create_app() -> FastAPI:
             "warmup": {"running": is_warmup_running(), "complete": is_warmup_complete()},
             "warehouse": warehouse,
         }
+
+    spa_enabled = register_spa_static(app)
+
+    if not spa_enabled:
+
+        @app.get("/", include_in_schema=False)
+        async def root() -> Dict[str, Any]:
+            return {
+                "product": "SmarterPConnector",
+                "version": "2.0.0",
+                "status": "operational",
+                "docs": "/docs" if cfg.is_dev else None,
+            }
 
     return app
 

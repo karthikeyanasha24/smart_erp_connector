@@ -1,0 +1,3609 @@
+{
+  "title": "SmarterP Connector — Database Schema Catalog",
+  "database": "zRetailHQ0",
+  "object_counts": {
+    "total": 28,
+    "views": 28,
+    "tables": 0
+  },
+  "objects": [
+    {
+      "catalog_no": 1,
+      "fqn": "dbo.VW_MB_POWERBI_APP_REPORT",
+      "short_name": "VW_MB_POWERBI_APP_REPORT",
+      "title": "Primary Sales View",
+      "description": "This is the most important view — used for 90% of all analytics.",
+      "object_type": "view",
+      "column_count": 33,
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch grouping / filter"
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "used_for": "Department full name — hierarchy breakdown"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department breakdown"
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "used_for": "Category full name — product hierarchy"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category breakdown"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "CostPrice",
+          "type": "decimal",
+          "used_for": "Unit cost price"
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "used_for": "Transaction header ID"
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "used_for": "Transaction document number"
+        },
+        {
+          "name": "XnDt",
+          "type": "datetime",
+          "used_for": "Date filter (all period calculations)"
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "varchar",
+          "used_for": "Transaction month label — period grouping"
+        },
+        {
+          "name": "AppQty",
+          "type": "decimal",
+          "used_for": "Application / billed quantity"
+        },
+        {
+          "name": "MrpValue",
+          "type": "decimal",
+          "used_for": "Total MRP value"
+        },
+        {
+          "name": "CostValue",
+          "type": "decimal",
+          "used_for": "Total cost value"
+        },
+        {
+          "name": "NetAmount",
+          "type": "decimal",
+          "used_for": "Net sales amount — primary revenue metric"
+        },
+        {
+          "name": "CGSTAmount",
+          "type": "decimal",
+          "used_for": "Central GST tax amount"
+        },
+        {
+          "name": "SGSTAmount",
+          "type": "decimal",
+          "used_for": "State GST tax amount"
+        },
+        {
+          "name": "IGSTAmount",
+          "type": "decimal",
+          "used_for": "Integrated GST tax amount"
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "used_for": "Number of bills / transactions — footfall KPI"
+        }
+      ]
+    },
+    {
+      "catalog_no": 2,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_REPORT",
+      "short_name": "VW_MB_POWERBI_SLS_REPORT",
+      "title": "Base Sales Table",
+      "description": "Used for item-level and salesperson analytics.",
+      "object_type": "view",
+      "column_count": 24,
+      "columns": [
+        {
+          "name": "XnMemoDate",
+          "type": "datetime",
+          "used_for": "Sales memo date — date filter"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch name"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "used_for": "Product parameter 1 name (e.g. fit, style)"
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "used_for": "Product parameter 2 name"
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "used_for": "Parameter 2 sort / variant index"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Product ID"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "used_for": "Product parameter 3 name"
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "used_for": "Product parameter 4 name"
+        },
+        {
+          "name": "PurDate",
+          "type": "datetime",
+          "used_for": "Purchase date — procurement filter"
+        },
+        {
+          "name": "NetSlsQty",
+          "type": "decimal",
+          "used_for": "Net sales quantity (after returns)"
+        },
+        {
+          "name": "NetAmount",
+          "type": "decimal",
+          "used_for": "Net sales amount — primary revenue metric"
+        },
+        {
+          "name": "NetSlsCostValue",
+          "type": "decimal",
+          "used_for": "Net sales at cost value — margin analysis"
+        },
+        {
+          "name": "SlsExtCostValue",
+          "type": "decimal",
+          "used_for": "Sales extended cost value"
+        }
+      ]
+    },
+    {
+      "catalog_no": 3,
+      "fqn": "dbo.VwAISalesData",
+      "short_name": "VwAISalesData",
+      "title": "AI Sales Summary View",
+      "description": "Used for fast trend queries and NLQ.",
+      "object_type": "view",
+      "column_count": 12,
+      "columns": [
+        {
+          "name": "InvoiceDt",
+          "type": "datetime",
+          "used_for": "Date"
+        },
+        {
+          "name": "InvoiceId",
+          "type": "varchar",
+          "used_for": "Invoice header ID"
+        },
+        {
+          "name": "InvoiceNo",
+          "type": "varchar",
+          "used_for": "Invoice number — document reference"
+        },
+        {
+          "name": "BranchId",
+          "type": "char",
+          "used_for": "Branch"
+        },
+        {
+          "name": "CustomerId",
+          "type": "varchar",
+          "used_for": "Customer identifier — filter and joins"
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Item / SKU identifier — joins to product master"
+        },
+        {
+          "name": "SalesPrice",
+          "type": "decimal",
+          "used_for": "Unit selling price on invoice line"
+        },
+        {
+          "name": "Quantity",
+          "type": "decimal",
+          "used_for": "Line quantity sold"
+        },
+        {
+          "name": "SaleAmountBeforeTax",
+          "type": "decimal",
+          "used_for": "Sale amount before tax"
+        },
+        {
+          "name": "TaxAmount",
+          "type": "decimal",
+          "used_for": "Tax amount on sale line"
+        },
+        {
+          "name": "SaleNetAmount",
+          "type": "decimal",
+          "used_for": "Sale line net amount"
+        },
+        {
+          "name": "SalesPersonId",
+          "type": "char",
+          "used_for": "Salesperson identifier"
+        }
+      ]
+    },
+    {
+      "catalog_no": 4,
+      "fqn": "dbo.VwAIBranch",
+      "short_name": "VwAIBranch",
+      "title": "Branch Master",
+      "description": "Used for Branch Intelligence page and branch lookups.",
+      "object_type": "view",
+      "column_count": 9,
+      "columns": [
+        {
+          "name": "BranchId",
+          "type": "char",
+          "used_for": "Branch identifier"
+        },
+        {
+          "name": "BranchName",
+          "type": "varchar",
+          "used_for": "Full name"
+        },
+        {
+          "name": "BranchShortName",
+          "type": "varchar",
+          "used_for": "Branch abbreviated name"
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "used_for": "Street address line"
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "used_for": "Locality / neighborhood"
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "used_for": "Postal / PIN code"
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "used_for": "City — geography filter and breakdown"
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "used_for": "State — geography filter and breakdown"
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "used_for": "Country — geography filter"
+        }
+      ]
+    },
+    {
+      "catalog_no": 5,
+      "fqn": "dbo.VwAICustomerDetails",
+      "short_name": "VwAICustomerDetails",
+      "title": "Customer View",
+      "description": "Used for new customer KPI.",
+      "object_type": "view",
+      "column_count": 21,
+      "columns": [
+        {
+          "name": "CustomerId",
+          "type": "varchar",
+          "used_for": "Customer ID"
+        },
+        {
+          "name": "CustomerFirstName",
+          "type": "varchar",
+          "used_for": "Customer first name"
+        },
+        {
+          "name": "CustomerLastName",
+          "type": "varchar",
+          "used_for": "Customer last name"
+        },
+        {
+          "name": "CustomerTitle",
+          "type": "varchar",
+          "used_for": "Customer title / salutation"
+        },
+        {
+          "name": "ContactMobile",
+          "type": "varchar",
+          "used_for": "Contact mobile number"
+        },
+        {
+          "name": "ContactEmail",
+          "type": "varchar",
+          "used_for": "Contact email address"
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "used_for": "Street address line"
+        },
+        {
+          "name": "Address2",
+          "type": "varchar",
+          "used_for": "Secondary address line"
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "used_for": "Locality / neighborhood"
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "used_for": "City — geography filter and breakdown"
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "used_for": "State — geography filter and breakdown"
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "used_for": "Country — geography filter"
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "used_for": "Postal / PIN code"
+        },
+        {
+          "name": "CustomerGroupName",
+          "type": "varchar",
+          "used_for": "Customer group / segment"
+        },
+        {
+          "name": "BranchName",
+          "type": "varchar",
+          "used_for": "Branch full display name"
+        },
+        {
+          "name": "BirthdayDt",
+          "type": "datetime",
+          "used_for": "Customer birthday date"
+        },
+        {
+          "name": "AnniversaryDt",
+          "type": "datetime",
+          "used_for": "Customer anniversary date"
+        },
+        {
+          "name": "CreditLimit",
+          "type": "decimal",
+          "used_for": "Credit limit amount"
+        },
+        {
+          "name": "ActiveStatus",
+          "type": "bit",
+          "used_for": "Active / inactive status flag"
+        },
+        {
+          "name": "CreatedOn",
+          "type": "datetime",
+          "used_for": "Record created timestamp"
+        },
+        {
+          "name": "LastUpdate",
+          "type": "datetime",
+          "used_for": "Record last updated timestamp"
+        }
+      ]
+    },
+    {
+      "catalog_no": 6,
+      "fqn": "dbo.VwAIStockData",
+      "short_name": "VwAIStockData",
+      "title": "Inventory View",
+      "description": "Used for Products page and stock queries.",
+      "object_type": "view",
+      "column_count": 3,
+      "columns": [
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Item ID"
+        },
+        {
+          "name": "BranchId",
+          "type": "char",
+          "used_for": "Branch identifier — filter and joins"
+        },
+        {
+          "name": "StockQty",
+          "type": "decimal",
+          "used_for": "Stock on hand quantity"
+        }
+      ]
+    },
+    {
+      "catalog_no": 7,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "short_name": "VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "title": "Salesperson Top-N",
+      "description": "Used for the Top Salespersons chart.",
+      "object_type": "view",
+      "column_count": 32,
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch"
+        },
+        {
+          "name": "BranchName",
+          "type": "varchar",
+          "used_for": "Branch full display name"
+        },
+        {
+          "name": "BranchCity",
+          "type": "varchar",
+          "used_for": "Branch city — geography breakdown"
+        },
+        {
+          "name": "BranchState",
+          "type": "varchar",
+          "used_for": "Branch state — geography breakdown"
+        },
+        {
+          "name": "BranchRegion",
+          "type": "varchar",
+          "used_for": "Branch region — geographic rollup"
+        },
+        {
+          "name": "CountryRegion",
+          "type": "varchar",
+          "used_for": "Country / region grouping"
+        },
+        {
+          "name": "BranchAreaManager",
+          "type": "varchar",
+          "used_for": "Area manager responsible for branch"
+        },
+        {
+          "name": "CashmemoDt",
+          "type": "datetime",
+          "used_for": "Cash memo / bill date — date filter"
+        },
+        {
+          "name": "CashmemoNo",
+          "type": "varchar",
+          "used_for": "Cash memo / bill number"
+        },
+        {
+          "name": "CustomerMobileNumber",
+          "type": "varchar",
+          "used_for": "Customer mobile phone"
+        },
+        {
+          "name": "CustomerName",
+          "type": "varchar",
+          "used_for": "Customer full name"
+        },
+        {
+          "name": "CustomerId",
+          "type": "char",
+          "used_for": "Customer identifier — filter and joins"
+        },
+        {
+          "name": "CreatedOn",
+          "type": "datetime",
+          "used_for": "Record created timestamp"
+        },
+        {
+          "name": "SalesPersonName",
+          "type": "varchar",
+          "used_for": "Name"
+        },
+        {
+          "name": "SalespersonEmpId",
+          "type": "varchar",
+          "used_for": "Salesperson employee ID"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "ColourName",
+          "type": "varchar",
+          "used_for": "Product color display name"
+        },
+        {
+          "name": "ContrastName",
+          "type": "varchar",
+          "used_for": "Contrast variant display name"
+        },
+        {
+          "name": "SizeName",
+          "type": "varchar",
+          "used_for": "Product size display name"
+        },
+        {
+          "name": "PrintTypeWork",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "SalesQuantity",
+          "type": "decimal",
+          "used_for": "Sales quantity"
+        },
+        {
+          "name": "SalesCost",
+          "type": "decimal",
+          "used_for": "Sales cost (COGS) amount"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "NetAmountBeforeTax",
+          "type": "decimal",
+          "used_for": "Net amount before tax"
+        },
+        {
+          "name": "SalesNetAmount",
+          "type": "decimal",
+          "used_for": "Sales net amount (after discounts)"
+        }
+      ]
+    },
+    {
+      "catalog_no": 8,
+      "fqn": "dbo.VW_MB_POWERBI_APR_REPORT",
+      "short_name": "VW_MB_POWERBI_APR_REPORT",
+      "title": "Application (APR) Sales Report",
+      "description": "Sales application-level transactions with branch, category, supplier, and item attributes — similar grain to APP_REPORT.",
+      "object_type": "view",
+      "column_count": 30,
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "used_for": "Department full name — hierarchy breakdown"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "used_for": "Category full name — product hierarchy"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "CostPrice",
+          "type": "decimal",
+          "used_for": "Unit cost price"
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "used_for": "Transaction header ID"
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "used_for": "Transaction document number"
+        },
+        {
+          "name": "XnDt",
+          "type": "datetime",
+          "used_for": "Transaction date — primary date filter for sales"
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "varchar",
+          "used_for": "Transaction month label — period grouping"
+        },
+        {
+          "name": "AppQty",
+          "type": "decimal",
+          "used_for": "Application / billed quantity"
+        },
+        {
+          "name": "MrpValue",
+          "type": "decimal",
+          "used_for": "Total MRP value"
+        },
+        {
+          "name": "CostValue",
+          "type": "decimal",
+          "used_for": "Total cost value"
+        },
+        {
+          "name": "NetAmount",
+          "type": "decimal",
+          "used_for": "Net sales amount — primary revenue metric"
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "used_for": "Number of bills / transactions — footfall KPI"
+        }
+      ]
+    },
+    {
+      "catalog_no": 9,
+      "fqn": "dbo.VW_MB_POWERBI_BRANCH_LIST",
+      "short_name": "VW_MB_POWERBI_BRANCH_LIST",
+      "title": "Branch Master List",
+      "description": "Branch dimension for filters, dropdowns, and branch intelligence.",
+      "object_type": "view",
+      "column_count": 11,
+      "columns": [
+        {
+          "name": "BranchId",
+          "type": "char",
+          "used_for": "Branch identifier — filter and joins"
+        },
+        {
+          "name": "BranchName",
+          "type": "varchar",
+          "used_for": "Branch full display name"
+        },
+        {
+          "name": "ShortName",
+          "type": "varchar",
+          "used_for": "Short display name / alias"
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "used_for": "Street address line"
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "used_for": "Locality / neighborhood"
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "used_for": "City — geography filter and breakdown"
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "used_for": "State — geography filter and breakdown"
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "used_for": "Country — geography filter"
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "used_for": "Postal / PIN code"
+        },
+        {
+          "name": "ActiveStatus",
+          "type": "bit",
+          "used_for": "Active / inactive status flag"
+        },
+        {
+          "name": "IsWarehouse",
+          "type": "bit",
+          "used_for": "Warehouse location flag"
+        }
+      ]
+    },
+    {
+      "catalog_no": 10,
+      "fqn": "dbo.VW_MB_POWERBI_CATEGORY_MASTER",
+      "short_name": "VW_MB_POWERBI_CATEGORY_MASTER",
+      "title": "Category / Department Hierarchy",
+      "description": "Inventory department, category, and sub-category master for hierarchy filters.",
+      "object_type": "view",
+      "column_count": 9,
+      "columns": [
+        {
+          "name": "InvSubCategoryId",
+          "type": "char",
+          "used_for": "Inventory sub-category ID"
+        },
+        {
+          "name": "InvSubCategoryName",
+          "type": "varchar",
+          "used_for": "Inventory sub-category name"
+        },
+        {
+          "name": "InvSubCategoryShortName",
+          "type": "varchar",
+          "used_for": "Inventory sub-category short name"
+        },
+        {
+          "name": "InvCategoryId",
+          "type": "char",
+          "used_for": "Inventory category ID"
+        },
+        {
+          "name": "InvCategoryName",
+          "type": "varchar",
+          "used_for": "Inventory category name"
+        },
+        {
+          "name": "InvCategoryShortName",
+          "type": "varchar",
+          "used_for": "Inventory category short name"
+        },
+        {
+          "name": "InvDepartmentId",
+          "type": "char",
+          "used_for": "Inventory department ID"
+        },
+        {
+          "name": "InvDepartmentName",
+          "type": "varchar",
+          "used_for": "Inventory department name"
+        },
+        {
+          "name": "InvDepartmentShortName",
+          "type": "varchar",
+          "used_for": "Inventory department short name"
+        }
+      ]
+    },
+    {
+      "catalog_no": 11,
+      "fqn": "dbo.VW_MB_POWERBI_CBS_WITH_GIT",
+      "short_name": "VW_MB_POWERBI_CBS_WITH_GIT",
+      "title": "Closing Balance Stock with GIT",
+      "description": "Stock on hand plus goods-in-transit by branch, category, and item attributes.",
+      "object_type": "view",
+      "column_count": 24,
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "used_for": "Department full name — hierarchy breakdown"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryName",
+          "type": "varchar",
+          "used_for": "Category name — product hierarchy"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "CostPrice",
+          "type": "decimal",
+          "used_for": "Unit cost price"
+        },
+        {
+          "name": "MRP",
+          "type": "decimal",
+          "used_for": "Maximum retail price"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "used_for": "Purchase invoice date"
+        },
+        {
+          "name": "GitQty",
+          "type": "decimal",
+          "used_for": "Goods in transit quantity"
+        },
+        {
+          "name": "GitCostValue",
+          "type": "decimal",
+          "used_for": "Goods in transit cost value"
+        },
+        {
+          "name": "StockQty",
+          "type": "decimal",
+          "used_for": "Stock on hand quantity"
+        },
+        {
+          "name": "CbsCostValue",
+          "type": "decimal",
+          "used_for": "Closing balance stock cost value"
+        },
+        {
+          "name": "CbsMrpValue",
+          "type": "decimal",
+          "used_for": "Closing balance stock MRP value"
+        }
+      ]
+    },
+    {
+      "catalog_no": 12,
+      "fqn": "dbo.VW_MB_POWERBI_MIS_SUPPLIER_SLS_DATA",
+      "short_name": "VW_MB_POWERBI_MIS_SUPPLIER_SLS_DATA",
+      "title": "Supplier Sales MIS",
+      "description": "Monthly supplier-wise net sales for MIS and supplier performance dashboards.",
+      "object_type": "view",
+      "column_count": 16,
+      "columns": [
+        {
+          "name": "XnMemoDate_MONTH",
+          "type": "int",
+          "used_for": "Sales memo month (numeric) — period rollup"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "used_for": "Product parameter 4 name"
+        },
+        {
+          "name": "XnMemoDate",
+          "type": "datetime",
+          "used_for": "Sales memo date — date filter"
+        },
+        {
+          "name": "XnMemoDate_MONTHNAME",
+          "type": "varchar",
+          "used_for": "Sales memo month name — chart axis"
+        },
+        {
+          "name": "NetSlsQty",
+          "type": "decimal",
+          "used_for": "Net sales quantity (after returns)"
+        },
+        {
+          "name": "NetSlsCostValue",
+          "type": "decimal",
+          "used_for": "Net sales at cost value — margin analysis"
+        },
+        {
+          "name": "NetAmount",
+          "type": "decimal",
+          "used_for": "Net sales amount — primary revenue metric"
+        },
+        {
+          "name": "NetAmountBeforeTax",
+          "type": "decimal",
+          "used_for": "Net amount before tax"
+        },
+        {
+          "name": "MrpValue",
+          "type": "decimal",
+          "used_for": "Total MRP value"
+        }
+      ]
+    },
+    {
+      "catalog_no": 13,
+      "fqn": "dbo.VW_MB_POWERBI_PRODUCT_MASTER",
+      "short_name": "VW_MB_POWERBI_PRODUCT_MASTER",
+      "title": "Product Master",
+      "description": "Item master with department, category, supplier, fabric, and style attributes.",
+      "object_type": "view",
+      "column_count": 36,
+      "columns": [
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Item / SKU identifier — joins to product master"
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "SubCategoryName",
+          "type": "varchar",
+          "used_for": "Sub-category name"
+        },
+        {
+          "name": "SubCategoryShortName",
+          "type": "varchar",
+          "used_for": "Sub-category short name — filter"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Colour",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "used_for": "Parameter 2 sort / variant index"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierUID",
+          "type": "varchar",
+          "used_for": "Supplier unique identifier"
+        },
+        {
+          "name": "FabricShortName",
+          "type": "varchar",
+          "used_for": "Fabric short name"
+        },
+        {
+          "name": "SubFabricShortName",
+          "type": "varchar",
+          "used_for": "Sub-fabric short name"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Collection",
+          "type": "varchar",
+          "used_for": "Collection name — seasonal grouping"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "SubConceptShortName",
+          "type": "varchar",
+          "used_for": "Display name — filter or label"
+        },
+        {
+          "name": "Dupatta",
+          "type": "varchar",
+          "used_for": "Dupatta attribute flag / value"
+        },
+        {
+          "name": "DupattaShortName",
+          "type": "varchar",
+          "used_for": "Dupatta short name"
+        },
+        {
+          "name": "Silhoutte",
+          "type": "varchar",
+          "used_for": "Silhouette style attribute"
+        },
+        {
+          "name": "Bottom",
+          "type": "varchar",
+          "used_for": "Bottom garment type attribute"
+        },
+        {
+          "name": "NECKLINE",
+          "type": "varchar",
+          "used_for": "Neckline style attribute"
+        },
+        {
+          "name": "SleeveType",
+          "type": "varchar",
+          "used_for": "Sleeve type attribute"
+        },
+        {
+          "name": "Look",
+          "type": "varchar",
+          "used_for": "Look / style tag"
+        },
+        {
+          "name": "INVENTORYTYPE",
+          "type": "varchar",
+          "used_for": "Inventory type classification"
+        },
+        {
+          "name": "PurDate",
+          "type": "datetime",
+          "used_for": "Purchase date — procurement filter"
+        },
+        {
+          "name": "PurInvNo",
+          "type": "varchar",
+          "used_for": "Purchase invoice number"
+        },
+        {
+          "name": "PurInvDt",
+          "type": "datetime",
+          "used_for": "Purchase invoice date"
+        },
+        {
+          "name": "PurChallanNo",
+          "type": "varchar",
+          "used_for": "Purchase challan number"
+        },
+        {
+          "name": "PurchasePrice",
+          "type": "decimal",
+          "used_for": "Item purchase / landed cost"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "ItemWSP",
+          "type": "decimal",
+          "used_for": "Item wholesale price (WSP)"
+        }
+      ]
+    },
+    {
+      "catalog_no": 14,
+      "fqn": "dbo.VW_MB_POWERBI_PRT_REPORT",
+      "short_name": "VW_MB_POWERBI_PRT_REPORT",
+      "title": "Purchase Return Report",
+      "description": "Purchase return transactions by branch, supplier, and item.",
+      "object_type": "view",
+      "column_count": 23,
+      "columns": [
+        {
+          "name": "PurReturnId",
+          "type": "varchar",
+          "used_for": "Purchase return ID"
+        },
+        {
+          "name": "PurReturnDt",
+          "type": "datetime",
+          "used_for": "Purchase return date"
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "used_for": "Purchase invoice date"
+        },
+        {
+          "name": "PurInvoiceNo",
+          "type": "varchar",
+          "used_for": "Document / reference number"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "used_for": "Product parameter 1 name (e.g. fit, style)"
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "used_for": "Product parameter 2 name"
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "used_for": "Parameter 2 sort / variant index"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Item / SKU identifier — joins to product master"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "used_for": "Product parameter 3 name"
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "used_for": "Product parameter 4 name"
+        },
+        {
+          "name": "PrtQty",
+          "type": "decimal",
+          "used_for": "Purchase return quantity"
+        }
+      ]
+    },
+    {
+      "catalog_no": 15,
+      "fqn": "dbo.VW_MB_POWERBI_PUR_QTY_WITH_COST",
+      "short_name": "VW_MB_POWERBI_PUR_QTY_WITH_COST",
+      "title": "Purchase Quantity with Cost",
+      "description": "Purchase quantity and cost summary by branch, supplier, and category.",
+      "object_type": "view",
+      "column_count": 7,
+      "columns": [
+        {
+          "name": "PurchaseDt",
+          "type": "datetime",
+          "used_for": "Purchase transaction date"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "PurQty",
+          "type": "decimal",
+          "used_for": "Purchase quantity"
+        },
+        {
+          "name": "PurCost",
+          "type": "decimal",
+          "used_for": "Purchase cost amount"
+        }
+      ]
+    },
+    {
+      "catalog_no": 16,
+      "fqn": "dbo.VW_MB_POWERBI_PUR_REPORT",
+      "short_name": "VW_MB_POWERBI_PUR_REPORT",
+      "title": "Purchase Report",
+      "description": "Purchase receipts by branch, supplier, category, and item attributes.",
+      "object_type": "view",
+      "column_count": 23,
+      "columns": [
+        {
+          "name": "PurchaseId",
+          "type": "varchar",
+          "used_for": "Purchase header ID"
+        },
+        {
+          "name": "PurchaseDt",
+          "type": "datetime",
+          "used_for": "Purchase transaction date"
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "used_for": "Purchase invoice date"
+        },
+        {
+          "name": "PurInvoiceNo",
+          "type": "varchar",
+          "used_for": "Document / reference number"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "used_for": "Product parameter 1 name (e.g. fit, style)"
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "used_for": "Product parameter 2 name"
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "used_for": "Parameter 2 sort / variant index"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Item / SKU identifier — joins to product master"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "used_for": "Product parameter 3 name"
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "used_for": "Product parameter 4 name"
+        },
+        {
+          "name": "PurQty",
+          "type": "decimal",
+          "used_for": "Purchase quantity"
+        }
+      ]
+    },
+    {
+      "catalog_no": 17,
+      "fqn": "dbo.VW_MB_POWERBI_PURXNS_REPORT",
+      "short_name": "VW_MB_POWERBI_PURXNS_REPORT",
+      "title": "Purchase Transactions Report",
+      "description": "Detailed purchase and purchase-return transactions with tax breakdown.",
+      "object_type": "view",
+      "column_count": 50,
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "DepartmentName",
+          "type": "varchar",
+          "used_for": "Department name — hierarchy breakdown"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryName",
+          "type": "varchar",
+          "used_for": "Category name — product hierarchy"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "PurRefNo1",
+          "type": "varchar",
+          "used_for": "Purchase reference number 1"
+        },
+        {
+          "name": "PurRefNo2",
+          "type": "varchar",
+          "used_for": "Purchase reference number 2"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "XnType",
+          "type": "varchar",
+          "used_for": "Transaction type code (sale, return, etc.)"
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "used_for": "Transaction header ID"
+        },
+        {
+          "name": "XnDt",
+          "type": "datetime",
+          "used_for": "Transaction date — primary date filter for sales"
+        },
+        {
+          "name": "PurInvDate",
+          "type": "datetime",
+          "used_for": "Date — filter or grouping"
+        },
+        {
+          "name": "PurInvNo",
+          "type": "varchar",
+          "used_for": "Purchase invoice number"
+        },
+        {
+          "name": "PurChallanDt",
+          "type": "datetime",
+          "used_for": "Purchase challan date"
+        },
+        {
+          "name": "PurChallanNo",
+          "type": "varchar",
+          "used_for": "Purchase challan number"
+        },
+        {
+          "name": "ItemCode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "CostPrice",
+          "type": "decimal",
+          "used_for": "Unit cost price"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "PurQty",
+          "type": "decimal",
+          "used_for": "Purchase quantity"
+        },
+        {
+          "name": "PurCostValue",
+          "type": "decimal",
+          "used_for": "Purchase cost value"
+        },
+        {
+          "name": "PurNetAmount",
+          "type": "decimal",
+          "used_for": "Purchase net amount"
+        },
+        {
+          "name": "PurMrpValue",
+          "type": "decimal",
+          "used_for": "Purchase MRP value"
+        },
+        {
+          "name": "PurCGSTAmount",
+          "type": "decimal",
+          "used_for": "Purchase CGST amount"
+        },
+        {
+          "name": "PurSGSTAmount",
+          "type": "decimal",
+          "used_for": "Purchase SGST amount"
+        },
+        {
+          "name": "PurIGSTAmount",
+          "type": "decimal",
+          "used_for": "Purchase IGST amount"
+        },
+        {
+          "name": "PrtQty",
+          "type": "decimal",
+          "used_for": "Purchase return quantity"
+        },
+        {
+          "name": "PrtCostValue",
+          "type": "decimal",
+          "used_for": "Purchase return cost value"
+        },
+        {
+          "name": "PrtNetAmount",
+          "type": "decimal",
+          "used_for": "Purchase return net amount"
+        },
+        {
+          "name": "PrtMrpValue",
+          "type": "decimal",
+          "used_for": "Purchase return MRP value"
+        },
+        {
+          "name": "PrtCGSTAmount",
+          "type": "decimal",
+          "used_for": "Monetary amount"
+        },
+        {
+          "name": "PrtSGSTAmount",
+          "type": "decimal",
+          "used_for": "Purchase return SGST amount"
+        },
+        {
+          "name": "PrtIGSTAmount",
+          "type": "decimal",
+          "used_for": "Purchase return IGST amount"
+        },
+        {
+          "name": "NetPurQty",
+          "type": "decimal",
+          "used_for": "Net purchase quantity (purchase − returns)"
+        },
+        {
+          "name": "NetPurCost",
+          "type": "decimal",
+          "used_for": "Net purchase cost"
+        },
+        {
+          "name": "NetPurNetAmount",
+          "type": "decimal",
+          "used_for": "Net purchase net amount"
+        },
+        {
+          "name": "NetPurCGSTAmount",
+          "type": "decimal",
+          "used_for": "Net purchase CGST amount"
+        },
+        {
+          "name": "NetPurSGSTAmount",
+          "type": "decimal",
+          "used_for": "Net purchase SGST amount"
+        },
+        {
+          "name": "NetPurIGSTAmount",
+          "type": "decimal",
+          "used_for": "Net purchase IGST amount"
+        }
+      ]
+    },
+    {
+      "catalog_no": 18,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_ARTICLE_REPORT",
+      "short_name": "VW_MB_POWERBI_SLS_ARTICLE_REPORT",
+      "title": "Sales by Article",
+      "description": "Article-level net sales and quantity for style/Article performance.",
+      "object_type": "view",
+      "column_count": 10,
+      "columns": [
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "XnMemoDate",
+          "type": "datetime",
+          "used_for": "Sales memo date — date filter"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "ArticleMRP",
+          "type": "decimal",
+          "used_for": "Article-level MRP"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "NetSlsQty",
+          "type": "decimal",
+          "used_for": "Net sales quantity (after returns)"
+        },
+        {
+          "name": "NetAmount",
+          "type": "decimal",
+          "used_for": "Net sales amount — primary revenue metric"
+        },
+        {
+          "name": "NetSlsCostValue",
+          "type": "decimal",
+          "used_for": "Net sales at cost value — margin analysis"
+        }
+      ]
+    },
+    {
+      "catalog_no": 19,
+      "fqn": "dbo.VW_MB_POWERBI_SLS_BILLCOUNT",
+      "short_name": "VW_MB_POWERBI_SLS_BILLCOUNT",
+      "title": "Sales Bill Count",
+      "description": "Daily bill count per branch — footfall / transaction volume KPI.",
+      "object_type": "view",
+      "column_count": 3,
+      "columns": [
+        {
+          "name": "BranchId",
+          "type": "char",
+          "used_for": "Branch identifier — filter and joins"
+        },
+        {
+          "name": "CashmemoDt",
+          "type": "datetime",
+          "used_for": "Cash memo / bill date — date filter"
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "used_for": "Number of bills / transactions — footfall KPI"
+        }
+      ]
+    },
+    {
+      "catalog_no": 20,
+      "fqn": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "short_name": "VW_MB_POWERBI_SLSXNS_REPORT",
+      "title": "Sales Transactions (SLSXNS)",
+      "description": "Sales, returns, and net sales with tax — primary transaction-level sales view.",
+      "object_type": "view",
+      "column_count": 41,
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "used_for": "Department full name — hierarchy breakdown"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "used_for": "Category full name — product hierarchy"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "CostPrice",
+          "type": "decimal",
+          "used_for": "Unit cost price"
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "used_for": "Transaction header ID"
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "used_for": "Transaction document number"
+        },
+        {
+          "name": "XnDt",
+          "type": "datetime",
+          "used_for": "Transaction date — primary date filter for sales"
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "varchar",
+          "used_for": "Transaction month label — period grouping"
+        },
+        {
+          "name": "SlsQty",
+          "type": "decimal",
+          "used_for": "Gross sales quantity"
+        },
+        {
+          "name": "SlsMrpValue",
+          "type": "decimal",
+          "used_for": "Sales MRP value"
+        },
+        {
+          "name": "SlsCostValue",
+          "type": "decimal",
+          "used_for": "Sales cost value"
+        },
+        {
+          "name": "SlsNetAmount",
+          "type": "decimal",
+          "used_for": "Sales net amount"
+        },
+        {
+          "name": "SlrQty",
+          "type": "decimal",
+          "used_for": "Sales return quantity"
+        },
+        {
+          "name": "SlrMrpValue",
+          "type": "decimal",
+          "used_for": "Sales return MRP value"
+        },
+        {
+          "name": "SlrCostValue",
+          "type": "decimal",
+          "used_for": "Sales return cost value"
+        },
+        {
+          "name": "SlrNetAmount",
+          "type": "decimal",
+          "used_for": "Sales return net amount"
+        },
+        {
+          "name": "NetSlsQty",
+          "type": "decimal",
+          "used_for": "Net sales quantity (after returns)"
+        },
+        {
+          "name": "NetSlsMrpValue",
+          "type": "decimal",
+          "used_for": "Net sales MRP value"
+        },
+        {
+          "name": "NetSlsCostValue",
+          "type": "decimal",
+          "used_for": "Net sales at cost value — margin analysis"
+        },
+        {
+          "name": "NetSlsNetAmount",
+          "type": "decimal",
+          "used_for": "Net sales amount after returns — revenue KPI"
+        },
+        {
+          "name": "CGSTAmount",
+          "type": "decimal",
+          "used_for": "Central GST tax amount"
+        },
+        {
+          "name": "SGSTAmount",
+          "type": "decimal",
+          "used_for": "State GST tax amount"
+        },
+        {
+          "name": "IGSTAmount",
+          "type": "decimal",
+          "used_for": "Integrated GST tax amount"
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "used_for": "Number of bills / transactions — footfall KPI"
+        }
+      ]
+    },
+    {
+      "catalog_no": 21,
+      "fqn": "dbo.VW_MB_POWERBI_STI_REPORT",
+      "short_name": "VW_MB_POWERBI_STI_REPORT",
+      "title": "Stock Transfer In (STI)",
+      "description": "Inbound stock transfers between branches with item and value detail.",
+      "object_type": "view",
+      "column_count": 36,
+      "columns": [
+        {
+          "name": "SourceBranchAlias",
+          "type": "varchar",
+          "used_for": "Source branch (transfer origin) — filter"
+        },
+        {
+          "name": "SourceBranchId",
+          "type": "char",
+          "used_for": "Source branch ID (transfer origin)"
+        },
+        {
+          "name": "TargetBranchAlias",
+          "type": "varchar",
+          "used_for": "Target branch (transfer destination) — filter"
+        },
+        {
+          "name": "TargetBranchId",
+          "type": "char",
+          "used_for": "Target branch ID (transfer destination)"
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "used_for": "Department full name — hierarchy breakdown"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "used_for": "Category full name — product hierarchy"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "CostPrice",
+          "type": "decimal",
+          "used_for": "Unit cost price"
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "used_for": "Transaction header ID"
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "used_for": "Transaction document number"
+        },
+        {
+          "name": "XnDt",
+          "type": "datetime",
+          "used_for": "Transaction date — primary date filter for sales"
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "varchar",
+          "used_for": "Transaction month label — period grouping"
+        },
+        {
+          "name": "StiQty",
+          "type": "decimal",
+          "used_for": "Stock transfer in quantity"
+        },
+        {
+          "name": "MrpValue",
+          "type": "decimal",
+          "used_for": "Total MRP value"
+        },
+        {
+          "name": "CostValue",
+          "type": "decimal",
+          "used_for": "Total cost value"
+        },
+        {
+          "name": "NetAmount",
+          "type": "decimal",
+          "used_for": "Net sales amount — primary revenue metric"
+        },
+        {
+          "name": "CGSTAmount",
+          "type": "decimal",
+          "used_for": "Central GST tax amount"
+        },
+        {
+          "name": "SGSTAmount",
+          "type": "decimal",
+          "used_for": "State GST tax amount"
+        },
+        {
+          "name": "IGSTAmount",
+          "type": "decimal",
+          "used_for": "Integrated GST tax amount"
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "used_for": "Number of bills / transactions — footfall KPI"
+        }
+      ]
+    },
+    {
+      "catalog_no": 22,
+      "fqn": "dbo.VW_MB_POWERBI_STO_REPORT",
+      "short_name": "VW_MB_POWERBI_STO_REPORT",
+      "title": "Stock Transfer Out (STO)",
+      "description": "Outbound stock transfers between branches with item and value detail.",
+      "object_type": "view",
+      "column_count": 36,
+      "columns": [
+        {
+          "name": "SourceBranchAlias",
+          "type": "varchar",
+          "used_for": "Source branch (transfer origin) — filter"
+        },
+        {
+          "name": "SourceBranchId",
+          "type": "char",
+          "used_for": "Source branch ID (transfer origin)"
+        },
+        {
+          "name": "TargetBranchAlias",
+          "type": "varchar",
+          "used_for": "Target branch (transfer destination) — filter"
+        },
+        {
+          "name": "TargetBranchId",
+          "type": "char",
+          "used_for": "Target branch ID (transfer destination)"
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "used_for": "Department full name — hierarchy breakdown"
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "used_for": "Category full name — product hierarchy"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "used_for": "Supplier state — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "CostPrice",
+          "type": "decimal",
+          "used_for": "Unit cost price"
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "used_for": "Transaction header ID"
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "used_for": "Transaction document number"
+        },
+        {
+          "name": "XnDt",
+          "type": "datetime",
+          "used_for": "Transaction date — primary date filter for sales"
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "varchar",
+          "used_for": "Transaction month label — period grouping"
+        },
+        {
+          "name": "StoQty",
+          "type": "decimal",
+          "used_for": "Stock transfer out quantity"
+        },
+        {
+          "name": "MrpValue",
+          "type": "decimal",
+          "used_for": "Total MRP value"
+        },
+        {
+          "name": "CostValue",
+          "type": "decimal",
+          "used_for": "Total cost value"
+        },
+        {
+          "name": "NetAmount",
+          "type": "decimal",
+          "used_for": "Net sales amount — primary revenue metric"
+        },
+        {
+          "name": "CGSTAmount",
+          "type": "decimal",
+          "used_for": "Central GST tax amount"
+        },
+        {
+          "name": "SGSTAmount",
+          "type": "decimal",
+          "used_for": "State GST tax amount"
+        },
+        {
+          "name": "IGSTAmount",
+          "type": "decimal",
+          "used_for": "Integrated GST tax amount"
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "used_for": "Number of bills / transactions — footfall KPI"
+        }
+      ]
+    },
+    {
+      "catalog_no": 23,
+      "fqn": "dbo.VW_MB_POWERBI_STOCK_REPORT",
+      "short_name": "VW_MB_POWERBI_STOCK_REPORT",
+      "title": "Stock on Hand Report",
+      "description": "Current stock by branch, supplier, category, and item attributes.",
+      "object_type": "view",
+      "column_count": 20,
+      "columns": [
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "used_for": "Supplier city — geography"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "used_for": "Product parameter 1 name (e.g. fit, style)"
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "used_for": "Product parameter 2 name"
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "used_for": "Parameter 2 sort / variant index"
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "used_for": "Primary fabric attribute"
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "used_for": "Sub-fabric attribute"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Item / SKU identifier — joins to product master"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "used_for": "Product parameter 3 name"
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "used_for": "Product parameter 4 name"
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "used_for": "Purchase invoice date"
+        },
+        {
+          "name": "StockQty",
+          "type": "decimal",
+          "used_for": "Stock on hand quantity"
+        }
+      ]
+    },
+    {
+      "catalog_no": 24,
+      "fqn": "dbo.VW_MB_POWERBI_SUPPLIER_PUR_REPORT",
+      "short_name": "VW_MB_POWERBI_SUPPLIER_PUR_REPORT",
+      "title": "Supplier Purchase Report",
+      "description": "Supplier-wise purchase history with product attributes and pricing.",
+      "object_type": "view",
+      "column_count": 39,
+      "columns": [
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "used_for": "Department short name — primary filter"
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "used_for": "Category short name — primary filter"
+        },
+        {
+          "name": "SubCategoryName",
+          "type": "varchar",
+          "used_for": "Sub-category name"
+        },
+        {
+          "name": "SubCategoryShortName",
+          "type": "varchar",
+          "used_for": "Sub-category short name — filter"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Colour",
+          "type": "varchar",
+          "used_for": "Product color attribute — filter"
+        },
+        {
+          "name": "size",
+          "type": "varchar",
+          "used_for": "Product size attribute — filter"
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "used_for": "Parameter 2 sort / variant index"
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "used_for": "Contrast / variant attribute"
+        },
+        {
+          "name": "Printypework",
+          "type": "varchar",
+          "used_for": "Print / embellishment work type"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "SupplierUID",
+          "type": "varchar",
+          "used_for": "Supplier unique identifier"
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "used_for": "Branch short name — grouping and filter in reports"
+        },
+        {
+          "name": "FabricShortName",
+          "type": "varchar",
+          "used_for": "Fabric short name"
+        },
+        {
+          "name": "SubFabricShortName",
+          "type": "varchar",
+          "used_for": "Sub-fabric short name"
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "used_for": "Product property tag (e.g. season, fit)"
+        },
+        {
+          "name": "Collection",
+          "type": "varchar",
+          "used_for": "Collection name — seasonal grouping"
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "used_for": "Merchandise concept — assortment grouping"
+        },
+        {
+          "name": "SubConceptShortName",
+          "type": "varchar",
+          "used_for": "Display name — filter or label"
+        },
+        {
+          "name": "Dupatta",
+          "type": "varchar",
+          "used_for": "Dupatta attribute flag / value"
+        },
+        {
+          "name": "DupattaShortName",
+          "type": "varchar",
+          "used_for": "Dupatta short name"
+        },
+        {
+          "name": "Silhoutte",
+          "type": "varchar",
+          "used_for": "Silhouette style attribute"
+        },
+        {
+          "name": "Bottom",
+          "type": "varchar",
+          "used_for": "Bottom garment type attribute"
+        },
+        {
+          "name": "NECKLINE",
+          "type": "varchar",
+          "used_for": "Neckline style attribute"
+        },
+        {
+          "name": "SleeveType",
+          "type": "varchar",
+          "used_for": "Sleeve type attribute"
+        },
+        {
+          "name": "Look",
+          "type": "varchar",
+          "used_for": "Look / style tag"
+        },
+        {
+          "name": "INVENTORYTYPE",
+          "type": "varchar",
+          "used_for": "Inventory type classification"
+        },
+        {
+          "name": "PurDate",
+          "type": "datetime",
+          "used_for": "Purchase date — procurement filter"
+        },
+        {
+          "name": "PurInvNo",
+          "type": "varchar",
+          "used_for": "Purchase invoice number"
+        },
+        {
+          "name": "PurInvDt",
+          "type": "datetime",
+          "used_for": "Purchase invoice date"
+        },
+        {
+          "name": "PurRefNo1",
+          "type": "varchar",
+          "used_for": "Purchase reference number 1"
+        },
+        {
+          "name": "PurRefNo2",
+          "type": "varchar",
+          "used_for": "Purchase reference number 2"
+        },
+        {
+          "name": "PurChallanNo",
+          "type": "varchar",
+          "used_for": "Purchase challan number"
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Item / SKU identifier — joins to product master"
+        },
+        {
+          "name": "PurchasePrice",
+          "type": "decimal",
+          "used_for": "Item purchase / landed cost"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "ItemWSP",
+          "type": "decimal",
+          "used_for": "Item wholesale price (WSP)"
+        },
+        {
+          "name": "PurQty",
+          "type": "decimal",
+          "used_for": "Purchase quantity"
+        }
+      ]
+    },
+    {
+      "catalog_no": 25,
+      "fqn": "dbo.VW_MB_POWERBI_VENDOR_MASTER",
+      "short_name": "VW_MB_POWERBI_VENDOR_MASTER",
+      "title": "Vendor / Party Master",
+      "description": "Supplier and vendor master with contact, tax, credit, and MSME details.",
+      "object_type": "view",
+      "column_count": 48,
+      "columns": [
+        {
+          "name": "PartyId",
+          "type": "char",
+          "used_for": "Party / vendor master ID"
+        },
+        {
+          "name": "PartyName",
+          "type": "varchar",
+          "used_for": "Party / vendor full name"
+        },
+        {
+          "name": "ShortName",
+          "type": "varchar",
+          "used_for": "Short display name / alias"
+        },
+        {
+          "name": "PartyAlias",
+          "type": "varchar",
+          "used_for": "Party short alias"
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "used_for": "Street address line"
+        },
+        {
+          "name": "ExtAddress",
+          "type": "varchar",
+          "used_for": "Extended address details"
+        },
+        {
+          "name": "BusinessName",
+          "type": "varchar",
+          "used_for": "Registered business name"
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "used_for": "Locality / neighborhood"
+        },
+        {
+          "name": "LocalityCity",
+          "type": "varchar",
+          "used_for": "Locality city grouping"
+        },
+        {
+          "name": "LocalityGroup",
+          "type": "varchar",
+          "used_for": "Locality group for regional analysis"
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "used_for": "Postal / PIN code"
+        },
+        {
+          "name": "District",
+          "type": "varchar",
+          "used_for": "District — geography breakdown"
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "used_for": "City — geography filter and breakdown"
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "used_for": "State — geography filter and breakdown"
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "used_for": "Country — geography filter"
+        },
+        {
+          "name": "ContactEmail1",
+          "type": "varchar",
+          "used_for": "Primary contact email"
+        },
+        {
+          "name": "ContactEmail2",
+          "type": "varchar",
+          "used_for": "Secondary contact email"
+        },
+        {
+          "name": "ContactPhone1",
+          "type": "varchar",
+          "used_for": "Primary contact phone"
+        },
+        {
+          "name": "ContactPhone2",
+          "type": "varchar",
+          "used_for": "Secondary contact phone"
+        },
+        {
+          "name": "ContactWebsite",
+          "type": "varchar",
+          "used_for": "Contact website URL"
+        },
+        {
+          "name": "CreatedOn",
+          "type": "datetime",
+          "used_for": "Record created timestamp"
+        },
+        {
+          "name": "CreditDays",
+          "type": "decimal",
+          "used_for": "Credit period in days"
+        },
+        {
+          "name": "CreditLimit",
+          "type": "decimal",
+          "used_for": "Credit limit amount"
+        },
+        {
+          "name": "DiscountPercentage",
+          "type": "decimal",
+          "used_for": "Discount percentage on purchases"
+        },
+        {
+          "name": "FreightPercentage",
+          "type": "decimal",
+          "used_for": "Freight charge percentage"
+        },
+        {
+          "name": "GstClassification",
+          "type": "int",
+          "used_for": "GST classification code"
+        },
+        {
+          "name": "GstClassificationStr",
+          "type": "varchar",
+          "used_for": "GST classification description"
+        },
+        {
+          "name": "GstEffectiveDt",
+          "type": "datetime",
+          "used_for": "GST effective date"
+        },
+        {
+          "name": "GstStateCode",
+          "type": "varchar",
+          "used_for": "GST state code"
+        },
+        {
+          "name": "IntlGLNNo",
+          "type": "varchar",
+          "used_for": "International GLN number"
+        },
+        {
+          "name": "LocalityId",
+          "type": "char",
+          "used_for": "Locality master identifier"
+        },
+        {
+          "name": "MarginPercentage",
+          "type": "decimal",
+          "used_for": "Margin percentage"
+        },
+        {
+          "name": "MarkupEXP",
+          "type": "decimal",
+          "used_for": "Markup on export price"
+        },
+        {
+          "name": "MarkupMRP",
+          "type": "decimal",
+          "used_for": "Markup on MRP"
+        },
+        {
+          "name": "MarkupWSP",
+          "type": "decimal",
+          "used_for": "Markup on wholesale price"
+        },
+        {
+          "name": "MSMEBizType",
+          "type": "int",
+          "used_for": "MSME business type code"
+        },
+        {
+          "name": "MSMEBizTypeStr",
+          "type": "varchar",
+          "used_for": "MSME business type description"
+        },
+        {
+          "name": "MSMECategory",
+          "type": "int",
+          "used_for": "MSME category code"
+        },
+        {
+          "name": "MSMECategoryStr",
+          "type": "varchar",
+          "used_for": "MSME category description"
+        },
+        {
+          "name": "MSMERegDt",
+          "type": "datetime",
+          "used_for": "Date / timestamp — filter or grouping"
+        },
+        {
+          "name": "MSMERegNo",
+          "type": "varchar",
+          "used_for": "Document / reference number"
+        },
+        {
+          "name": "PartyGroupName",
+          "type": "varchar",
+          "used_for": "Party group classification"
+        },
+        {
+          "name": "TaxGSTINNo",
+          "type": "varchar",
+          "used_for": "GSTIN tax registration number"
+        },
+        {
+          "name": "TaxPanNo",
+          "type": "varchar",
+          "used_for": "PAN tax identifier"
+        },
+        {
+          "name": "TdsFullName",
+          "type": "varchar",
+          "used_for": "TDS full description"
+        },
+        {
+          "name": "TdsId",
+          "type": "char",
+          "used_for": "TDS section ID"
+        },
+        {
+          "name": "TdsName",
+          "type": "varchar",
+          "used_for": "TDS section name"
+        },
+        {
+          "name": "TdsPercentage",
+          "type": "decimal",
+          "used_for": "TDS deduction percentage"
+        }
+      ]
+    },
+    {
+      "catalog_no": 26,
+      "fqn": "dbo.VwAISalesPerson",
+      "short_name": "VwAISalesPerson",
+      "title": "AI Salesperson Dimension",
+      "description": "Salesperson lookup for NLQ and salesperson analytics.",
+      "object_type": "view",
+      "column_count": 3,
+      "columns": [
+        {
+          "name": "SalesPersonId",
+          "type": "char",
+          "used_for": "Salesperson identifier"
+        },
+        {
+          "name": "SalesPersonName",
+          "type": "varchar",
+          "used_for": "Salesperson full name — Top-N and performance"
+        },
+        {
+          "name": "SalesPersonShortName",
+          "type": "varchar",
+          "used_for": "Salesperson short name"
+        }
+      ]
+    },
+    {
+      "catalog_no": 27,
+      "fqn": "dbo.VwAISupplier",
+      "short_name": "VwAISupplier",
+      "title": "AI Supplier Dimension",
+      "description": "Supplier lookup for NLQ and procurement analytics.",
+      "object_type": "view",
+      "column_count": 10,
+      "columns": [
+        {
+          "name": "PurPartyId",
+          "type": "char",
+          "used_for": "Purchase party (supplier) ID"
+        },
+        {
+          "name": "PartyName",
+          "type": "varchar",
+          "used_for": "Party / vendor full name"
+        },
+        {
+          "name": "ShortName",
+          "type": "varchar",
+          "used_for": "Short display name / alias"
+        },
+        {
+          "name": "PartyAlias",
+          "type": "varchar",
+          "used_for": "Party short alias"
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "used_for": "Street address line"
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "used_for": "Locality / neighborhood"
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "used_for": "Postal / PIN code"
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "used_for": "City — geography filter and breakdown"
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "used_for": "State — geography filter and breakdown"
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "used_for": "Country — geography filter"
+        }
+      ]
+    },
+    {
+      "catalog_no": 28,
+      "fqn": "dbo.VwMstItems",
+      "short_name": "VwMstItems",
+      "title": "Item Master View",
+      "description": "Complete item master with hierarchy, parameters, supplier, and pricing.",
+      "object_type": "view",
+      "column_count": 49,
+      "columns": [
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "used_for": "Item code / barcode — product lookup"
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "used_for": "Item / SKU identifier — joins to product master"
+        },
+        {
+          "name": "ItemMRP",
+          "type": "decimal",
+          "used_for": "Item maximum retail price (MRP)"
+        },
+        {
+          "name": "ItemWSP",
+          "type": "decimal",
+          "used_for": "Item wholesale price (WSP)"
+        },
+        {
+          "name": "ItemEXP",
+          "type": "decimal",
+          "used_for": "Item export / extended price"
+        },
+        {
+          "name": "PurchasePrice",
+          "type": "decimal",
+          "used_for": "Item purchase / landed cost"
+        },
+        {
+          "name": "SKU",
+          "type": "varchar",
+          "used_for": "Stock keeping unit code"
+        },
+        {
+          "name": "ArticleId",
+          "type": "char",
+          "used_for": "Article master identifier"
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "used_for": "Article / style number — product attribute filter"
+        },
+        {
+          "name": "Description",
+          "type": "varchar",
+          "used_for": "Item long description"
+        },
+        {
+          "name": "ExtDescription",
+          "type": "varchar",
+          "used_for": "Item extended description"
+        },
+        {
+          "name": "ArticleShortName",
+          "type": "varchar",
+          "used_for": "Article short display name"
+        },
+        {
+          "name": "UomId",
+          "type": "char",
+          "used_for": "Unit of measure ID"
+        },
+        {
+          "name": "UomName",
+          "type": "varchar",
+          "used_for": "Unit of measure name"
+        },
+        {
+          "name": "GstUQC",
+          "type": "varchar",
+          "used_for": "GST unit quantity code"
+        },
+        {
+          "name": "UomType",
+          "type": "int",
+          "used_for": "Unit of measure type"
+        },
+        {
+          "name": "CodingType",
+          "type": "decimal",
+          "used_for": "Item coding type"
+        },
+        {
+          "name": "ArticleStockType",
+          "type": "decimal",
+          "used_for": "Article stock type classification"
+        },
+        {
+          "name": "InvDepartmentId",
+          "type": "char",
+          "used_for": "Inventory department ID"
+        },
+        {
+          "name": "InvDepartmentName",
+          "type": "varchar",
+          "used_for": "Inventory department name"
+        },
+        {
+          "name": "InvDepartmentShortName",
+          "type": "varchar",
+          "used_for": "Inventory department short name"
+        },
+        {
+          "name": "InvCategoryId",
+          "type": "char",
+          "used_for": "Inventory category ID"
+        },
+        {
+          "name": "InvCategoryName",
+          "type": "varchar",
+          "used_for": "Inventory category name"
+        },
+        {
+          "name": "InvCategoryShortName",
+          "type": "varchar",
+          "used_for": "Inventory category short name"
+        },
+        {
+          "name": "InvSubCategoryId",
+          "type": "char",
+          "used_for": "Inventory sub-category ID"
+        },
+        {
+          "name": "InvSubCategoryName",
+          "type": "varchar",
+          "used_for": "Inventory sub-category name"
+        },
+        {
+          "name": "InvSubCategoryShortName",
+          "type": "varchar",
+          "used_for": "Inventory sub-category short name"
+        },
+        {
+          "name": "Para1Id",
+          "type": "char",
+          "used_for": "Product parameter 1 ID (variant dimension)"
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "used_for": "Product parameter 1 name (e.g. fit, style)"
+        },
+        {
+          "name": "Para1ShortName",
+          "type": "varchar",
+          "used_for": "Product parameter 1 short name"
+        },
+        {
+          "name": "Para2Id",
+          "type": "char",
+          "used_for": "Product parameter 2 ID"
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "used_for": "Product parameter 2 name"
+        },
+        {
+          "name": "Para2ShortName",
+          "type": "varchar",
+          "used_for": "Product parameter 2 short name"
+        },
+        {
+          "name": "Para3Id",
+          "type": "char",
+          "used_for": "Product parameter 3 ID"
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "used_for": "Product parameter 3 name"
+        },
+        {
+          "name": "Para3ShortName",
+          "type": "varchar",
+          "used_for": "Product parameter 3 short name"
+        },
+        {
+          "name": "Para4Id",
+          "type": "char",
+          "used_for": "Product parameter 4 ID"
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "used_for": "Product parameter 4 name"
+        },
+        {
+          "name": "Para4ShortName",
+          "type": "varchar",
+          "used_for": "Product parameter 4 short name"
+        },
+        {
+          "name": "ExtCategoryName",
+          "type": "varchar",
+          "used_for": "Extended / external category label"
+        },
+        {
+          "name": "PurPartyId",
+          "type": "char",
+          "used_for": "Purchase party (supplier) ID"
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "used_for": "Supplier full name — filter and display"
+        },
+        {
+          "name": "SupplierShortName",
+          "type": "varchar",
+          "used_for": "Display name — filter or label"
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "used_for": "Supplier short code — filter"
+        },
+        {
+          "name": "GstClassification",
+          "type": "int",
+          "used_for": "GST classification code"
+        },
+        {
+          "name": "HSNCode",
+          "type": "varchar",
+          "used_for": "HSN tax classification code"
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "used_for": "Purchase invoice date"
+        },
+        {
+          "name": "PurInvoiceNo",
+          "type": "varchar",
+          "used_for": "Document / reference number"
+        },
+        {
+          "name": "PurchaseId",
+          "type": "varchar",
+          "used_for": "Purchase header ID"
+        }
+      ]
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { ROUTES } from '../../lib/routes';
 import type { Page } from '../../types';
-import { prefetchTransactionsOnHover, prefetchAnalyticsShell, prefetchBranchesChart } from '../../hooks/useAnalytics';
+import { prefetchTransactionsOnHover, prefetchAnalyticsPage, prefetchBranchesChart } from '../../hooks/useAnalytics';
 
 // All nav items tagged with which roles can see them (undefined = everyone)
 const ALL_NAV_GROUPS = [
@@ -197,12 +197,12 @@ export default function Sidebar() {
                   className="block mb-0.5"
                   onMouseEnter={() => {
                     if (item.id === 'transactions') prefetchTransactionsOnHover();
-                    if (item.id === 'analytics') void prefetchAnalyticsShell();
+                    if (item.id === 'analytics') void prefetchAnalyticsPage('mtd');
                     if (item.id === 'branch') prefetchBranchesChart('mtd');
                   }}
                   onFocus={() => {
                     if (item.id === 'transactions') prefetchTransactionsOnHover();
-                    if (item.id === 'analytics') void prefetchAnalyticsShell();
+                    if (item.id === 'analytics') void prefetchAnalyticsPage('mtd');
                     if (item.id === 'branch') prefetchBranchesChart('mtd');
                   }}
                 >

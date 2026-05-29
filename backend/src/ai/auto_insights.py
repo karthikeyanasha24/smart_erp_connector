@@ -89,54 +89,18 @@ async def _load_data(period: str) -> Dict[str, Any]:
         f"chart:category:v2:{period}:30",
     ])
 
-    # ── 2. Live SQL fallback for any missing piece ────────────────────────────
-    try:
-        from src.analytics.kpi import get_home_kpis
-        from src.analytics.charts import (
-            get_branch_chart, get_revenue_trend, get_category_breakdown,
-        )
-        from src.analytics.concurrency import run_analytics_sql
-
-        async def _safe(coro):
-            try:
-                return await run_analytics_sql(coro)
-            except Exception as exc:
-                logger.warning("auto_insights live fallback failed", error=str(exc))
-                return None
-
-        tasks = []
-        task_names = []
-
-        if not kpis:
-            tasks.append(_safe(get_home_kpis(period)))
-            task_names.append("kpis")
-
-        if not branches or not isinstance(branches, list):
-            tasks.append(_safe(get_branch_chart(period)))
-            task_names.append("branches")
-
-        if not trend_data or not isinstance(trend_data, list):
-            tasks.append(_safe(get_revenue_trend(period)))
-            task_names.append("trend")
-
-        if not categories or not isinstance(categories, list):
-            tasks.append(_safe(get_category_breakdown(period, 20)))
-            task_names.append("categories")
-
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            result_map = {name: val for name, val in zip(task_names, results) if not isinstance(val, Exception)}
-            if "kpis" in result_map:
-                kpis = result_map["kpis"]
-            if "branches" in result_map:
-                branches = result_map["branches"]
-            if "trend" in result_map:
-                trend_data = result_map["trend"]
-            if "categories" in result_map:
-                categories = result_map["categories"]
-
-    except Exception as exc:
-        logger.warning("auto_insights: analytics import failed", error=str(exc))
+    # ── 2. Cache-only: no live SQL fallback ───────────────────────────────────
+    # Insights must load instantly. SQL fallbacks that take 10+ minutes are not
+    # acceptable here — if the cache is cold, we return what we have (possibly nothing).
+    # The warmup engine will populate the cache; call /ai/page-insights again after.
+    logger.debug(
+        "auto_insights cache check",
+        period=period,
+        has_kpis=bool(kpis),
+        has_branches=bool(branches),
+        has_trend=bool(trend_data),
+        has_categories=bool(categories),
+    )
 
     return {
         "kpis": kpis or {},
@@ -653,19 +617,32 @@ async def _generate_ai_narrative(
 
 async def generate_page_insights(period: str = "mtd") -> Dict[str, Any]:
     """
-    Full insight pipeline:
-    1. Load data from cache (fast) or live SQL (reliable fallback).
-    2. Run rule-based insight engines.
-    3. Generate AI narrative if enabled.
-    4. Return unified insight list with executive summary.
+    Full insight pipeline with output caching:
+    1. Return cached insights immediately if fresh (< 30 min old).
+    2. Load data from in-memory cache only (no live SQL).
+    3. Run rule-based insight engines.
+    4. Generate AI narrative if enabled (Claude API, ~10-15s first time).
+    5. Cache and return result.
     """
+    from src.analytics.cache import cache as _cache
+
     valid_periods = {"today", "mtd", "qtd", "ytd", "last_7d", "last_30d", "last_6m"}
     if period not in valid_periods:
         period = "mtd"
 
-    # ── Step 1: Load data ──────────────────────────────────────────────────────
+    # ── Step 0: Return cached insights instantly if fresh ─────────────────────
+    insights_cache_key = f"insights:v3:{period}"
+    cached_insights, is_fresh = _cache.get(insights_cache_key)
+    if is_fresh and cached_insights is not None:
+        logger.debug("auto_insights cache hit", period=period)
+        return {**cached_insights, "from_cache": True}
+
+    # ── Step 1: Load data from analytics cache (no SQL fallback) ──────────────
     try:
-        data = await _load_data(period)
+        data = await asyncio.wait_for(_load_data(period), timeout=8.0)
+    except asyncio.TimeoutError:
+        logger.warning("auto_insights _load_data timed out", period=period)
+        data = {"kpis": {}, "branches": [], "trend": [], "categories": []}
     except Exception as exc:
         logger.error("auto_insights data load failed", error=str(exc))
         return {
@@ -685,6 +662,30 @@ async def generate_page_insights(period: str = "mtd") -> Dict[str, Any]:
 
     data_available = bool(kpis or branches or trend_data or categories)
 
+    if not data_available:
+        logger.info("auto_insights: no cached data available", period=period)
+        # Return stale cache if we have any (rather than empty)
+        if cached_insights is not None:
+            return {**cached_insights, "from_cache": True, "_stale": True}
+        # For "today" with no data, fall back to MTD insights with a banner note
+        if period == "today":
+            logger.info("auto_insights: today has no data — falling back to MTD insights")
+            mtd_result = await generate_page_insights("mtd")
+            return {
+                **mtd_result,
+                "period": "today",
+                "_fallback_period": "mtd",
+                "_fallback_reason": "No sales recorded today yet. Showing MTD insights instead.",
+            }
+        return {
+            "success": True,
+            "period": period,
+            "insights": [],
+            "executive_summary": None,
+            "data_available": False,
+            "from_cache": False,
+        }
+
     # ── Step 2: Rule-based insights ────────────────────────────────────────────
     all_insights: List[Dict[str, Any]] = []
 
@@ -693,19 +694,27 @@ async def generate_page_insights(period: str = "mtd") -> Dict[str, Any]:
     all_insights.extend(_trend_insights(trend_data, period))
     all_insights.extend(_category_insights(categories, period))
 
-    # ── Step 3: AI narrative ───────────────────────────────────────────────────
+    # ── Step 3: AI narrative (with 25s timeout to avoid blocking forever) ─────
     executive_summary: Optional[str] = None
     if cfg.AI_ADAPTIVE_SUMMARY and data_available:
-        ai_result = await _generate_ai_narrative(period, kpis, branches, categories, trend_data)
-        if ai_result:
-            ai_insights = ai_result.get("insights") or []
-            for i, ins in enumerate(ai_insights):
-                ins.setdefault("id", f"ai-{i + 1}")
-                ins.setdefault("confidence", 88.0)
-                ins.setdefault("impact", "medium")
-                ins.setdefault("severity", "info")
-            all_insights = ai_insights + all_insights   # AI insights at the top
-            executive_summary = ai_result.get("executive_summary")
+        try:
+            ai_result = await asyncio.wait_for(
+                _generate_ai_narrative(period, kpis, branches, categories, trend_data),
+                timeout=25.0,
+            )
+            if ai_result:
+                ai_insights = ai_result.get("insights") or []
+                for i, ins in enumerate(ai_insights):
+                    ins.setdefault("id", f"ai-{i + 1}")
+                    ins.setdefault("confidence", 88.0)
+                    ins.setdefault("impact", "medium")
+                    ins.setdefault("severity", "info")
+                all_insights = ai_insights + all_insights
+                executive_summary = ai_result.get("executive_summary")
+        except asyncio.TimeoutError:
+            logger.warning("auto_insights: AI narrative timed out — returning rule-based only", period=period)
+        except Exception as exc:
+            logger.warning("auto_insights: AI narrative failed", error=str(exc))
 
     # ── Step 4: Deduplicate and cap ────────────────────────────────────────────
     seen: set = set()
@@ -716,7 +725,7 @@ async def generate_page_insights(period: str = "mtd") -> Dict[str, Any]:
             seen.add(iid)
             unique.append(ins)
 
-    return {
+    result = {
         "success": True,
         "period": period,
         "insights": unique[:15],
@@ -724,3 +733,8 @@ async def generate_page_insights(period: str = "mtd") -> Dict[str, Any]:
         "data_available": data_available,
         "from_cache": False,
     }
+
+    # ── Step 5: Cache the result (30 min TTL) ─────────────────────────────────
+    _cache.set(insights_cache_key, result, ttl_s=1800.0)
+    logger.info("auto_insights generated and cached", period=period, count=len(unique[:15]))
+    return result
