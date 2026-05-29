@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional
 
 from src.config import cfg
 from src.db.mssql import execute_query
-from src.analytics.cache import cache
 from src.utils.sql_ref import sql_table
 from src.analytics.metrics_sql import bill_count_case, quantity_column, transactions_aggregate
 from src.utils.logger import logger
@@ -277,23 +276,15 @@ async def _query_contribution(dr: DateRange, dim: str, limit: int = 50) -> List[
     ]
 
 
-def _dashboard_cache_ttl_s(period: str) -> Optional[float]:
-    if period in ("today", "yesterday"):
-        return 300.0    # 5 min -- intraday data refreshes frequently
-    return 14400.0      # 4 hours -- MTD/QTD/YTD/Last6M survive overnight restarts in PG
-
-
 async def get_dashboard(
     period: str = "mtd",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> Dict[str, Any]:
-    cache_key = f"dashboard:v7:{period}:{start_date}:{end_date}"
-
-    logger.info("🔍 dashboard requested", period=period, cache_key=cache_key)
+    logger.info("🔍 dashboard requested", period=period)
 
     async def _fetch() -> Dict[str, Any]:
-        logger.info("💾 cache miss — querying SQL Server", period=period)
+        logger.info("querying SQL Server", period=period)
         dr = _period_range(period, start_date, end_date)
         ly_dr = get_prior_year_range(
             "custom" if period == "custom" else period,
@@ -359,4 +350,4 @@ async def get_dashboard(
             },
         }
 
-    return await cache.get_or_fetch(cache_key, _fetch, ttl_s=_dashboard_cache_ttl_s(period))
+    return await _fetch()

@@ -526,7 +526,7 @@ export default function DataViews() {
                   <table className="w-full text-left border-collapse min-w-max">
                     <thead
                       className="sticky top-0 z-10"
-                      style={{ background: isDark ? '#0c1228' : '#f1f5f9' }}
+                      style={{ background: isDark ? '#0e1630' : '#f1f5f9' }}
                     >
                       <tr>
                         {result.columns.map((col, ci) => (
@@ -534,13 +534,13 @@ export default function DataViews() {
                             key={col}
                             className="px-3 py-2.5 whitespace-nowrap text-left"
                             style={{
-                              color: 'var(--text-muted)',
+                              color: isDark ? '#8fa8d0' : '#64748b',
                               fontSize: 10,
                               fontWeight: 600,
                               textTransform: 'uppercase',
                               letterSpacing: '0.04em',
                               borderRight: ci < result.columns.length - 1
-                                ? isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.04)'
+                                ? isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)'
                                 : undefined,
                             }}
                           >
@@ -575,7 +575,9 @@ export default function DataViews() {
                               key={col}
                               className="px-3 py-1.5 text-xs whitespace-nowrap max-w-[260px] truncate"
                               style={{
-                                color: ci === 0 ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                color: ci === 0
+                                ? (isDark ? '#e8eeff' : '#0f172a')
+                                : (isDark ? '#b8c4e0' : '#334155'),
                                 fontWeight: ci === 0 ? 500 : 400,
                                 borderRight: ci < result.columns.length - 1
                                   ? isDark ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(0,0,0,0.03)'

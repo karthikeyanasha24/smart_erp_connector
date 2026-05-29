@@ -326,7 +326,6 @@ async def get_transactions(
 
 async def get_transaction_summary(period: str = "mtd") -> Dict[str, Any]:
     """Header summary: total revenue, total transactions, avg ticket, success rate."""
-    cache_key = f"txn:summary:{period}"
 
     async def _fetch() -> Dict[str, Any]:
         dr = resolve_date_range(period)
@@ -359,7 +358,7 @@ async def get_transaction_summary(period: str = "mtd") -> Dict[str, Any]:
             "period_label": dr.label,
         }
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # =============================================================================
@@ -510,7 +509,6 @@ async def get_home_kpis(period: str = "mtd") -> Dict[str, Any]:
     Returns all home-screen KPIs for the given period.
     Results are cached; stale data is served while a background refresh runs.
     """
-    cache_key = f"kpi:v2:{period}"
 
     async def _fetch() -> Dict[str, Any]:
         try:
@@ -543,7 +541,7 @@ async def get_home_kpis(period: str = "mtd") -> Dict[str, Any]:
             logger.error("get_home_kpis failed", error=str(exc))
             raise
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # =============================================================================
@@ -559,7 +557,6 @@ All WHERE clauses use < DATEADD(day,1,CAST(@endDate AS DATE)) instead of
 # ─── Revenue Trend ────────────────────────────────────────────────────────────
 
 async def get_revenue_trend(period: str = "last_30d") -> List[Dict[str, Any]]:
-    cache_key = f"chart:trend:v2:{period}"
 
     async def _fetch() -> List[Dict[str, Any]]:
         dr = resolve_date_range(period)
@@ -587,14 +584,13 @@ async def get_revenue_trend(period: str = "last_30d") -> List[Dict[str, Any]]:
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # ─── Category Breakdown ───────────────────────────────────────────────────────
 
 async def get_category_breakdown(period: str = "mtd", top_n: Optional[int] = None) -> List[Dict[str, Any]]:
     n = min(top_n or cfg.ANALYTICS_TOP_N, cfg.ANALYTICS_TOP_N_MAX)
-    cache_key = f"chart:category:v2:{period}:{n}"
 
     async def _fetch() -> List[Dict[str, Any]]:
         dr = resolve_date_range(period)
@@ -628,13 +624,12 @@ async def get_category_breakdown(period: str = "mtd", top_n: Optional[int] = Non
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # ─── Branch Bar Chart ─────────────────────────────────────────────────────────
 
 async def get_branch_chart(period: str = "mtd") -> List[Dict[str, Any]]:
-    cache_key = f"chart:branch:v2:{period}"
 
     async def _fetch() -> List[Dict[str, Any]]:
         dr = resolve_date_range(period)
@@ -662,14 +657,13 @@ async def get_branch_chart(period: str = "mtd") -> List[Dict[str, Any]]:
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # ─── Department Breakdown ─────────────────────────────────────────────────────
 
 async def get_department_chart(period: str = "mtd", top_n: Optional[int] = None) -> List[Dict[str, Any]]:
     n = min(top_n or cfg.ANALYTICS_TOP_N, cfg.ANALYTICS_TOP_N_MAX)
-    cache_key = f"chart:department:v2:{period}:{n}"
 
     async def _fetch() -> List[Dict[str, Any]]:
         dr = resolve_date_range(period)
@@ -697,14 +691,13 @@ async def get_department_chart(period: str = "mtd", top_n: Optional[int] = None)
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # ─── Top Salespersons ─────────────────────────────────────────────────────────
 
 async def get_top_salespersons(period: str = "mtd", top_n: int = 10) -> List[Dict[str, Any]]:
     n = min(top_n, cfg.ANALYTICS_TOP_N_MAX)
-    cache_key = f"chart:salesperson:v2:{period}:{n}"
 
     async def _fetch() -> List[Dict[str, Any]]:
         dr = resolve_date_range(period)
@@ -733,13 +726,12 @@ async def get_top_salespersons(period: str = "mtd", top_n: int = 10) -> List[Dic
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # ─── Hourly Heatmap ───────────────────────────────────────────────────────────
 
 async def get_hourly_heatmap(period: str = "last_30d") -> List[Dict[str, Any]]:
-    cache_key = f"chart:heatmap:v2:{period}"
 
     async def _fetch() -> List[Dict[str, Any]]:
         dr = resolve_date_range(period)
@@ -771,7 +763,7 @@ async def get_hourly_heatmap(period: str = "last_30d") -> List[Dict[str, Any]]:
             for r in result["records"]
         ]
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # ─── Branch Detail ────────────────────────────────────────────────────────────
@@ -1053,7 +1045,6 @@ async def get_dashboard(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> Dict[str, Any]:
-    cache_key = f"dashboard:v4:{period}:{start_date}:{end_date}"
 
     logger.info("🔍 dashboard requested", period=period, cache_key=cache_key)
 
@@ -1120,7 +1111,7 @@ async def get_dashboard(
             },
         }
 
-    return await cache.get_or_fetch(cache_key, _fetch)
+    return await _fetch()
 
 
 # =============================================================================
@@ -1184,41 +1175,4 @@ async def warmup_all() -> None:
 
 _warmer_task: asyncio.Task | None = None
 
-
-async def start_background_warmer() -> None:
-    """
-    Starts a background task that re-warms the cache at the configured interval.
-    Typically called once at application startup.
-    """
-    global _warmer_task
-
-    if not cfg.ANALYTICS_WARMUP:
-        logger.info("Cache warmup disabled")
-        return
-
-    async def _loop() -> None:
-        # Initial warmup on startup
-        await warmup_all()
-
-        interval_s = cfg.ANALYTICS_WARMUP_INTERVAL_MS / 1000
-        logger.info("Cache warmer scheduled", interval_s=interval_s)
-
-        while True:
-            await asyncio.sleep(interval_s)
-            logger.info("Scheduled cache re-warm triggered")
-            await warmup_all()
-
-    _warmer_task = asyncio.create_task(_loop())
-    logger.info("Background cache warmer started")
-
-
-async def stop_background_warmer() -> None:
-    global _warmer_task
-    if _warmer_task and not _warmer_task.done():
-        _warmer_task.cancel()
-        try:
-            await _warmer_task
-        except asyncio.CancelledError:
-            pass
-    _warmer_task = None
-    logger.info("Background cache warmer stopped")
+

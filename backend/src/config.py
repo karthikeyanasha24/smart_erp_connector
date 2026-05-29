@@ -97,8 +97,13 @@ class Settings(BaseSettings):
     ADMIN_DEFAULT_PASSWORD: str = ""
 
     # -- Analytics Views ----------------------------------------------------------
-    ANALYTICS_BASE_TABLE: str = "dbo.VW_MB_POWERBI_SLS_REPORT"
-    SALES_AI_TABLE: str = "dbo.VW_MB_POWERBI_SLS_REPORT"
+    ANALYTICS_BASE_TABLE: str = "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID"
+    SALES_AI_TABLE: str = "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID"
+    # Item-level queries (top products, product breakdown) — needs ItemId column
+    SALES_ITEMS_AI_TABLE: str = "dbo.VW_MB_POWERBI_SLS_REPORT"
+    SALES_ITEMS_DATE_COLUMN: str = "XnMemoDate"
+    SALES_ITEMS_AMOUNT_COLUMN: str = "NetAmount"
+    SALES_ITEMS_QUANTITY_COLUMN: str = "NetSlsQty"
     # Item master -- same default as test/list_products_db.py (Power BI product dimensions)
     PRODUCT_MASTER_VIEW: str = "dbo.VW_MB_POWERBI_PRODUCT_MASTER"
     SALES_VIEW: str = "dbo.VwAISalesData"

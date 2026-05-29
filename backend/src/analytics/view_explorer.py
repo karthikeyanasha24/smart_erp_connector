@@ -15,7 +15,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.analytics.cache import cache
 from src.config import cfg
 from src.db.mssql import execute_query
 from src.utils.logger import logger
@@ -26,7 +25,6 @@ _CATALOG_CANDIDATES = [
     Path(__file__).resolve().parents[3] / "test" / "erp_semantic_layer.json",
 ]
 
-_VIEW_CACHE_TTL_S = 600.0  # 10 min — dimension pages are small and stable
 
 
 @lru_cache()
@@ -197,11 +195,6 @@ async def fetch_view_page(
     offset = (page - 1) * page_size
     hard_cap = max(1_000, int(cfg.DATASET_HARD_CAP))
 
-    cache_key = f"view:v2:{view_key}:{page}:{page_size}:sc={int(skip_count)}"
-    cached, fresh = cache.get(cache_key)
-    if fresh and cached is not None:
-        return cached
-
     records, columns, duration_ms = await _fetch_page_rows(table, entry, offset, page_size)
     has_more = len(records) >= page_size
 
@@ -239,8 +232,6 @@ async def fetch_view_page(
         "has_more": has_more,
     }
 
-    ttl = _VIEW_CACHE_TTL_S if dimension else min(_VIEW_CACHE_TTL_S, 120.0)
-    cache.set(cache_key, payload, ttl_s=ttl)
     logger.info(
         "view_page_loaded",
         view=view_key,

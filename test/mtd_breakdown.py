@@ -516,6 +516,79 @@ def _fetch_summary_for_dashboard(
     }
 
 
+def _run_growth_verify_only() -> int:
+    """Dashboard YoY growth (same SQL as Analytics) + optional extended windows."""
+    from calendar import monthrange
+
+    _log("Connecting to SQL Server for growth verify...")
+    conn, driver = connect_mssql()
+    try:
+        req_ms = int(os.getenv("DB_REQUEST_TIMEOUT_MS", "900000"))
+        conn.timeout = max(req_ms // 1000, 900)
+    except (TypeError, ValueError):
+        conn.timeout = 900
+    _log(f"  Connected via {driver} (query timeout {getattr(conn, 'timeout', '?')}s)")
+    env = AnalyticsEnv.from_os()
+    ref = date.today()
+    dr = resolve_date_range(PERIOD, ref)
+    ly_dr = get_prior_year_range(PERIOD, ref)
+    t0 = time.perf_counter()
+    summary = _fetch_summary_for_dashboard(conn, env, dr, ly_dr)
+    _log(f"  Dashboard query done in {(time.perf_counter() - t0):.1f}s")
+    cy = summary["mtd_sales"]
+    ly_same = summary["ly_sales"]
+    g_dash = summary["sales_growth_pct"]
+    _log(f"CY MTD {dr.start}..{dr.end}  |  LY same dates {ly_dr.start}..{ly_dr.end}")
+    _log(f"  Table: {env.sales_table}  |  date: {env.date_column}  |  amount: {env.amount_column}")
+    _log(f"  CY sales:     {lakhs(cy)} L")
+    _log(f"  LY sales:     {lakhs(ly_same)} L  -> growth {g_dash}%  (matches Analytics card)")
+    for target in (29.4, 32.0):
+        need = cy / (1 + target / 100) if cy else 0
+        _log(f"  LY base needed for exactly {target}%: {lakhs(need)} L")
+    try:
+        ly_m = date.fromisoformat(ly_dr.start)
+        ly_full_end = date(ly_m.year, ly_m.month, monthrange(ly_m.year, ly_m.month)[1]).isoformat()
+        tbl = sql_table(env.sales_table)
+        dc = env.date_column
+        amt = env.amount_column
+        sql = f"""
+            SELECT ISNULL(SUM([{amt}]), 0) AS ly_full_month
+            FROM {tbl} WITH (NOLOCK)
+            WHERE [{dc}] >= ? AND [{dc}] < DATEADD(day,1,CAST(? AS DATE))
+        """
+        params = (ly_m.replace(day=1).isoformat(), ly_full_end)
+        t1 = time.perf_counter()
+        row = (_execute_sql(conn, sql, params) or [{}])[0]
+        _log(f"  Extended query done in {(time.perf_counter() - t1):.1f}s")
+        ly_full = _safe_float(row.get("ly_full_month"))
+        g_full = round((cy - ly_full) / ly_full * 100, 2) if ly_full else None
+        _log(f"  LY full calendar month: {lakhs(ly_full)} L  -> growth {g_full}%")
+        if "XnDt" != dc and env.sales_table.endswith("SLS_REPORT"):
+            sql2 = f"""
+                SELECT
+                  ISNULL(SUM(CASE WHEN [XnDt] >= ? AND [XnDt] < DATEADD(day,1,CAST(? AS DATE))
+                      THEN [{amt}] END), 0) AS cy_dt,
+                  ISNULL(SUM(CASE WHEN [XnDt] >= ? AND [XnDt] < DATEADD(day,1,CAST(? AS DATE))
+                      THEN [{amt}] END), 0) AS ly_dt
+                FROM {tbl} WITH (NOLOCK)
+                WHERE [XnDt] >= ? AND [XnDt] < DATEADD(day,1,CAST(? AS DATE))
+            """
+            p2 = (dr.start, dr.end, ly_dr.start, ly_dr.end, ly_dr.start, dr.end)
+            row2 = (_execute_sql(conn, sql2, p2) or [{}])[0]
+            cy_dt = _safe_float(row2.get("cy_dt"))
+            ly_dt = _safe_float(row2.get("ly_dt"))
+            g_dt = round((cy_dt - ly_dt) / ly_dt * 100, 2) if ly_dt else None
+            _log(f"  XnDt (not {dc}): CY {lakhs(cy_dt)} L, LY {lakhs(ly_dt)} L -> growth {g_dt}%")
+    except Exception as exc:
+        _log(f"  Extended scenarios skipped: {exc}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return 0
+
+
 def _run_query_with_fresh_connection(
     fn: Callable[[Any], Tuple[str, Dict[str, Any], float]],
 ) -> Tuple[str, Dict[str, Any], float]:
@@ -616,6 +689,18 @@ def fetch_mtd_from_db(
             {"name": c.get("category"), "revenue": c.get("revenue"), "percentage": c.get("percentage")}
             for c in contrib_cats
         ]
+
+    # Single aggregate query — same SQL as dashboard summary / KPI cards (authoritative totals).
+    if not raw.get("dashboard", {}).get("summary"):
+        try:
+            t_tot = time.perf_counter()
+            summ = _fetch_summary_for_dashboard(conn, env, dr, ly_dr)
+            raw.setdefault("dashboard", {})["summary"] = summ
+            timings["mtd_totals"] = round((time.perf_counter() - t_tot) * 1000, 1)
+        except Exception as exc:
+            errs = raw.setdefault("_errors", [])
+            if isinstance(errs, list):
+                errs.append(f"mtd_totals: {exc}")
 
     if not use_dashboard:
         raw["_mode"] = (
@@ -719,15 +804,18 @@ def build_report(raw: Dict[str, Any]) -> Dict[str, Any]:
             for t in api_trend
         ]
 
+    daywise_qty_sum = sum(d["quantity"] for d in daywise)
+    daywise_bills_sum = sum(d["bills"] for d in daywise)
+
     if not summary.get("mtd_sales") and daywise:
         summary = {
             **summary,
             "mtd_sales": sum(d["sales"] for d in daywise),
-            "bills": summary.get("bills") or sum(d["bills"] for d in daywise),
-            "quantity": summary.get("quantity") or sum(d["quantity"] for d in daywise),
+            "bills": summary.get("bills") or daywise_bills_sum,
+            "quantity": summary.get("quantity") or daywise_qty_sum,
         }
     elif summary.get("quantity") in (None, 0) and daywise:
-        summary = {**summary, "quantity": sum(d["quantity"] for d in daywise)}
+        summary = {**summary, "quantity": daywise_qty_sum}
 
     branch_rows = sorted(
         [
@@ -790,10 +878,17 @@ def build_report(raw: Dict[str, Any]) -> Dict[str, Any]:
         "summary": {
             "total_sales": total_sales,
             "total_sales_lakhs": round(total_sales / 100_000, 4),
+            # Dashboard "Bills Generated" — line-item row count when BILL_COUNT_MODE=rows
             "bills": int(_n(summary.get("bills"))),
+            # Dashboard "Quantity Sold" — SUM(NetSlsQty) units, not bills
+            "units_sold": _n(summary.get("quantity")),
             "quantity": _n(summary.get("quantity")),
             "ly_sales": _n(summary.get("ly_sales")),
             "sales_growth_pct": summary.get("sales_growth_pct"),
+            "daywise_units_sum": daywise_qty_sum,
+            "daywise_bills_sum": daywise_bills_sum,
+            "units_match_daywise": abs(_n(summary.get("quantity")) - daywise_qty_sum) < 1,
+            "bills_match_daywise": abs(int(_n(summary.get("bills"))) - daywise_bills_sum) < 1,
         },
         "daywise": daywise,
         "branch_wise": branch_rows,
@@ -842,9 +937,26 @@ def print_report(r: Dict[str, Any]) -> None:
     if r.get("_mode"):
         print(f"  Mode: {r['_mode']}")
     print("=" * 78)
-    print(
-        f"\n  TOTAL MTD SALES: {lakhs(s['total_sales'])}  |  Bills: {s['bills']:,}  |  Qty: {s['quantity']:,.0f}"
-    )
+    units = _n(s.get("units_sold", s.get("quantity")))
+    bills = int(s["bills"])
+    print(f"\n  TOTAL MTD SALES: {lakhs(s['total_sales'])}")
+    print(f"  Units sold (NetSlsQty)     {units:>10,.0f}   <- dashboard 'Quantity Sold'")
+    print(f"  Bills / line items       {bills:>10,}   <- dashboard 'Bills Generated' (~114k)")
+    if bills and abs(bills - 114_000) < 5_000:
+        print(
+            f"  >> Manoj's ~114k 'quantity' matches LINE ITEMS ({bills:,}), "
+            "not SUM(NetSlsQty) units."
+        )
+    if units and bills and abs(units - bills) > 1000:
+        print(
+            "  Note: Units sold != line items. "
+            "Units = SUM(NetSlsQty) pieces; line items = COUNT(*) memo rows."
+        )
+    if s.get("units_match_daywise") is False or s.get("bills_match_daywise") is False:
+        print(
+            f"  Reconcile: day-wise sums — units {s.get('daywise_units_sum', 0):,.0f}, "
+            f"bills {s.get('daywise_bills_sum', 0):,}"
+        )
     if s.get("sales_growth_pct") is not None:
         print(
             f"  vs last year (same dates): {s['sales_growth_pct']:+.2f}%  (LY {lakhs(s['ly_sales'])})"
@@ -852,7 +964,7 @@ def print_report(r: Dict[str, Any]) -> None:
 
     _print_table(
         "DAY-WISE SALES",
-        ["#", "Date", "Label", "Sales", "Bills", "Qty", "LY Sales"],
+        ["#", "Date", "Label", "Sales", "Line items", "Units", "LY Sales"],
         [
             [
                 str(i + 1),
@@ -963,9 +1075,18 @@ def main() -> int:
     )
     parser.add_argument("--json", action="store_true", help="Print JSON to stdout")
     parser.add_argument("-o", "--output", help="Write JSON report to file")
+    parser.add_argument(
+        "--verify-growth",
+        action="store_true",
+        help="Only print MTD YoY growth cross-check (fast; same SQL as dashboard)",
+    )
     args = parser.parse_args()
 
     _load_dotenv_files()
+
+    if args.verify_growth:
+        return _run_growth_verify_only()
+
     t0 = time.perf_counter()
 
     _log("Connecting to SQL Server (backend/.env DB_* or ERP_DB_*)...")

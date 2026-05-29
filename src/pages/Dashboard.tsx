@@ -465,12 +465,6 @@ export default function Dashboard() {
             <p style={{ fontSize:10, color:'rgba(255,255,255,0.35)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:2 }}>Last Refreshed</p>
             <p style={{ fontSize:28, fontWeight:800, color:'#fff', letterSpacing:'-0.02em', lineHeight:1 }}>{timeFmt}</p>
             <div style={{ display:'flex', gap:6, marginTop:10, justifyContent:'flex-end' }}>
-              <button type="button" onClick={() => setDemo(d => !d)}
-                style={demo
-                  ? { background:'linear-gradient(135deg,#f59e0b,#ef4444)', color:'white', border:'none', borderRadius:10, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }
-                  : { border:'1px solid rgba(245,158,11,0.35)', color:'#f59e0b', background:'rgba(245,158,11,0.07)', borderRadius:10, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
-                {demo ? <><X size={10} />Exit Demo</> : <><FlaskConical size={10} />Demo</>}
-              </button>
               <button type="button" onClick={doRefresh}
                 style={{ border:'1px solid rgba(88,130,255,0.25)', color:'rgba(255,255,255,0.6)', background:'rgba(88,130,255,0.08)', borderRadius:10, padding:'5px 12px', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
                 <RefreshCw size={10} className={spinning ? 'animate-spin' : ''} /> Refresh

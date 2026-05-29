@@ -136,7 +136,7 @@ function PieLegend({ items, isDark }: { items: { name: string; value: number }[]
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Analytics() {
   const { isDark } = useTheme();
-  const [period, setPeriod] = useState('today');
+  const [period, setPeriod] = useState('mtd');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [expandBranches, setExpandBranches] = useState(false);

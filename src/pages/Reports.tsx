@@ -102,7 +102,7 @@ export default function Reports() {
         analytics.kpis('qtd'),
         analytics.kpis('ytd'),
         analytics.kpis('last_6m'),
-        analytics.bundle({ period: 'mtd', top_n: 15, include_departments: false, include_kpis: false }),
+        analytics.bundle('mtd', { topN: 15, includeDepartments: false, includeKpis: false }),
       ]);
 
       const kpiMap: Record<string, any> = {
@@ -119,35 +119,38 @@ export default function Reports() {
 
       const built: PeriodSummary[] = periods.map((p) => {
         const kpi = kpiMap[p];
+        // KPI API shape: revenue.value, revenue.prior, revenue.growth (not .current / .growth_pct)
         const rev = kpi?.revenue ?? {};
         const txn = kpi?.transactions ?? {};
+        const aov = kpi?.avg_order_value ?? {};
         return {
           period: p,
           label: LABELS[p],
-          sales_L: Math.round((rev.current ?? 0) / 1e5 * 100) / 100,
+          sales_L: Math.round((rev.value ?? rev.current ?? 0) / 1e5 * 100) / 100,
           ly_sales_L: Math.round((rev.prior ?? 0) / 1e5 * 100) / 100,
-          growth_pct: rev.growth_pct ?? null,
-          bills: txn.current ?? 0,
-          quantity: Math.round(((kpi?.avg_order_value?.qty_current) ?? 0)),
-          branches: kpi?.branches ?? 0,
+          growth_pct: rev.growth ?? rev.growth_pct ?? null,
+          bills: txn.value ?? txn.current ?? 0,
+          quantity: Math.round((aov.value ?? kpi?.avg_order_value?.qty_current ?? 0)),
+          branches: kpi?.active_branches ?? kpi?.branches ?? 0,
         };
       });
       setSummaries(built);
 
-      /* Trend data from MTD bundle */
+      /* Trend data from MTD bundle — API returns {date, revenue} per point */
       if (mtdBundle.status === 'fulfilled') {
         const trend = (mtdBundle.value.trend ?? []).map((pt: any) => ({
-          label: String(pt.label ?? pt.date ?? pt.d ?? '').slice(5),
-          current: Math.round((pt.current ?? pt.value ?? 0) / 1e5 * 10) / 10,
+          label: String(pt.date ?? pt.label ?? pt.d ?? '').slice(5),   // "05-03" from "2026-05-03"
+          current: Math.round((pt.revenue ?? pt.current ?? pt.value ?? 0) / 1e5 * 10) / 10,
           prior: Math.round((pt.prior ?? pt.ly ?? 0) / 1e5 * 10) / 10,
         }));
         setTrendData(trend.slice(-30));
 
+        /* Bundle branches: [{branch, revenue, transactions}] */
         const brs = (mtdBundle.value.branches ?? [])
           .slice(0, 12)
           .map((b: any) => ({
-            name: String(b.name ?? b.branch ?? b.label ?? '').slice(0, 18),
-            sales_L: Math.round((b.current ?? b.sales ?? b.value ?? 0) / 1e5 * 10) / 10,
+            name: String(b.branch ?? b.name ?? b.label ?? '').slice(0, 18),
+            sales_L: Math.round((b.revenue ?? b.current ?? b.sales ?? b.value ?? 0) / 1e5 * 10) / 10,
           }));
         setBranches(brs);
       }

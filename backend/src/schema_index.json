@@ -1,0 +1,787 @@
+{
+  "generated_at": "2026-05-29T14:12:03.110640Z",
+  "probe_mode": "mtd_capped",
+  "mtd_window": [
+    "2026-05-01",
+    "2026-05-30"
+  ],
+  "total_views": 11,
+  "routing": {
+    "sales_main": {
+      "view": "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "date_col": "CashmemoDt",
+      "amount_col": "SalesNetAmount",
+      "quantity_col": "SalesQuantity",
+      "bill_count_col": null,
+      "bill_count_mode": "rows",
+      "branch_col": "BranchAlias",
+      "category_col": "CategoryShortName",
+      "department_col": "DepartmentShortName",
+      "mtd_rows": 117218,
+      "source_view_name": "VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "routing_source": "fast_view"
+    },
+    "today_sales": {
+      "view": "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "date_col": "CashmemoDt",
+      "amount_col": "SalesNetAmount",
+      "quantity_col": "SalesQuantity",
+      "bill_count_col": null,
+      "bill_count_mode": "rows",
+      "branch_col": "BranchAlias",
+      "category_col": "CategoryShortName",
+      "department_col": "DepartmentShortName",
+      "mtd_rows": 117218,
+      "source_view_name": "VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "routing_source": "fast_view",
+      "note": "same view, filter = today"
+    },
+    "stock": {
+      "view": "dbo.VW_MB_POWERBI_STOCK_REPORT",
+      "date_col": "PurInvoiceDt",
+      "qty_col": null,
+      "item_id_col": "ItemId",
+      "branch_col": "BranchAlias"
+    },
+    "stock_transfers_out": {
+      "view": "dbo.VW_MB_POWERBI_STO_REPORT",
+      "date_col": "XnDt",
+      "amount_col": "NetAmount",
+      "qty_col": null
+    },
+    "stock_transfers_in": {
+      "view": "dbo.VW_MB_POWERBI_STI_REPORT",
+      "date_col": "XnDt",
+      "amount_col": "NetAmount",
+      "qty_col": null
+    },
+    "product_master": {
+      "view": "dbo.VW_MB_POWERBI_PRODUCT_MASTER",
+      "item_id_col": "ItemId",
+      "item_name_col": null,
+      "category_col": "CategoryShortName",
+      "department_col": "DepartmentShortName",
+      "supplier_col": "SupplierName",
+      "mrp_col": "ItemMRP",
+      "purchase_price_col": "PurchasePrice"
+    },
+    "salesperson": {
+      "view": "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "date_col": "CashmemoDt",
+      "amount_col": "SalesNetAmount"
+    }
+  },
+  "views": {
+    "VW_MB_POWERBI_APP_REPORT": {
+      "view": "VW_MB_POWERBI_APP_REPORT",
+      "schema": "dbo",
+      "columns": {
+        "BranchAlias": "varchar",
+        "Department": "varchar",
+        "DepartmentShortName": "varchar",
+        "Category": "varchar",
+        "CategoryShortName": "varchar",
+        "SupplierName": "varchar",
+        "SupplierAlias": "varchar",
+        "SupplierCity": "varchar",
+        "SupplierState": "varchar",
+        "ArticleNo": "varchar",
+        "Color": "varchar",
+        "Size": "varchar",
+        "Contrast": "varchar",
+        "Printtypework": "varchar",
+        "Fabric": "varchar",
+        "SubFabric": "varchar",
+        "Property": "varchar",
+        "Concept": "varchar",
+        "Itemcode": "varchar",
+        "ItemMRP": "numeric",
+        "CostPrice": "numeric",
+        "XnId": "varchar",
+        "XnNo": "varchar",
+        "XnDt": "date",
+        "XnDtMonth": "nvarchar",
+        "AppQty": "numeric",
+        "MrpValue": "numeric",
+        "CostValue": "numeric",
+        "NetAmount": "numeric",
+        "CGSTAmount": "numeric",
+        "SGSTAmount": "numeric",
+        "IGSTAmount": "numeric",
+        "BillCount": "int"
+      },
+      "date_columns": {
+        "XnDt": {
+          "min_date": "2026-05-08",
+          "max_date": "2026-05-08",
+          "total_rows": null,
+          "mtd_rows": 2,
+          "mtd_rows_capped": false,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        }
+      },
+      "numeric_columns": [
+        "ItemMRP",
+        "CostPrice",
+        "AppQty",
+        "MrpValue",
+        "CostValue",
+        "NetAmount",
+        "CGSTAmount",
+        "SGSTAmount",
+        "IGSTAmount",
+        "BillCount"
+      ],
+      "best_date_column": "XnDt",
+      "best_date_mtd_rows": 2,
+      "concepts": {
+        "date": "XnDt",
+        "amount": "NetAmount",
+        "quantity": "AppQty",
+        "bill_count": "BillCount",
+        "branch": "BranchAlias",
+        "category": "CategoryShortName",
+        "department": "DepartmentShortName",
+        "item_id": "Itemcode",
+        "supplier": "SupplierName",
+        "mrp": "ItemMRP",
+        "purchase_price": "CostPrice"
+      }
+    },
+    "VW_MB_POWERBI_SLS_REPORT": {
+      "view": "VW_MB_POWERBI_SLS_REPORT",
+      "schema": "dbo",
+      "columns": {
+        "XnMemoDate": "date",
+        "DepartmentShortName": "varchar",
+        "CategoryShortName": "varchar",
+        "BranchAlias": "varchar",
+        "SupplierAlias": "varchar",
+        "SupplierName": "varchar",
+        "SupplierCity": "varchar",
+        "ArticleNo": "varchar",
+        "Para1Name": "varchar",
+        "Para2Name": "varchar",
+        "Para2Index": "int",
+        "Fabric": "varchar",
+        "SubFabric": "varchar",
+        "Concept": "varchar",
+        "ItemId": "varchar",
+        "ItemMRP": "numeric",
+        "Property": "varchar",
+        "Para3Name": "varchar",
+        "Para4Name": "varchar",
+        "PurDate": "datetime",
+        "NetSlsQty": "numeric",
+        "NetAmount": "numeric",
+        "NetSlsCostValue": "numeric",
+        "SlsExtCostValue": "numeric"
+      },
+      "date_columns": {
+        "XnMemoDate": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-01",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        },
+        "PurDate": {
+          "error": "('08S01', '[08S01] [Microsoft][ODBC Driver 18 for SQL Server]TCP Provider: A connection attempt failed because the conne",
+          "probe_mode": "mtd_capped"
+        }
+      },
+      "numeric_columns": [
+        "Para2Index",
+        "ItemMRP",
+        "NetSlsQty",
+        "NetAmount",
+        "NetSlsCostValue",
+        "SlsExtCostValue"
+      ],
+      "best_date_column": "XnMemoDate",
+      "best_date_mtd_rows": 151,
+      "concepts": {
+        "date": "XnMemoDate",
+        "amount": "NetAmount",
+        "quantity": "NetSlsQty",
+        "branch": "BranchAlias",
+        "category": "CategoryShortName",
+        "department": "DepartmentShortName",
+        "item_id": "ItemId",
+        "supplier": "SupplierName",
+        "mrp": "ItemMRP"
+      }
+    },
+    "VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID": {
+      "view": "VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "schema": "dbo",
+      "columns": {
+        "BranchAlias": "varchar",
+        "BranchName": "varchar",
+        "BranchCity": "varchar",
+        "BranchState": "varchar",
+        "BranchRegion": "varchar",
+        "CountryRegion": "varchar",
+        "BranchAreaManager": "varchar",
+        "CashmemoDt": "date",
+        "CashmemoNo": "varchar",
+        "CustomerMobileNumber": "varchar",
+        "CustomerName": "varchar",
+        "CustomerId": "char",
+        "CreatedOn": "datetime",
+        "SalesPersonName": "varchar",
+        "SalespersonEmpId": "varchar",
+        "SupplierName": "varchar",
+        "SupplierAlias": "varchar",
+        "SupplierCity": "varchar",
+        "SupplierState": "varchar",
+        "DepartmentShortName": "varchar",
+        "CategoryShortName": "varchar",
+        "ArticleNo": "varchar",
+        "ColourName": "varchar",
+        "ContrastName": "varchar",
+        "SizeName": "varchar",
+        "PrintTypeWork": "varchar",
+        "Property": "varchar",
+        "SalesQuantity": "numeric",
+        "SalesCost": "numeric",
+        "ItemMRP": "numeric",
+        "NetAmountBeforeTax": "numeric",
+        "SalesNetAmount": "numeric"
+      },
+      "date_columns": {
+        "CashmemoDt": {
+          "min_date": "2026-05-22",
+          "max_date": "2026-05-24",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        },
+        "CreatedOn": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-23",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        }
+      },
+      "numeric_columns": [
+        "SalesQuantity",
+        "SalesCost",
+        "ItemMRP",
+        "NetAmountBeforeTax",
+        "SalesNetAmount"
+      ],
+      "best_date_column": "CashmemoDt",
+      "best_date_mtd_rows": 151,
+      "concepts": {
+        "date": "CashmemoDt",
+        "amount": "SalesNetAmount",
+        "branch": "BranchAlias",
+        "category": "CategoryShortName",
+        "department": "DepartmentShortName",
+        "item_id": "ArticleNo",
+        "customer": "CustomerId",
+        "bill_no": "CashmemoNo",
+        "supplier": "SupplierName",
+        "mrp": "ItemMRP"
+      }
+    },
+    "VW_MB_POWERBI_STO_REPORT": {
+      "view": "VW_MB_POWERBI_STO_REPORT",
+      "schema": "dbo",
+      "columns": {
+        "SourceBranchAlias": "varchar",
+        "SourceBranchId": "char",
+        "TargetBranchAlias": "varchar",
+        "TargetBranchId": "char",
+        "Department": "varchar",
+        "DepartmentShortName": "varchar",
+        "Category": "varchar",
+        "CategoryShortName": "varchar",
+        "SupplierName": "varchar",
+        "SupplierAlias": "varchar",
+        "SupplierCity": "varchar",
+        "SupplierState": "varchar",
+        "ArticleNo": "varchar",
+        "Color": "varchar",
+        "Size": "varchar",
+        "Contrast": "varchar",
+        "Printtypework": "varchar",
+        "Fabric": "varchar",
+        "SubFabric": "varchar",
+        "Property": "varchar",
+        "Concept": "varchar",
+        "Itemcode": "varchar",
+        "ItemMRP": "numeric",
+        "CostPrice": "numeric",
+        "XnId": "varchar",
+        "XnNo": "varchar",
+        "XnDt": "date",
+        "XnDtMonth": "nvarchar",
+        "StoQty": "numeric",
+        "MrpValue": "numeric",
+        "CostValue": "numeric",
+        "NetAmount": "numeric",
+        "CGSTAmount": "numeric",
+        "SGSTAmount": "numeric",
+        "IGSTAmount": "numeric",
+        "BillCount": "int"
+      },
+      "date_columns": {
+        "XnDt": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-01",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        }
+      },
+      "numeric_columns": [
+        "ItemMRP",
+        "CostPrice",
+        "StoQty",
+        "MrpValue",
+        "CostValue",
+        "NetAmount",
+        "CGSTAmount",
+        "SGSTAmount",
+        "IGSTAmount",
+        "BillCount"
+      ],
+      "best_date_column": "XnDt",
+      "best_date_mtd_rows": 151,
+      "concepts": {
+        "date": "XnDt",
+        "amount": "NetAmount",
+        "bill_count": "BillCount",
+        "category": "CategoryShortName",
+        "department": "DepartmentShortName",
+        "item_id": "Itemcode",
+        "supplier": "SupplierName",
+        "mrp": "ItemMRP",
+        "purchase_price": "CostPrice"
+      }
+    },
+    "VW_MB_POWERBI_STI_REPORT": {
+      "view": "VW_MB_POWERBI_STI_REPORT",
+      "schema": "dbo",
+      "columns": {
+        "SourceBranchAlias": "varchar",
+        "SourceBranchId": "char",
+        "TargetBranchAlias": "varchar",
+        "TargetBranchId": "char",
+        "Department": "varchar",
+        "DepartmentShortName": "varchar",
+        "Category": "varchar",
+        "CategoryShortName": "varchar",
+        "SupplierName": "varchar",
+        "SupplierAlias": "varchar",
+        "SupplierCity": "varchar",
+        "SupplierState": "varchar",
+        "ArticleNo": "varchar",
+        "Color": "varchar",
+        "Size": "varchar",
+        "Contrast": "varchar",
+        "Printtypework": "varchar",
+        "Fabric": "varchar",
+        "SubFabric": "varchar",
+        "Property": "varchar",
+        "Concept": "varchar",
+        "Itemcode": "varchar",
+        "ItemMRP": "numeric",
+        "CostPrice": "numeric",
+        "XnId": "varchar",
+        "XnNo": "varchar",
+        "XnDt": "date",
+        "XnDtMonth": "nvarchar",
+        "StiQty": "numeric",
+        "MrpValue": "numeric",
+        "CostValue": "numeric",
+        "NetAmount": "numeric",
+        "CGSTAmount": "numeric",
+        "SGSTAmount": "numeric",
+        "IGSTAmount": "numeric",
+        "BillCount": "int"
+      },
+      "date_columns": {
+        "XnDt": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-01",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        }
+      },
+      "numeric_columns": [
+        "ItemMRP",
+        "CostPrice",
+        "StiQty",
+        "MrpValue",
+        "CostValue",
+        "NetAmount",
+        "CGSTAmount",
+        "SGSTAmount",
+        "IGSTAmount",
+        "BillCount"
+      ],
+      "best_date_column": "XnDt",
+      "best_date_mtd_rows": 151,
+      "concepts": {
+        "date": "XnDt",
+        "amount": "NetAmount",
+        "bill_count": "BillCount",
+        "category": "CategoryShortName",
+        "department": "DepartmentShortName",
+        "item_id": "Itemcode",
+        "supplier": "SupplierName",
+        "mrp": "ItemMRP",
+        "purchase_price": "CostPrice"
+      }
+    },
+    "VW_MB_POWERBI_STOCK_REPORT": {
+      "view": "VW_MB_POWERBI_STOCK_REPORT",
+      "schema": "dbo",
+      "columns": {
+        "DepartmentShortName": "varchar",
+        "CategoryShortName": "varchar",
+        "BranchAlias": "varchar",
+        "SupplierAlias": "varchar",
+        "SupplierName": "varchar",
+        "SupplierCity": "varchar",
+        "ArticleNo": "varchar",
+        "Para1Name": "varchar",
+        "Para2Name": "varchar",
+        "Para2Index": "int",
+        "Fabric": "varchar",
+        "SubFabric": "varchar",
+        "Concept": "varchar",
+        "ItemId": "varchar",
+        "ItemMRP": "numeric",
+        "Property": "varchar",
+        "Para3Name": "varchar",
+        "Para4Name": "varchar",
+        "PurInvoiceDt": "datetime",
+        "StockQty": "numeric"
+      },
+      "date_columns": {
+        "PurInvoiceDt": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-29",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        }
+      },
+      "numeric_columns": [
+        "Para2Index",
+        "ItemMRP",
+        "StockQty"
+      ],
+      "best_date_column": "PurInvoiceDt",
+      "best_date_mtd_rows": 151,
+      "concepts": {
+        "branch": "BranchAlias",
+        "category": "CategoryShortName",
+        "department": "DepartmentShortName",
+        "item_id": "ItemId",
+        "supplier": "SupplierName",
+        "mrp": "ItemMRP"
+      }
+    },
+    "VW_MB_POWERBI_PRODUCT_MASTER": {
+      "view": "VW_MB_POWERBI_PRODUCT_MASTER",
+      "schema": "dbo",
+      "columns": {
+        "ItemId": "varchar",
+        "Itemcode": "varchar",
+        "DepartmentShortName": "varchar",
+        "CategoryShortName": "varchar",
+        "SubCategoryName": "varchar",
+        "SubCategoryShortName": "varchar",
+        "ArticleNo": "varchar",
+        "Colour": "varchar",
+        "size": "varchar",
+        "Para2Index": "int",
+        "Contrast": "varchar",
+        "Printypework": "varchar",
+        "SupplierName": "varchar",
+        "SupplierAlias": "varchar",
+        "SupplierUID": "varchar",
+        "FabricShortName": "varchar",
+        "SubFabricShortName": "varchar",
+        "Property": "varchar",
+        "Collection": "varchar",
+        "Concept": "varchar",
+        "SubConceptShortName": "varchar",
+        "Dupatta": "varchar",
+        "DupattaShortName": "varchar",
+        "Silhoutte": "varchar",
+        "Bottom": "varchar",
+        "NECKLINE": "varchar",
+        "SleeveType": "varchar",
+        "Look": "varchar",
+        "INVENTORYTYPE": "varchar",
+        "PurDate": "datetime",
+        "PurInvNo": "varchar",
+        "PurInvDt": "datetime",
+        "PurChallanNo": "varchar",
+        "PurchasePrice": "numeric",
+        "ItemMRP": "numeric",
+        "ItemWSP": "numeric"
+      },
+      "date_columns": {
+        "PurDate": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-12",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        },
+        "PurInvDt": {
+          "min_date": "2026-05-05",
+          "max_date": "2026-05-05",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        }
+      },
+      "numeric_columns": [
+        "Para2Index",
+        "PurchasePrice",
+        "ItemMRP",
+        "ItemWSP"
+      ],
+      "best_date_column": "PurDate",
+      "best_date_mtd_rows": 151,
+      "concepts": {
+        "category": "CategoryShortName",
+        "department": "DepartmentShortName",
+        "item_id": "ItemId",
+        "supplier": "SupplierName",
+        "mrp": "ItemMRP",
+        "purchase_price": "PurchasePrice"
+      }
+    },
+    "VwAISalesData": {
+      "view": "VwAISalesData",
+      "schema": "dbo",
+      "columns": {
+        "InvoiceDt": "date",
+        "InvoiceId": "varchar",
+        "InvoiceNo": "varchar",
+        "BranchId": "char",
+        "CustomerId": "varchar",
+        "ItemId": "varchar",
+        "SalesPrice": "numeric",
+        "Quantity": "numeric",
+        "SaleAmountBeforeTax": "numeric",
+        "TaxAmount": "numeric",
+        "SaleNetAmount": "numeric",
+        "SalesPersonId": "char"
+      },
+      "date_columns": {
+        "InvoiceDt": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-01",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        }
+      },
+      "numeric_columns": [
+        "SalesPrice",
+        "Quantity",
+        "SaleAmountBeforeTax",
+        "TaxAmount",
+        "SaleNetAmount"
+      ],
+      "best_date_column": "InvoiceDt",
+      "best_date_mtd_rows": 151,
+      "concepts": {
+        "date": "InvoiceDt",
+        "quantity": "Quantity",
+        "branch": "BranchId",
+        "item_id": "ItemId",
+        "customer": "CustomerId",
+        "bill_no": "InvoiceNo"
+      }
+    },
+    "VwAIBranch": {
+      "view": "VwAIBranch",
+      "schema": "dbo",
+      "columns": {
+        "BranchId": "char",
+        "BranchName": "varchar",
+        "BranchShortName": "varchar",
+        "Address": "varchar",
+        "Locality": "varchar",
+        "PinCode": "varchar",
+        "City": "varchar",
+        "State": "varchar",
+        "Country": "varchar"
+      },
+      "date_columns": {},
+      "numeric_columns": [],
+      "best_date_column": null,
+      "best_date_mtd_rows": 0,
+      "concepts": {
+        "branch": "BranchName"
+      }
+    },
+    "VwAICustomerDetails": {
+      "view": "VwAICustomerDetails",
+      "schema": "dbo",
+      "columns": {
+        "CustomerId": "varchar",
+        "CustomerFirstName": "varchar",
+        "CustomerLastName": "varchar",
+        "CustomerTitle": "varchar",
+        "ContactMobile": "varchar",
+        "ContactEmail": "varchar",
+        "Address": "varchar",
+        "Address2": "varchar",
+        "Locality": "varchar",
+        "City": "varchar",
+        "State": "varchar",
+        "Country": "varchar",
+        "PinCode": "varchar",
+        "CustomerGroupName": "varchar",
+        "BranchName": "varchar",
+        "BirthdayDt": "datetime",
+        "AnniversaryDt": "datetime",
+        "CreditLimit": "numeric",
+        "ActiveStatus": "bit",
+        "CreatedOn": "datetime",
+        "LastUpdate": "datetime"
+      },
+      "date_columns": {
+        "BirthdayDt": {
+          "min_date": null,
+          "max_date": null,
+          "total_rows": null,
+          "mtd_rows": 0,
+          "mtd_rows_capped": false,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        },
+        "AnniversaryDt": {
+          "min_date": null,
+          "max_date": null,
+          "total_rows": null,
+          "mtd_rows": 0,
+          "mtd_rows_capped": false,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        },
+        "CreatedOn": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-23",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        },
+        "LastUpdate": {
+          "min_date": "2026-05-01",
+          "max_date": "2026-05-29",
+          "total_rows": null,
+          "mtd_rows": 151,
+          "mtd_rows_capped": true,
+          "probe_mode": "mtd_capped",
+          "mtd_window": [
+            "2026-05-01",
+            "2026-05-30"
+          ]
+        }
+      },
+      "numeric_columns": [
+        "CreditLimit"
+      ],
+      "best_date_column": "CreatedOn",
+      "best_date_mtd_rows": 151,
+      "concepts": {
+        "branch": "BranchName",
+        "customer": "CustomerId"
+      }
+    },
+    "VwAIStockData": {
+      "view": "VwAIStockData",
+      "schema": "dbo",
+      "columns": {
+        "ItemId": "varchar",
+        "BranchId": "char",
+        "StockQty": "numeric"
+      },
+      "date_columns": {},
+      "numeric_columns": [
+        "StockQty"
+      ],
+      "best_date_column": null,
+      "best_date_mtd_rows": 0,
+      "concepts": {
+        "branch": "BranchId",
+        "item_id": "ItemId"
+      }
+    }
+  }
+}

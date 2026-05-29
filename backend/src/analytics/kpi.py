@@ -14,7 +14,6 @@ from src.utils.logger import logger
 from src.utils.date_utils import resolve_date_range, get_comparison_range
 from src.utils.sql_ref import sql_table
 from src.db.mssql import execute_query
-from src.analytics.cache import cache
 from src.analytics.metrics_sql import bill_count_case, quantity_column
 
 
@@ -173,55 +172,39 @@ async def _fetch_customer_kpi(period: str) -> Dict[str, Any]:
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
-def _kpi_cache_ttl_s(period: str) -> Optional[float]:
-    """Intraday periods change every minute — do not hold 30m server cache."""
-    if period in ("today", "yesterday"):
-        return 60.0
-    return 14400.0   # 4 hours -- MTD/QTD/YTD/Last6M survive overnight restarts in PG
-
-
 async def get_home_kpis(period: str = "mtd") -> Dict[str, Any]:
-    """
-    Returns all home-screen KPIs for the given period.
-    Results are cached; stale data is served while a background refresh runs.
-    """
-    cache_key = f"kpi:v4:{period}"
+    """Returns all home-screen KPIs for the given period — always live from SQL Server."""
+    try:
+        revenue_task = asyncio.create_task(_fetch_revenue_kpi(period))
+        customer_task = asyncio.create_task(_fetch_customer_kpi(period))
 
-    async def _fetch() -> Dict[str, Any]:
-        try:
-            # Run revenue and customer KPIs concurrently
-            revenue_task = asyncio.create_task(_fetch_revenue_kpi(period))
-            customer_task = asyncio.create_task(_fetch_customer_kpi(period))
+        rev_data, cust_data = await asyncio.gather(
+            revenue_task,
+            customer_task,
+            return_exceptions=True,
+        )
 
-            rev_data, cust_data = await asyncio.gather(
-                revenue_task,
-                customer_task,
-                return_exceptions=True,
-            )
+        result: Dict[str, Any] = {}
 
-            result: Dict[str, Any] = {}
+        if isinstance(rev_data, dict):
+            result.update(rev_data)
+        else:
+            logger.error("Revenue KPI fetch failed", error=str(rev_data))
+            result.update({
+                "revenue": None,
+                "transactions": None,
+                "avg_order_value": None,
+                "quantity": None,
+            })
 
-            if isinstance(rev_data, dict):
-                result.update(rev_data)
-            else:
-                logger.error("Revenue KPI fetch failed", error=str(rev_data))
-                result.update({
-                    "revenue": None,
-                    "transactions": None,
-                    "avg_order_value": None,
-                    "quantity": None,
-                })
+        if isinstance(cust_data, dict):
+            result.update(cust_data)
+        else:
+            result["customers"] = None
 
-            if isinstance(cust_data, dict):
-                result.update(cust_data)
-            else:
-                result["customers"] = None
+        return result
 
-            return result
-
-        except Exception as exc:
-            logger.error("get_home_kpis failed", error=str(exc))
-            raise
-
-    return await cache.get_or_fetch(cache_key, _fetch, ttl_s=_kpi_cache_ttl_s(period))
+    except Exception as exc:
+        logger.error("get_home_kpis failed", error=str(exc))
+        raise
 

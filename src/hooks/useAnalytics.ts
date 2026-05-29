@@ -394,7 +394,13 @@ function applyTodayDashboard(
 }
 
 export async function fetchAndApplySnapshot(): Promise<void> {
-  // De-duplicate concurrent callers (e.g. multiple components mounting simultaneously)
+  // Snapshot endpoint removed — cache is disabled, all data is live from SQL Server.
+  // This function is kept as a no-op so call sites don't need to change.
+  return Promise.resolve();
+}
+
+/** @deprecated kept for internal use only */
+async function _fetchAndApplySnapshotLegacy(): Promise<void> {
   if (_snapshotInflight) return _snapshotInflight;
 
   _snapshotInflight = (async () => {

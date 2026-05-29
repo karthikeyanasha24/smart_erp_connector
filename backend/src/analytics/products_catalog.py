@@ -13,7 +13,6 @@ from src.utils.logger import logger
 from src.utils.date_utils import resolve_date_range, get_prior_year_range
 from src.utils.sql_ref import sql_table
 from src.db.mssql import execute_query
-from src.analytics.cache import cache
 
 
 def _safe_float(val: Any) -> float:
@@ -45,12 +44,19 @@ def _serialize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _product_label_expr() -> str:
-    """Best-effort readable label from line-level sales rows."""
-    # Prefer ItemName when present on VW_MB_POWERBI_SLS_REPORT; fall back to ItemId.
+    """Best-effort readable label from line-level sales rows.
+
+    VW_MB_POWERBI_SLS_REPORT does NOT have an ItemName column.
+    Use Itemcode as the human-readable label (it's the product code);
+    fall back to ItemId (numeric) if Itemcode is blank.
+    """
+    # VW_MB_POWERBI_SLS_REPORT confirmed columns (from schema_index):
+    # ArticleNo, ItemId, DepartmentShortName, CategoryShortName, SupplierAlias, etc.
+    # Use ArticleNo as the human-readable product code; fall back to ItemId.
     return (
         "ISNULL("
-        "NULLIF(LTRIM(RTRIM(CAST(ISNULL(T.ItemName,'') AS NVARCHAR(512)))),''), "
-        "CAST(T.ItemId AS NVARCHAR(100))"
+        "NULLIF(LTRIM(RTRIM(CAST(ISNULL(T.[ArticleNo],'') AS NVARCHAR(512)))),''), "
+        "CAST(T.[ItemId] AS NVARCHAR(100))"
         ")"
     )
 
@@ -62,17 +68,6 @@ async def fetch_product_catalog(
 ) -> Dict[str, Any]:
     limit = max(5, min(int(limit), 500))
     offset = max(0, min(int(offset), 500_000))
-
-    # Cache the first page (no search, offset=0) so the Products page loads instantly.
-    # TTL: 30 minutes — product master doesn't change frequently.
-    if not search and offset == 0:
-        cache_key = f"product_catalog:v1:{limit}:0"
-        _CATALOG_TTL = 1800  # 30 min
-
-        async def _fetch_catalog() -> Dict[str, Any]:
-            return await _fetch_product_catalog_raw(search, limit, offset)
-
-        return await cache.get_or_fetch(cache_key, _fetch_catalog, ttl_s=_CATALOG_TTL)
 
     return await _fetch_product_catalog_raw(search, limit, offset)
 
@@ -154,27 +149,29 @@ async def _fetch_product_catalog_raw(
 
 async def fetch_top_products(period: str = "mtd", top_n: int = 15) -> List[Dict[str, Any]]:
     n = max(5, min(int(top_n), 80))
-    cache_key = f"chart:topproducts:v1:{period}:{n}"
 
     async def _fetch() -> List[Dict[str, Any]]:
         dr = resolve_date_range(period)
         lyr = get_prior_year_range(period)
         c = cfg
-        dc = c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN
-        tbl = sql_table(c.SALES_AI_TABLE)
+        # Use item-level view (has ItemId/ItemName) — SALES_ITEMS_AI_TABLE is SLS_REPORT
+        dc  = c.SALES_ITEMS_DATE_COLUMN
+        tbl = sql_table(c.SALES_ITEMS_AI_TABLE)
+        amt = c.SALES_ITEMS_AMOUNT_COLUMN
+        qty = c.SALES_ITEMS_QUANTITY_COLUMN
         lbl = _product_label_expr()
 
         sql_cur_plain = f"""
             SELECT TOP ({n})
                 T.[ItemId] AS ItemId,
                 MAX({lbl}) AS Label,
-                SUM([{c.SALES_ANALYTICS_AMOUNT_COLUMN}]) AS Revenue,
-                SUM([{c.SALES_ANALYTICS_QUANTITY_COLUMN}]) AS Quantity
+                SUM([{amt}]) AS Revenue,
+                SUM([{qty}]) AS Quantity
             FROM {tbl} T WITH (NOLOCK)
             WHERE T.[{dc}] >= @startDate
               AND T.[{dc}] < DATEADD(day, 1, CAST(@endDate AS DATE))
             GROUP BY T.[ItemId]
-            ORDER BY SUM([{c.SALES_ANALYTICS_AMOUNT_COLUMN}]) DESC
+            ORDER BY SUM([{amt}]) DESC
             OPTION (RECOMPILE)
         """
 
@@ -187,7 +184,7 @@ async def fetch_top_products(period: str = "mtd", top_n: int = 15) -> List[Dict[
             )
             records = cur["records"]
         except Exception as exc:
-            logger.warning("top products primary query failed (ItemName may be missing)", error=str(exc))
+            logger.warning("top products primary query failed", error=str(exc))
             records = []
 
         if not records:
@@ -195,13 +192,13 @@ async def fetch_top_products(period: str = "mtd", top_n: int = 15) -> List[Dict[
                 SELECT TOP ({n})
                     T.[ItemId] AS ItemId,
                     CAST(T.[ItemId] AS NVARCHAR(100)) AS Label,
-                    SUM([{c.SALES_ANALYTICS_AMOUNT_COLUMN}]) AS Revenue,
-                    SUM([{c.SALES_ANALYTICS_QUANTITY_COLUMN}]) AS Quantity
+                    SUM([{amt}]) AS Revenue,
+                    SUM([{qty}]) AS Quantity
                 FROM {tbl} T WITH (NOLOCK)
                 WHERE T.[{dc}] >= @startDate
                   AND T.[{dc}] < DATEADD(day, 1, CAST(@endDate AS DATE))
                 GROUP BY T.[ItemId]
-                ORDER BY SUM([{c.SALES_ANALYTICS_AMOUNT_COLUMN}]) DESC
+                ORDER BY SUM([{amt}]) DESC
                 OPTION (RECOMPILE)
             """
             try:
@@ -227,7 +224,7 @@ async def fetch_top_products(period: str = "mtd", top_n: int = 15) -> List[Dict[
             ly_sql = f"""
                 SELECT
                     T.[ItemId] AS ItemId,
-                    SUM([{c.SALES_ANALYTICS_AMOUNT_COLUMN}]) AS Revenue
+                    SUM([{amt}]) AS Revenue
                 FROM {tbl} T WITH (NOLOCK)
                 WHERE T.[{dc}] >= @startDate
                   AND T.[{dc}] < DATEADD(day, 1, CAST(@endDate AS DATE))
@@ -277,7 +274,7 @@ async def fetch_top_products(period: str = "mtd", top_n: int = 15) -> List[Dict[
         return out
 
     try:
-        return await cache.get_or_fetch(cache_key, _fetch)
+        return await _fetch()
     except Exception as exc:
         logger.warning("fetch_top_products failed", error=str(exc))
         try:

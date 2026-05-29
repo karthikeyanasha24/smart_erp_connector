@@ -168,9 +168,9 @@ export default function Branch() {
 
         {/* Branch list — 4 cols */}
         <motion.div variants={item} className="col-span-12 md:col-span-4 flex flex-col gap-2.5">
-          <div className="rounded-2xl p-4 flex flex-col gap-2"
+          <div className="rounded-2xl flex flex-col overflow-hidden"
             style={{ background: cardBg, backdropFilter: 'blur(20px)', border: cardBorder }}>
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between px-4 pt-4 pb-2 flex-shrink-0">
               <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
                 ALL BRANCHES
               </span>
@@ -179,6 +179,10 @@ export default function Branch() {
                 {loading && !listSkeleton ? 'Refreshing…' : 'Ranked by Revenue'}
               </span>
             </div>
+
+            {/* Scrollable branch list — fixed height so 95 branches don't make page too tall */}
+            <div className="overflow-y-auto flex flex-col gap-1.5 px-3 pb-3"
+              style={{ maxHeight: '70vh', scrollbarWidth: 'thin', scrollbarColor: 'rgba(0,184,230,0.25) transparent' }}>
 
             {listSkeleton ? (
               [...Array(5)].map((_, i) => (
@@ -211,7 +215,7 @@ export default function Branch() {
                     initial={{ opacity: 0, x: -12 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.04 }}
-                    className="rounded-xl p-3 cursor-pointer relative overflow-hidden"
+                    className="rounded-xl p-2.5 cursor-pointer relative overflow-hidden"
                     style={{
                       background: isSelected
                         ? isDark ? 'rgba(0,184,230,0.1)' : 'rgba(0,184,230,0.08)'
@@ -256,6 +260,7 @@ export default function Branch() {
                 );
               })
             )}
+            </div>{/* end scrollable list */}
           </div>
         </motion.div>
 
@@ -388,7 +393,10 @@ export default function Branch() {
                             border: cardBorder,
                             borderRadius: 8,
                             fontSize: 11,
-                          }} />
+                            color: isDark ? '#e8eeff' : '#0f172a',
+                          }}
+                          labelStyle={{ color: isDark ? '#94a3b8' : '#64748b', fontWeight: 500 }}
+                          itemStyle={{ color: isDark ? '#00b8e6' : '#0369a1' }} />
                         <Area type="monotone" dataKey="revenue" stroke="#00b8e6" strokeWidth={2}
                           fill="url(#brGrad)" dot={false} />
                       </AreaChart>
@@ -460,7 +468,10 @@ export default function Branch() {
                         border: cardBorder,
                         borderRadius: 8,
                         fontSize: 11,
-                      }} />
+                        color: isDark ? '#e8eeff' : '#0f172a',
+                      }}
+                      labelStyle={{ color: isDark ? '#94a3b8' : '#64748b', fontWeight: 500 }}
+                      itemStyle={{ color: isDark ? '#00b8e6' : '#0369a1' }} />
                     <Bar dataKey="revenue" radius={[4, 4, 0, 0]} opacity={0.85}
                       fill="#00b8e6" />
                   </BarChart>
