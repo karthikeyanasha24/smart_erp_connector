@@ -41,12 +41,24 @@ def find_frontend_dist() -> Optional[Path]:
             return p
 
     backend_dir = Path(__file__).resolve().parents[1]
-    for candidate in (
-        backend_dir / "static",
-        backend_dir.parent / "dist",
-    ):
+    cwd = Path(os.getcwd()).resolve()
+
+    candidates = [
+        backend_dir / "static",      # Docker: /app/static
+        backend_dir.parent / "dist", # Dev: repo root/dist
+        cwd / "static",              # CWD-relative: /app/static
+        cwd / "dist",                # CWD-relative: dist
+        Path("/app/static"),         # Absolute Docker path
+    ]
+    for candidate in candidates:
         if (candidate / "index.html").is_file():
+            logger.info("Found frontend dist", path=str(candidate))
             return candidate.resolve()
+
+    logger.warning(
+        "Frontend dist not found — SPA routing disabled",
+        checked=[str(c) for c in candidates],
+    )
     return None
 
 

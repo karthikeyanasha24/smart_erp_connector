@@ -307,12 +307,3 @@ def get_compact_view_index() -> str:
         extra = len(obj["columns"]) - 6
         if extra > 0:
             key_cols += f" (+{extra} more)"
-        lines.append(
-            f"  • {obj['short_name']} — {obj['description']} | {key_cols}"
-        )
-    return "\n".join(lines)
-
-
-def get_view_schema(view_name: str) -> Optional[Dict[str, Any]]:
-    """Return the full schema object for a specific view by short_name."""
-    return _by_name().get(view_name)
