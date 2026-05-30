@@ -26,6 +26,7 @@ import {
   TransactionRecord,
   TransactionSummary,
   AnalyticsBundleResponse,
+  DashboardPageResponse,
 } from '../lib/api';
 
 export {
@@ -58,8 +59,7 @@ const LS_MAX_TTL = 60 * 60 * 1000;   // 1 hr — evict from localStorage
 const TODAY_FRESH_TTL = 60 * 1000;   // 1 min — today’s sales change intraday
 
 const INTRADAY_CACHE_KEYS = new Set([
-  'kpis:v2:today',
-  'dashboard:v2:today::',
+  // Today keys persist to localStorage (short fresh TTL) so reload matches MTD speed.
 ]);
 
 // ── Init: restore localStorage into _store on module load ──
@@ -100,7 +100,7 @@ export function readCache<T>(key: string): T | null {
 function cacheSet(key: string, data: unknown): void {
   const entry: CacheEntry<unknown> = { data, ts: Date.now() };
   _store.set(key, entry);
-  // Today/yesterday change every minute — memory only (no hour-long localStorage).
+  // Intraday keys (empty set) skip localStorage — today/mtd both persist for fast reload.
   if (INTRADAY_CACHE_KEYS.has(key)) return;
   // Persist to localStorage for reload survival
   try {
@@ -334,7 +334,11 @@ function notifyDashboardHydrate(): void {
 }
 
 function localTodayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function summaryFromTrendPoint(pt: TrendPoint): DashboardResponse['summary'] {
@@ -383,14 +387,31 @@ function buildTodayDashboard(summary: DashboardResponse['summary']): DashboardRe
 
 function applyTodayDashboard(
   summary: DashboardResponse['summary'],
-  setToday: (d: DashboardResponse | null) => void,
-  setTodayLoading: (v: boolean) => void,
+  setToday?: (d: DashboardResponse | null) => void,
+  setTodayLoading?: (v: boolean) => void,
 ): void {
   const dash = buildTodayDashboard(summary);
   cacheSet(KEY_DASH_TODAY, dash);
-  setToday(dash);
-  setTodayLoading(false);
+  setToday?.(dash);
+  setTodayLoading?.(false);
   notifyDashboardHydrate();
+}
+
+/** Paint Today chips instantly from cached MTD trend (no extra SQL). */
+function hydrateTodayFromMtd(
+  mtd: DashboardResponse | null | undefined,
+  handlers?: {
+    setToday?: (d: DashboardResponse | null) => void;
+    setTodayLoading?: (v: boolean) => void;
+  },
+): boolean {
+  if (hasTodaySnapshot(getDashboardCache(KEY_DASH_TODAY), cacheGet(KEY_KPIS_TODAY))) {
+    return true;
+  }
+  const summary = todaySummaryFromMtdDashboard(mtd ?? getDashboardCache(KEY_DASH_MTD));
+  if (!summary) return false;
+  applyTodayDashboard(summary, handlers?.setToday, handlers?.setTodayLoading);
+  return true;
 }
 
 export async function fetchAndApplySnapshot(): Promise<void> {
@@ -745,10 +766,7 @@ function applyMtdBundleCharts(
   setMtd(partial);
 
   if (setToday && setTodayLoading) {
-    const todaySummary = todaySummaryFromMtdDashboard(partial);
-    if (todaySummary && !cacheGet<DashboardResponse>(KEY_DASH_TODAY)?.summary) {
-      applyTodayDashboard(todaySummary, setToday, setTodayLoading);
-    }
+    hydrateTodayFromMtd(partial, { setToday, setTodayLoading });
   }
 }
 
@@ -762,10 +780,59 @@ function fetchMtdBundleFast(
     .bundle('mtd', {
       topN: DASHBOARD_BUNDLE_TOP_N,
       includeDepartments: false,
-      includeKpis: false,
+      includeKpis: true,
     })
-    .then((core) => applyMtdBundleCharts(core, setMtd, kpis, setToday, setTodayLoading))
+    .then((core) => {
+      if (core.kpis) {
+        cacheSet(KEY_KPIS_MTD, core.kpis);
+      }
+      applyMtdBundleCharts(core, setMtd, core.kpis ?? kpis, setToday, setTodayLoading);
+    })
     .catch(() => {});
+}
+
+/** Apply /analytics/dashboard-page response to SWR cache + React state. */
+function applyDashboardPagePayload(
+  page: DashboardPageResponse,
+  handlers: {
+    setMtd: (d: DashboardResponse | null) => void;
+    setToday: (d: DashboardResponse | null) => void;
+    setKpis: (k: KPIsResponse | null) => void;
+    setTodayKpis: (k: KPIsResponse | null) => void;
+    setLoading: (v: boolean) => void;
+    setTodayLoading: (v: boolean) => void;
+  },
+): void {
+  const { mtd: mtdCore, today: todayCore } = page;
+
+  if (mtdCore.kpis) {
+    cacheSet(KEY_KPIS_MTD, mtdCore.kpis);
+    handlers.setKpis(mtdCore.kpis);
+    handlers.setLoading(false);
+  }
+  if (todayCore.kpis) {
+    cacheSet(KEY_KPIS_TODAY, todayCore.kpis);
+    handlers.setTodayKpis(todayCore.kpis);
+    handlers.setTodayLoading(false);
+  }
+
+  applyMtdBundleCharts(
+    mtdCore,
+    handlers.setMtd,
+    mtdCore.kpis,
+    handlers.setToday,
+    handlers.setTodayLoading,
+  );
+
+  const todayDash = dashboardFromBundle(todayCore, todayCore.kpis);
+  if (todayDash?.summary) {
+    cacheSet(KEY_DASH_TODAY, todayDash);
+    handlers.setToday(todayDash);
+    handlers.setTodayLoading(false);
+  }
+
+  notifyDashboardHydrate();
+  notifyCacheHydrate();
 }
 
 /** Fastest today sales path — one cached trend query (not the heavy KPI scan). */
@@ -791,7 +858,7 @@ function fetchTodayBundleFast(
     .bundle('today', {
       topN: 30,
       includeDepartments: false,
-      includeKpis: false,
+      includeKpis: true,
     })
     .then((core) => {
       const partial = dashboardFromBundle(core);
@@ -825,17 +892,14 @@ export async function fetchDashboardBundle(): Promise<{
   today: DashboardResponse;
   kpis: KPIsResponse;
 }> {
-  const [mtd, today, kpis, kpisToday] = await Promise.all([
-    analytics.dashboard('mtd'),
-    analytics.dashboard('today'),
-    analytics.kpis('mtd'),
-    analytics.kpis('today'),
-  ]);
-  cacheSet(KEY_DASH_MTD, mtd);
-  cacheSet(KEY_DASH_TODAY, today);
-  cacheSet(KEY_KPIS_MTD, kpis);
-  cacheSet(KEY_KPIS_TODAY, kpisToday);
-  return { mtd, today, kpis };
+  const page = await analytics.dashboardPage();
+  const mtdDash = dashboardFromBundle(page.mtd, page.mtd.kpis)!;
+  const todayDash = dashboardFromBundle(page.today, page.today.kpis)!;
+  cacheSet(KEY_DASH_MTD, mtdDash);
+  cacheSet(KEY_DASH_TODAY, todayDash);
+  if (page.mtd.kpis) cacheSet(KEY_KPIS_MTD, page.mtd.kpis);
+  if (page.today.kpis) cacheSet(KEY_KPIS_TODAY, page.today.kpis);
+  return { mtd: mtdDash, today: todayDash, kpis: page.mtd.kpis! };
 }
 
 function bundleCacheReady(): boolean {
@@ -866,7 +930,7 @@ export interface DashboardPageResult {
   refetch: () => void;
 }
 
-/** Single hook for Dashboard.tsx — parallel fetch, today KPIs paint first. */
+/** Single hook for Dashboard.tsx — one /dashboard-page request (MTD + Today). */
 export function useDashboardPage(): DashboardPageResult {
   const cachedMtd      = getDashboardCache(KEY_DASH_MTD);
   const cachedToday    = getDashboardCache(KEY_DASH_TODAY);
@@ -878,31 +942,12 @@ export function useDashboardPage(): DashboardPageResult {
   const [kpis,        setKpis]         = useState<KPIsResponse | null>(cachedKpis);
   const [todayKpis,   setTodayKpis]    = useState<KPIsResponse | null>(cachedTodayKpi);
   const [loading,     setLoading]      = useState<boolean>(!cachedKpis);
-  const [todayLoading, setTodayLoading] = useState<boolean>(
-    !hasTodaySnapshot(cachedToday, cachedTodayKpi),
-  );
+  const [todayLoading, setTodayLoading] = useState<boolean>(() => {
+    if (hasTodaySnapshot(cachedToday, cachedTodayKpi)) return false;
+    if (todaySummaryFromMtdDashboard(cachedMtd)) return false;
+    return true;
+  });
   const [error,       setError]        = useState<string | null>(null);
-
-  const applyTodayKpis = useCallback((k: KPIsResponse) => {
-    const hasRev = typeof k?.revenue?.value === 'number';
-    const hasTxn = typeof k?.transactions?.value === 'number';
-    if (!hasRev && !hasTxn) return;
-    cacheSet(KEY_KPIS_TODAY, k);
-    setTodayKpis(k);
-    setTodayLoading(false);
-  }, []);
-
-  const fetchTodayKpisSlow = useCallback(async () => {
-    try {
-      const k = await analytics.kpis('today');
-      applyTodayKpis(k);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Today KPIs failed';
-      if (!hasTodaySnapshot(getDashboardCache(KEY_DASH_TODAY), cacheGet(KEY_KPIS_TODAY))) {
-        setError(msg.includes('abort') ? 'Request timed out — try Refresh' : msg);
-      }
-    }
-  }, [applyTodayKpis]);
 
   const paintFromCache = useCallback(() => {
     const k = cacheGet<KPIsResponse>(KEY_KPIS_MTD);
@@ -919,99 +964,47 @@ export function useDashboardPage(): DashboardPageResult {
     setTodayLoading(!hasTodaySnapshot(t, tk));
   }, []);
 
-  const fetchTodayFast = useCallback(() => {
-    if (hasTodaySnapshot(getDashboardCache(KEY_DASH_TODAY), cacheGet(KEY_KPIS_TODAY))) {
-      setTodayLoading(false);
-      return;
-    }
-    fetchTodayTrendFast(setToday, setTodayLoading);
-    fetchTodayBundleFast(setToday, setTodayLoading);
-  }, []);
-
-  const applyMtdKpis = useCallback((k: KPIsResponse) => {
-    if (k?.revenue == null && k?.transactions == null) return;
-    cacheSet(KEY_KPIS_MTD, k);
-    setKpis(k);
-    setLoading(false);
-  }, []);
-
   const run = useCallback(async (silent = false) => {
     if (!silent) {
       setLoading(!cacheGet<KPIsResponse>(KEY_KPIS_MTD));
       setTodayLoading(!hasTodaySnapshot(getDashboardCache(KEY_DASH_TODAY), cacheGet(KEY_KPIS_TODAY)));
+      clearIntradayClientCache();
     }
-    // Drop stale Today only on explicit refresh; silent revalidation keeps last numbers visible.
-    if (!silent) clearIntradayClientCache();
     setError(null);
 
-    // Fast path: /analytics/bundle paints trend + category charts (same as Analytics page).
-    // Heavy /analytics/dashboard (YoY SQL) runs in background — do not block charts on it.
-    fetchMtdBundleFast(
-      setMtd,
-      cacheGet<KPIsResponse>(KEY_KPIS_MTD),
-      setToday,
-      setTodayLoading,
-    );
-    fetchTodayFast();
-
-    void analytics.dashboard('mtd').then((mtd) => {
-      if (!isEmptyDashboard(mtd)) {
-        cacheSet(KEY_DASH_MTD, mtd);
-        setMtd(mtd);
-      }
-    }).catch(() => {});
-
-    void analytics.dashboard('today').then((today) => {
-      if (!isEmptyDashboard(today)) {
-        cacheSet(KEY_DASH_TODAY, today);
-        setToday(today);
-        setTodayLoading(false);
-      }
-    }).catch(() => {});
-
     try {
-      await analytics.kpis('mtd').then((k) => {
-        applyMtdKpis(k);
-        fetchMtdBundleFast(setMtd, k, setToday, setTodayLoading);
-      }).catch((err) => {
-        if (!silent && !cacheGet<KPIsResponse>(KEY_KPIS_MTD)) {
-          const msg = err instanceof Error ? err.message : 'MTD KPIs failed';
-          setError(msg.includes('abort') ? 'Request timed out — try Refresh' : msg);
-        }
+      const page = await analytics.dashboardPage();
+      applyDashboardPagePayload(page, {
+        setMtd,
+        setToday,
+        setKpis,
+        setTodayKpis,
+        setLoading,
+        setTodayLoading,
       });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Dashboard load failed';
+      if (!silent && !cacheGet<KPIsResponse>(KEY_KPIS_MTD)) {
+        setError(msg.includes('abort') ? 'Request timed out — try Refresh' : msg);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [applyMtdKpis, fetchTodayFast]);
-
-  useEffect(() => {
-    void fetchTodayKpisSlow();
-  }, [fetchTodayKpisSlow]);
+  }, []);
 
   useEffect(() => {
     paintFromCache();
-    fetchMtdBundleFast(
-      setMtd,
-      cacheGet<KPIsResponse>(KEY_KPIS_MTD),
-      setToday,
-      setTodayLoading,
-    );
-    fetchTodayFast();
 
     const hasKpis = kpiCacheReady();
-    const hasCharts = dashboardHasCharts(getDashboardCache(KEY_DASH_MTD));
-
     if (hasKpis) {
       setLoading(false);
-      void run(true);
-    } else if (hasCharts) {
       void run(true);
     } else {
       void run(false);
     }
 
     return subscribeDashboardHydrate(paintFromCache);
-  }, [run, paintFromCache, fetchTodayFast]);
+  }, [run, paintFromCache]);
 
   return {
     mtdRaw,
@@ -1024,90 +1017,28 @@ export function useDashboardPage(): DashboardPageResult {
     refetch: useCallback(() => {
       clearIntradayClientCache();
       setTodayLoading(true);
-      fetchTodayFast();
-      void fetchTodayKpisSlow();
       run(false);
-    }, [run, fetchTodayFast, fetchTodayKpisSlow]),
+    }, [run]),
   };
 }
 
-// ─── Prefetch (dashboard home: 3 parallel calls only) ────────────────────────
+// ─── Prefetch (single dashboard-page call on login) ──────────────────────────
 
 export async function prefetchAll(): Promise<void> {
-  void analytics.trend('today').then(({ trend }) => {
-    const pt = trend?.[0];
-    if (pt && !cacheGet<DashboardResponse>(KEY_DASH_TODAY)?.summary) {
-      cacheSet(KEY_DASH_TODAY, buildTodayDashboard(summaryFromTrendPoint(pt)));
-      notifyDashboardHydrate();
-    }
-  }).catch(() => {});
-  void analytics.kpis('today').then((k) => {
-    if (k?.revenue != null || k?.transactions != null) cacheSet(KEY_KPIS_TODAY, k);
-  }).catch(() => {});
-  void analytics.kpis('mtd').then((k) => {
-    if (k?.revenue != null || k?.transactions != null) cacheSet(KEY_KPIS_MTD, k);
-  }).catch(() => {});
-  void analytics
-    .bundle('mtd', {
-      topN: DASHBOARD_BUNDLE_TOP_N,
-      includeDepartments: false,
-      includeKpis: false,
-    })
-    .then((core) => {
-      const partial = dashboardFromBundle(core, cacheGet<KPIsResponse>(KEY_KPIS_MTD));
-      if (partial) {
-        const prev = cacheGet<DashboardResponse>(KEY_DASH_MTD);
-        if (!shouldKeepExistingMtd(prev, partial)) cacheSet(KEY_DASH_MTD, partial);
-      }
-    })
-    .catch(() => {});
+  return prefetchCriticalDashboard();
 }
 
-/**
- * Critical prefetch for dashboard KPI cards.
- * Awaiting this removes the “cards show … while SQL runs” problem on the first open.
- */
 export async function prefetchCriticalDashboard(): Promise<void> {
   try {
-    const [todayKpi, mtdKpi, mtdBundle, todayTrend] = await Promise.all([
-      analytics.kpis('today').catch(() => null),
-      analytics.kpis('mtd'),
-      analytics.bundle('mtd', {
-        topN: DASHBOARD_BUNDLE_TOP_N,
-        includeDepartments: false,
-        includeKpis: false,
-      }),
-      analytics.trend('today').catch(() => ({ trend: [] as TrendPoint[] })),
-    ]);
-
-    if (todayKpi?.revenue != null || todayKpi?.transactions != null) {
-      cacheSet(KEY_KPIS_TODAY, todayKpi);
-    }
-    if (mtdKpi?.revenue != null || mtdKpi?.transactions != null) {
-      cacheSet(KEY_KPIS_MTD, mtdKpi);
-    }
-
-    const partial = dashboardFromBundle(mtdBundle, mtdKpi);
-    if (partial) {
-      const prev = cacheGet<DashboardResponse>(KEY_DASH_MTD);
-      if (!shouldKeepExistingMtd(prev, partial)) {
-        cacheSet(KEY_DASH_MTD, partial);
-      }
-    }
-
-    if (!cacheGet<DashboardResponse>(KEY_DASH_TODAY)?.summary) {
-      const pt = todayTrend.trend?.[0];
-      if (pt) {
-        cacheSet(KEY_DASH_TODAY, buildTodayDashboard(summaryFromTrendPoint(pt)));
-      } else {
-        const todaySummary = todaySummaryFromMtdDashboard(partial);
-        if (todaySummary) {
-          cacheSet(KEY_DASH_TODAY, buildTodayDashboard(todaySummary));
-        }
-      }
-    }
-
-    notifyDashboardHydrate();
+    const page = await analytics.dashboardPage();
+    applyDashboardPagePayload(page, {
+      setMtd: () => {},
+      setToday: () => {},
+      setKpis: () => {},
+      setTodayKpis: () => {},
+      setLoading: () => {},
+      setTodayLoading: () => {},
+    });
   } catch {
     // Keep dashboard functional; stale cache (localStorage) can still render.
   }
@@ -1415,7 +1346,7 @@ export async function fetchAnalyticsBundle(period: string, topN = API_TOP_N_MAX)
   const core = await analytics.bundle(period, {
     topN: n,
     includeDepartments: false,
-    includeKpis: false,
+    includeKpis: true,
   });
   let departments: DeptPoint[] = [];
   try {
@@ -1595,19 +1526,15 @@ export function prefetchAnalyticsPage(
       const bundleP = analytics.bundle(period, {
         topN: n,
         includeDepartments: false,
-        includeKpis: false,
+        includeKpis: true,
       });
       const deptCached = cacheGet<{ departments: DeptPoint[] }>(`departments:${period}:${n}`);
       const deptP = deptCached
         ? Promise.resolve(deptCached)
         : analytics.departments(period, n).catch(() => ({ departments: [] as DeptPoint[] }));
-      const kpiHint =
-        cacheGet<KPIsResponse>(`kpis:v2:${period}`) ?? cacheGet<KPIsResponse>(`kpis:${period}`);
-      const kpiP = kpiHint
-        ? Promise.resolve(kpiHint)
-        : analytics.kpis(period).catch(() => null);
 
-      const [core, kpiRes] = await Promise.all([bundleP, kpiP]);
+      const [core] = await Promise.all([bundleP]);
+      const kpiRes = core.kpis ?? null;
       if (kpiRes) {
         cacheSet(`kpis:v2:${period}`, kpiRes);
         cacheSet(`kpis:${period}`, kpiRes);

@@ -149,12 +149,11 @@ async def get_transactions(
         sel = _transactions_catalog_select_sql().strip()
         order_sql = "ORDER BY T.[XnDt] DESC, T.[XnNo] DESC, T.[XnId] DESC"
 
-        # Fast count: fetch TOP (offset + page_size + 1) row count only — avoids full table scan.
-        # This is accurate for pages near the start and shows "N+" for huge datasets.
-        fast_count_cap = offset + page_size + 1
+        # Use a high TOP cap so we get a real total count for the UI.
+        # SLSXNS has ~120K rows/month — 500K covers YTD comfortably without a full scan.
+        COUNT_CAP = 500_001
+        fast_count_cap = COUNT_CAP
         # Note: OPTION (RECOMPILE) cannot be used inside a subquery in SQL Server.
-        # The outer COUNT uses the subquery result — no OPTION needed there.
-        # The data query keeps OPTION (RECOMPILE) at the top level which is valid.
         count_sql = f"""
             SELECT COUNT(*) AS TotalCount
             FROM (
@@ -169,7 +168,6 @@ async def get_transactions(
             WHERE {where_sql}
             {order_sql}
             OFFSET {offset} ROWS FETCH NEXT {page_size} ROWS ONLY
-            OPTION (RECOMPILE)
         """
 
         # Run count and data in parallel for speed
@@ -179,8 +177,8 @@ async def get_transactions(
             execute_query(data_sql, params=params, nolock=False, recompile=False),
         )
         counted = int(_safe_float(count_res["records"][0].get("TotalCount", 0))) if count_res["records"] else 0
-        # If we hit the cap, actual total is unknown (there are more rows)
-        total_count = counted if counted < fast_count_cap else counted + 1
+        # If we hit the cap (500K+), report exact cap — extremely rare for any single period
+        total_count = counted
 
         return {"total_count": total_count, "records": data_res["records"]}
 
@@ -191,7 +189,8 @@ async def get_transactions(
         sel = _transactions_legacy_select_sql().strip()
         order_sql = "ORDER BY [XnDt] DESC, [CashmemoNo] DESC"
 
-        fast_count_cap = offset + page_size + 1
+        COUNT_CAP = 500_001
+        fast_count_cap = COUNT_CAP
         count_sql = f"""
             SELECT COUNT(*) AS TotalCount
             FROM (
@@ -206,7 +205,6 @@ async def get_transactions(
             WHERE {where_sql}
             {order_sql}
             OFFSET {offset} ROWS FETCH NEXT {page_size} ROWS ONLY
-            OPTION (RECOMPILE)
         """
 
         import asyncio
@@ -215,7 +213,7 @@ async def get_transactions(
             execute_query(data_sql, params=params, nolock=False, recompile=False),
         )
         counted = int(_safe_float(count_res["records"][0].get("TotalCount", 0))) if count_res["records"] else 0
-        total_count = counted if counted < fast_count_cap else counted + 1
+        total_count = counted
 
         return {"total_count": total_count, "records": data_res["records"]}
 
@@ -244,81 +242,48 @@ async def get_transactions(
 # ─── Transaction Summary (header KPIs) ───────────────────────────────────────
 
 async def get_transaction_summary(period: str = "mtd") -> Dict[str, Any]:
-    """Header summary: total revenue, total transactions, avg ticket, success rate.
+    """Header summary: total revenue, bills, avg ticket — fast aggregate on SALES_AI_TABLE."""
+    dr = resolve_date_range(period)
+    c = cfg
+    table = sql_table(c.SALES_AI_TABLE)
+    date_col = c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN
+    amt_col = c.SALES_ANALYTICS_AMOUNT_COLUMN
+    end_expr = "DATEADD(day,1,CAST(@endDate AS DATE))"
+    win = f"[{date_col}] >= @startDate AND [{date_col}] < {end_expr}"
 
-    Uses the fast SLS_DATA_WITHOUT_ITEMID view (cfg.SALES_AI_TABLE) for aggregate KPIs
-    — same underlying data as SLSXNS but without item-master JOINs, so 50x faster.
-    Falls back to SLSXNS_REPORT if cfg.SALES_AI_TABLE is unavailable.
+    if c.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
+        txn_expr = f"SUM(CASE WHEN {win} THEN 1 ELSE 0 END)"
+    else:
+        bc = c.SALES_ANALYTICS_BILL_COUNT_COLUMN
+        txn_expr = f"SUM(CASE WHEN {win} THEN [{bc}] ELSE 0 END)"
+
+    sql = f"""
+        SELECT
+            ISNULL(SUM(CASE WHEN {win} THEN [{amt_col}] ELSE 0 END), 0) AS TotalRevenue,
+            ISNULL({txn_expr}, 0) AS TotalTransactions,
+            ISNULL(AVG(CASE WHEN {win} THEN [{amt_col}] END), 0) AS AvgTicket
+        FROM {table} WITH (NOLOCK)
+        WHERE {win}
     """
+    result = await execute_query(
+        sql,
+        params={"startDate": dr.start, "endDate": dr.end},
+        nolock=True,
+        recompile=False,
+    )
+    row = result["records"][0] if result["records"] else {}
+    total_rev = _safe_float(row.get("TotalRevenue"))
+    total_txn = int(_safe_float(row.get("TotalTransactions")))
+    avg = _safe_float(row.get("AvgTicket"))
+    if total_txn > 0 and avg == 0:
+        avg = total_rev / total_txn
 
-    async def _fetch() -> Dict[str, Any]:
-        dr = resolve_date_range(period)
-
-        # Fast path: use the pre-aggregated fast view (SLS_DATA_WITHOUT_ITEMID)
-        # It has CashmemoDt (date), SalesNetAmount (revenue), and one row per bill-line.
-        fast_tbl = sql_table(cfg.SALES_AI_TABLE)
-        date_col = cfg.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN  # CashmemoDt
-        amt_col  = cfg.SALES_ANALYTICS_AMOUNT_COLUMN              # SalesNetAmount
-
-        fast_sql = f"""
-            SELECT
-                SUM([{amt_col}]) AS TotalRevenue,
-                COUNT_BIG(*) AS TotalTransactions,
-                CASE WHEN COUNT_BIG(*) > 0
-                    THEN SUM([{amt_col}]) / CAST(COUNT_BIG(*) AS FLOAT)
-                    ELSE 0
-                END AS AvgTicket
-            FROM {fast_tbl} WITH (NOLOCK)
-            WHERE [{date_col}] >= @startDate
-              AND [{date_col}] < DATEADD(day,1,CAST(@endDate AS DATE))
-            OPTION (RECOMPILE)
-        """
-        try:
-            result = await execute_query(
-                fast_sql,
-                params={"startDate": dr.start, "endDate": dr.end},
-                nolock=False, recompile=False,
-            )
-            row = result["records"][0] if result["records"] else {}
-            return {
-                "total_revenue": _safe_float(row.get("TotalRevenue")),
-                "total_transactions": int(_safe_float(row.get("TotalTransactions"))),
-                "avg_ticket": _safe_float(row.get("AvgTicket")),
-                "success_rate": 100.0,
-                "period": period,
-                "period_label": dr.label,
-            }
-        except Exception as exc:
-            logger.warning("transaction_summary_fast_path_failed", error=str(exc))
-
-        # Slow fallback: SLSXNS_REPORT
-        SLSXNS_VIEW = sql_table("dbo.VW_MB_POWERBI_SLSXNS_REPORT")
-        summary_sql = f"""
-            SELECT
-                SUM([NetSlsNetAmount]) AS TotalRevenue,
-                COUNT_BIG(*) AS TotalTransactions,
-                CASE WHEN COUNT_BIG(*) > 0
-                    THEN SUM([NetSlsNetAmount]) / CAST(COUNT_BIG(*) AS FLOAT)
-                    ELSE 0
-                END AS AvgTicket
-            FROM {SLSXNS_VIEW} WITH (NOLOCK)
-            WHERE [XnDt] >= @startDate
-              AND [XnDt] < DATEADD(day,1,CAST(@endDate AS DATE))
-            OPTION (RECOMPILE)
-        """
-        result = await execute_query(
-            summary_sql,
-            params={"startDate": dr.start, "endDate": dr.end},
-            nolock=False, recompile=False,
-        )
-        row = result["records"][0] if result["records"] else {}
-        return {
-            "total_revenue": _safe_float(row.get("TotalRevenue")),
-            "total_transactions": int(_safe_float(row.get("TotalTransactions"))),
-            "avg_ticket": _safe_float(row.get("AvgTicket")),
-            "success_rate": 100.0,
-            "period": period,
-            "period_label": dr.label,
-        }
-
-    return await _fetch()
+    return {
+        "total_revenue": total_rev,
+        "total_transactions": total_txn,
+        "avg_ticket": avg,
+        "success_rate": 100.0,
+        "period": period,
+        "period_label": dr.label,
+    }
+  

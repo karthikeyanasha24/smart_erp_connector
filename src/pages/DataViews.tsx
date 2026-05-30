@@ -5,6 +5,7 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Download,
   Loader2,
   Wifi,
@@ -24,6 +25,117 @@ import { fmtCount } from '../lib/format';
 const STATIC_CATALOG = getStaticViewCatalog();
 const PAGE_SIZES = [25, 50, 100, 200] as const;
 const ALL_ROWS_SIZE = 500; // "All rows" mode — 500 server rows per page
+
+/* ─── RowsSelect ─────────────────────────────────────────────────────────────
+   Custom rows-per-page dropdown — matches the premium dark dashboard theme.
+   Replaces the native <select> which rendered with white browser chrome.
+────────────────────────────────────────────────────────────────────────────── */
+const ROW_OPTIONS: { value: string; label: string }[] = [
+  { value: '25',  label: '25 rows' },
+  { value: '50',  label: '50 rows' },
+  { value: '100', label: '100 rows' },
+  { value: '200', label: '200 rows' },
+  { value: 'all', label: 'All rows (500/pg)' },
+];
+
+function RowsSelect({
+  value,
+  onChange,
+  isDark,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  isDark: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = ROW_OPTIONS.find(o => o.value === value) ?? ROW_OPTIONS[1];
+  const isAll = value === 'all';
+
+  return (
+    <div className="relative" style={{ minWidth: 148 }}>
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        onBlur={(e) => {
+          if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node)) setOpen(false);
+        }}
+        className="w-full flex items-center justify-between gap-2 px-3 rounded-xl text-sm font-semibold outline-none transition-all"
+        style={{
+          height: 44,
+          background: isDark ? 'rgba(17,24,39,0.9)' : 'rgba(255,255,255,0.9)',
+          border: open || isAll
+            ? '1px solid rgba(6,182,212,0.5)'
+            : isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.12)',
+          color: isAll ? '#06B6D4' : isDark ? '#E5E7EB' : '#1E293B',
+          boxShadow: open ? '0 0 0 3px rgba(6,182,212,0.12)' : 'none',
+        }}
+      >
+        <span className="truncate">{selected.label}</span>
+        <ChevronDown
+          size={14}
+          style={{
+            color: isAll ? '#06B6D4' : isDark ? '#64748B' : '#94A3B8',
+            flexShrink: 0,
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 150ms ease',
+          }}
+        />
+      </button>
+
+      {/* Dropdown menu */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+            transition={{ duration: 0.13, ease: 'easeOut' }}
+            className="absolute left-0 right-0 z-50 mt-1 rounded-xl overflow-hidden"
+            style={{
+              background: isDark ? '#111827' : '#FFFFFF',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.2)',
+              padding: '6px',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            {ROW_OPTIONS.map(opt => {
+              const isActive = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  tabIndex={0}
+                  onClick={() => { onChange(opt.value); setOpen(false); }}
+                  className="w-full text-left px-3 rounded-lg text-sm transition-all outline-none"
+                  style={{
+                    height: 38,
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: isActive ? 'rgba(6,182,212,0.18)' : 'transparent',
+                    color: isActive ? '#06B6D4' : isDark ? '#CBD5E1' : '#334155',
+                    fontWeight: isActive ? 600 : 400,
+                  }}
+                  onMouseEnter={e => {
+                    if (!isActive) (e.currentTarget as HTMLElement).style.background = 'rgba(6,182,212,0.12)';
+                    if (!isActive) (e.currentTarget as HTMLElement).style.color = '#06B6D4';
+                  }}
+                  onMouseLeave={e => {
+                    if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent';
+                    if (!isActive) (e.currentTarget as HTMLElement).style.color = isDark ? '#CBD5E1' : '#334155';
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 function fmtCell(v: unknown): string {
@@ -350,38 +462,23 @@ export default function DataViews() {
 
               {/* rows per page */}
               <div className="flex-shrink-0">
-                <label>
-                  <span className="text-2xs font-semibold uppercase tracking-wider block mb-1" style={{ color: 'var(--text-muted)' }}>
-                    Rows / page
-                  </span>
-                  <select
-                    value={allRowsMode ? 'all' : String(pageSize)}
-                    onChange={(e) => {
-                      if (e.target.value === 'all') {
-                        setAllRowsMode(true);
-                      } else {
-                        setAllRowsMode(false);
-                        setPageSize(Number(e.target.value));
-                      }
-                      setResult(null);
-                      setPage(1);
-                    }}
-                    className="rounded-xl px-3 py-2 text-sm outline-none"
-                    style={{
-                      background: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.9)',
-                      border: allRowsMode
-                        ? '1px solid rgba(88,130,255,0.4)'
-                        : isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
-                      color: allRowsMode ? '#5882ff' : 'var(--text-primary)',
-                      minWidth: 130,
-                    }}
-                  >
-                    {PAGE_SIZES.map((n) => (
-                      <option key={n} value={n}>{n} rows</option>
-                    ))}
-                    <option value="all">All rows (500/pg)</option>
-                  </select>
-                </label>
+                <span className="text-2xs font-semibold uppercase tracking-wider block mb-1" style={{ color: 'var(--text-muted)' }}>
+                  Rows / page
+                </span>
+                <RowsSelect
+                  value={allRowsMode ? 'all' : String(pageSize)}
+                  isDark={isDark}
+                  onChange={(v) => {
+                    if (v === 'all') {
+                      setAllRowsMode(true);
+                    } else {
+                      setAllRowsMode(false);
+                      setPageSize(Number(v));
+                    }
+                    setResult(null);
+                    setPage(1);
+                  }}
+                />
               </div>
 
               {/* load button */}

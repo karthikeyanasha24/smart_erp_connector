@@ -1,23 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  MapPin, TrendingUp, Activity, ChevronRight,
-  Zap, Building2, RefreshCw, Wifi, WifiOff, BarChart2,
+  MapPin, TrendingUp, TrendingDown, Activity,
+  Zap, RefreshCw, Wifi, WifiOff, Search, BarChart2,
 } from 'lucide-react';
 import {
   BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip,
-  AreaChart, Area, CartesianGrid,
+  AreaChart, Area, CartesianGrid, ReferenceLine, Cell,
 } from 'recharts';
 import { useTheme } from '../context/ThemeContext';
 import { useBranches, fmtRevenue, fmtCount, prefetchBranchesChart } from '../hooks/useAnalytics';
 import { analytics, BranchPoint } from '../lib/api';
 
-const stagger = { animate: { transition: { staggerChildren: 0.06 } } };
-const item = {
-  initial: { opacity: 0, y: 16 },
-  animate: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 280, damping: 26 } },
-};
-
+// ─── Types ─────────────────────────────────────────────────────────────────────
 interface BranchDetail {
   branch: string;
   period: string;
@@ -31,25 +26,69 @@ interface BranchDetail {
 type BranchPeriod = 'today' | 'last_7d' | 'last_30d' | 'mtd' | 'qtd';
 
 const PERIOD_TABS: { key: BranchPeriod; label: string; detail: string }[] = [
-  { key: 'today',    label: 'Today',  detail: 'today' },
-  { key: 'last_7d',  label: '7D',     detail: 'last_7d' },
-  { key: 'last_30d', label: '30D',    detail: 'last_30d' },
-  { key: 'mtd',      label: 'MTD',    detail: 'last_30d' },
-  { key: 'qtd',      label: 'QTD',    detail: 'last_30d' },
+  { key: 'today',    label: 'Today', detail: 'today' },
+  { key: 'last_7d',  label: '7D',    detail: 'last_7d' },
+  { key: 'last_30d', label: '30D',   detail: 'last_30d' },
+  { key: 'mtd',      label: 'MTD',   detail: 'last_30d' },
+  { key: 'qtd',      label: 'QTD',   detail: 'last_30d' },
 ];
 
-const PERIOD_SUBTITLE: Record<BranchPeriod, string> = {
-  today:    "Today's branch performance",
-  last_7d:  'Last 7 days branch performance',
-  last_30d: 'Last 30 days branch performance',
-  mtd:      'Month-to-date branch performance',
-  qtd:      'Quarter-to-date branch performance',
+// ─── Design tokens ────────────────────────────────────────────────────────────
+const T = {
+  cyan:    '#06B6D4',
+  green:   '#10B981',
+  amber:   '#F59E0B',
+  red:     '#EF4444',
+  text:    '#F8FAFC',
+  muted:   '#94A3B8',
+  subtle:  '#64748B',
 };
 
+// ─── Custom Tooltip ────────────────────────────────────────────────────────────
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl px-3 py-2.5 text-xs shadow-xl"
+      style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', color: T.text }}>
+      <p className="font-semibold mb-1" style={{ color: T.muted }}>{label}</p>
+      {payload.map((p: any) => (
+        <p key={p.name} className="tabular-nums font-bold" style={{ color: T.cyan }}>
+          {fmtRevenue(p.value)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+// ─── Stat Card ────────────────────────────────────────────────────────────────
+function StatCard({ icon: Icon, label, value, color, loading }: {
+  icon: any; label: string; value: string; color: string; loading?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl p-5 flex flex-col gap-3"
+      style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+        style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
+        <Icon size={16} style={{ color }} />
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-widest mb-1.5"
+          style={{ color: T.muted }}>{label}</p>
+        {loading ? (
+          <div className="h-7 w-20 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.06)' }} />
+        ) : (
+          <p className="text-2xl font-bold tabular-nums" style={{ color: T.text }}>{value}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
 export default function Branch() {
   const { isDark } = useTheme();
   const [period, setPeriod] = useState<BranchPeriod>('mtd');
-
+  const [search, setSearch] = useState('');
   const { branches, loading, error, refetch, fromApi } = useBranches(period);
   const [selectedBranch, setSelectedBranch] = useState<BranchPoint | null>(null);
   const [detail, setDetail] = useState<BranchDetail | null>(null);
@@ -58,433 +97,461 @@ export default function Branch() {
   const listSkeleton = loading && branches.length === 0;
   const detailPeriod = PERIOD_TABS.find(t => t.key === period)?.detail ?? 'last_30d';
 
-  // Prefetch visible periods on mount
   useEffect(() => {
     void prefetchBranchesChart('mtd');
     void prefetchBranchesChart('last_7d');
     void prefetchBranchesChart('last_30d');
   }, []);
 
-  // Auto-select first branch when list loads (or period changes)
   useEffect(() => {
-    if (branches.length > 0) {
-      setSelectedBranch(branches[0]);
-    } else if (branches.length === 0 && !loading) {
-      setSelectedBranch(null);
-    }
-  }, [branches, period]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (branches.length > 0) setSelectedBranch(branches[0]);
+    else if (!loading) setSelectedBranch(null);
+  }, [branches, period]); // eslint-disable-line
 
-  // Fetch branch detail when selected branch or period changes
   useEffect(() => {
     if (!selectedBranch) return;
     let ignore = false;
     setDetailLoading(true);
     setDetail(null);
     analytics.branchDetail(selectedBranch.branch, detailPeriod)
-      .then((d) => {
-        if (!ignore) setDetail(d as BranchDetail);
-      })
-      .catch(() => {
-        if (!ignore) setDetail(null);
-      })
-      .finally(() => {
-        if (!ignore) setDetailLoading(false);
-      });
+      .then(d => { if (!ignore) setDetail(d as BranchDetail); })
+      .catch(() => { if (!ignore) setDetail(null); })
+      .finally(() => { if (!ignore) setDetailLoading(false); });
     return () => { ignore = true; };
   }, [selectedBranch, detailPeriod]);
 
   const maxRevenue = branches.length > 0 ? Math.max(...branches.map(b => b.revenue)) : 1;
+  const avgRevenue = branches.length > 0 ? branches.reduce((s, b) => s + b.revenue, 0) / branches.length : 0;
 
-  const cardBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.88)';
-  const cardBorder = isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)';
-  const innerBg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
-  const innerBorder = isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)';
+  const filteredBranches = useMemo(() =>
+    search.trim()
+      ? branches.filter(b => b.branch.toLowerCase().includes(search.toLowerCase()))
+      : branches,
+    [branches, search],
+  );
+
+  const rank = selectedBranch ? branches.findIndex(b => b.branch === selectedBranch.branch) + 1 : 0;
+  const avgTicket = detail && detail.total_transactions > 0
+    ? detail.total_revenue / detail.total_transactions : 0;
+  const trendAvg = detail?.trend?.length
+    ? detail.trend.reduce((s, d) => s + d.revenue, 0) / detail.trend.length : 0;
+
+  const card = {
+    bg: isDark ? '#111827' : '#ffffff',
+    border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.08)',
+  };
 
   return (
-    <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-5">
+    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto" style={{ color: T.text }}>
 
-      {/* ── Header ── */}
-      <motion.div variants={item} className="flex items-start justify-between gap-4 flex-wrap">
+      {/* ── Page header ── */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold" style={{
-            background: isDark
-              ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)'
-              : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-          }}>Branch Intelligence</h1>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            {PERIOD_SUBTITLE[period]}
+          <h1 className="text-[1.75rem] font-bold tracking-tight" style={{ color: isDark ? T.text : '#0F172A' }}>
+            Branch Intelligence
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: T.muted }}>
+            {PERIOD_TABS.find(t => t.key === period)?.key === 'mtd'
+              ? 'Month-to-date branch performance'
+              : `${PERIOD_TABS.find(t => t.key === period)?.label} branch performance`}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* Period tabs */}
           <div className="flex items-center rounded-xl p-1 gap-0.5"
-            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', border: cardBorder }}>
+            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', border: card.border }}>
             {PERIOD_TABS.map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => { if (tab.key !== period) { setPeriod(tab.key); setSelectedBranch(null); } }}
+              <button key={tab.key} type="button"
+                onClick={() => { if (tab.key !== period) { setPeriod(tab.key); } }}
                 onMouseEnter={() => prefetchBranchesChart(tab.key)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
                 style={{
-                  background: period === tab.key
-                    ? isDark ? 'rgba(0,184,230,0.18)' : 'rgba(0,184,230,0.12)'
-                    : 'transparent',
-                  color: period === tab.key ? '#00b8e6' : 'var(--text-muted)',
-                  border: period === tab.key ? '1px solid rgba(0,184,230,0.3)' : '1px solid transparent',
-                }}
-              >
+                  background: period === tab.key ? `${T.cyan}22` : 'transparent',
+                  color: period === tab.key ? T.cyan : T.muted,
+                  border: period === tab.key ? `1px solid ${T.cyan}44` : '1px solid transparent',
+                }}>
                 {tab.label}
               </button>
             ))}
           </div>
 
-          {/* Status pill */}
           {fromApi ? (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
-              style={{ background: 'rgba(0,230,122,0.1)', border: '1px solid rgba(0,230,122,0.2)', color: '#00e67a' }}>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+              style={{ background: `${T.green}15`, border: `1px solid ${T.green}30`, color: T.green }}>
               <Wifi size={10} />
               {listSkeleton ? 'Loading…' : loading ? 'Updating…' : `${branches.length} Branches`}
-            </div>
-          ) : !loading && !listSkeleton && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
-              style={{ background: 'rgba(255,184,0,0.1)', border: '1px solid rgba(255,184,0,0.2)', color: '#ffb800' }}>
+            </span>
+          ) : !loading && (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+              style={{ background: `${T.amber}15`, border: `1px solid ${T.amber}30`, color: T.amber }}>
               <WifiOff size={10} /> Demo
-            </div>
+            </span>
           )}
 
-          <motion.button onClick={() => refetch()}
-            className="p-2 rounded-xl"
-            style={{ background: innerBg, border: cardBorder, color: 'var(--text-muted)' }}
-            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <motion.button type="button" onClick={() => refetch()}
+            className="p-2 rounded-xl" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', border: card.border, color: T.muted }}>
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
           </motion.button>
         </div>
-      </motion.div>
+      </div>
 
-      {/* ── Main content: branch list + detail side-by-side ── */}
-      <div className="grid grid-cols-12 gap-4">
+      {/* ── Main layout: sidebar + content ── */}
+      <div className="grid grid-cols-12 gap-5">
 
-        {/* Branch list — 4 cols */}
-        <motion.div variants={item} className="col-span-12 md:col-span-4 flex flex-col gap-2.5">
-          <div className="rounded-2xl flex flex-col overflow-hidden"
-            style={{ background: cardBg, backdropFilter: 'blur(20px)', border: cardBorder }}>
-            <div className="flex items-center justify-between px-4 pt-4 pb-2 flex-shrink-0">
-              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-                ALL BRANCHES
+        {/* ── LEFT SIDEBAR: Branch List (3 cols) ── */}
+        <motion.div
+          initial={{ opacity: 0, x: -12 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3 }}
+          className="col-span-12 md:col-span-3 flex flex-col gap-0 rounded-2xl overflow-hidden"
+          style={{ background: card.bg, border: card.border, height: 'fit-content', position: 'sticky', top: 24 }}
+        >
+          {/* Sidebar header */}
+          <div className="px-4 pt-4 pb-3 flex-shrink-0"
+            style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: T.muted }}>
+                All Branches
               </span>
-              <span className="text-xs flex items-center gap-1" style={{ color: loading && !listSkeleton ? '#00b8e6' : 'var(--text-muted)' }}>
-                {loading && !listSkeleton && <RefreshCw size={9} className="animate-spin" />}
-                {loading && !listSkeleton ? 'Refreshing…' : 'Ranked by Revenue'}
+              <span className="text-[10px] tabular-nums px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: `${T.cyan}15`, color: T.cyan }}>
+                {branches.length || '—'}
               </span>
             </div>
+            {/* Search */}
+            <div className="relative">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ color: T.subtle }} />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search branch…"
+                className="w-full pl-8 pr-3 py-2 text-xs rounded-lg outline-none"
+                style={{
+                  background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                  color: isDark ? T.text : '#0F172A',
+                }}
+              />
+            </div>
+          </div>
 
-            {/* Scrollable branch list — fixed height so 95 branches don't make page too tall */}
-            <div className="overflow-y-auto flex flex-col gap-1.5 px-3 pb-3"
-              style={{ maxHeight: '70vh', scrollbarWidth: 'thin', scrollbarColor: 'rgba(0,184,230,0.25) transparent' }}>
-
+          {/* Scrollable list */}
+          <div className="overflow-y-auto py-2"
+            style={{ maxHeight: '72vh', scrollbarWidth: 'thin', scrollbarColor: `${T.cyan}30 transparent` }}>
             {listSkeleton ? (
-              [...Array(5)].map((_, i) => (
-                <div key={i} className="rounded-xl p-3 animate-pulse"
-                  style={{ background: innerBg, border: innerBorder }}>
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg" style={{ background: 'rgba(0,184,230,0.08)' }} />
-                    <div className="flex-1 space-y-1.5">
-                      <div className="h-3 rounded" style={{ background: 'rgba(255,255,255,0.06)', width: '55%' }} />
-                      <div className="h-2 rounded" style={{ background: 'rgba(255,255,255,0.04)', width: '38%' }} />
+              <div className="px-3 flex flex-col gap-1">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="rounded-xl p-3 animate-pulse"
+                    style={{ background: 'rgba(255,255,255,0.03)' }}>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg" style={{ background: 'rgba(255,255,255,0.05)' }} />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-2.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', width: '55%' }} />
+                        <div className="h-1.5 rounded" style={{ background: 'rgba(255,255,255,0.03)', width: '40%' }} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
-            ) : branches.length === 0 ? (
-              <div className="py-8 text-center">
-                <Building2 size={24} style={{ color: 'var(--text-muted)' }} className="mx-auto mb-2" />
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  {error ? `Could not load — ${error}` : 'No branch data'}
-                </p>
+                ))}
+              </div>
+            ) : filteredBranches.length === 0 ? (
+              <div className="py-10 text-center text-xs" style={{ color: T.muted }}>
+                {error ? 'Could not load branches' : search ? 'No match' : 'No data'}
               </div>
             ) : (
-              branches.map((branch, i) => {
-                const isSelected = selectedBranch?.branch === branch.branch;
-                const revenueShare = ((branch.revenue / maxRevenue) * 100);
-                return (
-                  <motion.div
-                    key={branch.branch}
-                    onClick={() => setSelectedBranch(branch)}
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    className="rounded-xl p-2.5 cursor-pointer relative overflow-hidden"
-                    style={{
-                      background: isSelected
-                        ? isDark ? 'rgba(0,184,230,0.1)' : 'rgba(0,184,230,0.08)'
-                        : innerBg,
-                      border: isSelected ? '1px solid rgba(0,184,230,0.35)' : innerBorder,
-                    }}
-                    whileHover={{ y: -1 }}
-                  >
-                    {isSelected && (
-                      <motion.div layoutId="branchSelect"
-                        className="absolute left-0 top-0 bottom-0 w-0.5 rounded-r"
-                        style={{ background: '#00b8e6' }} />
-                    )}
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: 'rgba(0,184,230,0.12)', border: '1px solid rgba(0,184,230,0.2)' }}>
-                        <Building2 size={14} style={{ color: '#00b8e6' }} />
+              <div className="px-2 flex flex-col gap-0.5">
+                {filteredBranches.map((branch, i) => {
+                  const isSelected = selectedBranch?.branch === branch.branch;
+                  const globalRank = branches.findIndex(b => b.branch === branch.branch) + 1;
+                  const pct = (branch.revenue / maxRevenue) * 100;
+                  return (
+                    <motion.button
+                      key={branch.branch}
+                      type="button"
+                      onClick={() => setSelectedBranch(branch)}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: Math.min(i * 0.015, 0.2) }}
+                      className="w-full text-left rounded-xl px-3 py-2.5 relative overflow-hidden"
+                      style={{
+                        background: isSelected
+                          ? isDark ? `${T.cyan}14` : `${T.cyan}0f`
+                          : 'transparent',
+                        border: isSelected ? `1px solid ${T.cyan}40` : '1px solid transparent',
+                      }}
+                      whileHover={{ background: isSelected ? `${T.cyan}18` : 'rgba(255,255,255,0.04)' }}
+                    >
+                      {/* Left accent bar on selected */}
+                      {isSelected && (
+                        <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-r"
+                          style={{ background: T.cyan }} />
+                      )}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        {/* Rank */}
+                        <span className="text-[10px] font-bold tabular-nums w-5 shrink-0 text-right"
+                          style={{ color: globalRank <= 3 ? T.cyan : T.subtle }}>
+                          #{globalRank}
+                        </span>
+                        {/* Name */}
+                        <span className="text-xs font-semibold flex-1 truncate"
+                          style={{ color: isSelected ? T.cyan : isDark ? T.text : '#0F172A' }}>
+                          {branch.branch}
+                        </span>
+                        {/* Revenue */}
+                        <span className="text-[11px] font-bold tabular-nums shrink-0"
+                          style={{ color: isSelected ? T.cyan : T.muted }}>
+                          {fmtRevenue(branch.revenue)}
+                        </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                            {branch.branch}
-                          </p>
-                          <span className="text-2xs shrink-0" style={{ color: 'var(--text-muted)' }}>#{i + 1}</span>
-                        </div>
-                        <p className="text-2xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          {fmtRevenue(branch.revenue)} · {fmtCount(branch.transactions)} txns
-                        </p>
+                      {/* Progress bar */}
+                      <div className="ml-7 h-1 rounded-full overflow-hidden"
+                        style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        <motion.div className="h-full rounded-full"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${pct}%` }}
+                          transition={{ duration: 0.5, delay: Math.min(i * 0.015, 0.2) }}
+                          style={{ background: isSelected ? T.cyan : `${T.cyan}55` }} />
                       </div>
-                      <ChevronRight size={12} style={{ color: isSelected ? '#00b8e6' : 'var(--text-muted)', flexShrink: 0 }} />
-                    </div>
-                    {/* Revenue bar */}
-                    <div className="mt-2 h-1 rounded-full overflow-hidden"
-                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-                      <motion.div className="h-full rounded-full"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${revenueShare}%` }}
-                        transition={{ duration: 0.6, delay: i * 0.04 }}
-                        style={{ background: 'linear-gradient(90deg, #00b8e6, #00e67a)' }} />
-                    </div>
-                  </motion.div>
-                );
-              })
+                    </motion.button>
+                  );
+                })}
+              </div>
             )}
-            </div>{/* end scrollable list */}
           </div>
         </motion.div>
 
-        {/* Right panel — 8 cols */}
-        <div className="col-span-12 md:col-span-8 flex flex-col gap-4">
+        {/* ── RIGHT CONTENT (9 cols) ── */}
+        <div className="col-span-12 md:col-span-9 flex flex-col gap-5">
 
-          {/* Branch detail card */}
           <AnimatePresence mode="wait">
             {selectedBranch ? (
-              <motion.div
-                key={selectedBranch.branch + period}
+              <motion.div key={selectedBranch.branch + period}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
-                className="rounded-2xl p-5"
-                style={{ background: cardBg, backdropFilter: 'blur(20px)', border: cardBorder }}
-              >
-                {/* Detail header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <MapPin size={13} style={{ color: '#00b8e6' }} />
-                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#00b8e6' }}>
-                        Branch Detail
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-2xs font-bold"
-                        style={{ background: 'rgba(0,230,122,0.15)', color: '#00e67a' }}>
-                        ACTIVE
-                      </span>
+                transition={{ duration: 0.2 }}
+                className="flex flex-col gap-5">
+
+                {/* ── Branch header card ── */}
+                <div className="rounded-2xl p-6"
+                  style={{ background: card.bg, border: card.border }}>
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex items-start gap-4">
+                      {/* Icon */}
+                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
+                        style={{ background: `${T.cyan}18`, border: `1px solid ${T.cyan}30` }}>
+                        <MapPin size={20} style={{ color: T.cyan }} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h2 className="text-2xl font-bold" style={{ color: isDark ? T.text : '#0F172A' }}>
+                            {selectedBranch.branch}
+                          </h2>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                            style={{ background: `${T.green}18`, color: T.green, border: `1px solid ${T.green}30` }}>
+                            Active
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs" style={{ color: T.muted }}>
+                          <span>Rank <span style={{ color: T.cyan, fontWeight: 700 }}>#{rank}</span> of {branches.length}</span>
+                          <span>·</span>
+                          <span>{PERIOD_TABS.find(t => t.key === period)?.label} performance</span>
+                        </div>
+                      </div>
                     </div>
-                    <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {selectedBranch.branch}
-                    </h2>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {PERIOD_TABS.find(t => t.key === period)?.label} performance
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    {detailLoading ? (
-                      <div className="h-7 w-28 rounded animate-pulse" style={{ background: innerBg }} />
-                    ) : (
-                      <>
-                        <p className="text-2xl font-bold metric-value" style={{ color: 'var(--text-primary)' }}>
+                    {/* Total revenue */}
+                    <div className="text-right">
+                      <p className="text-[11px] font-semibold uppercase tracking-widest mb-1" style={{ color: T.muted }}>
+                        Total Revenue
+                      </p>
+                      {detailLoading ? (
+                        <div className="h-9 w-32 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                      ) : (
+                        <p className="text-3xl font-bold tabular-nums" style={{ color: T.cyan }}>
                           {fmtRevenue(detail?.total_revenue ?? selectedBranch.revenue)}
                         </p>
-                        <p className="text-xs mt-0.5" style={{ color: '#00e67a' }}>Total Revenue</p>
-                      </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── KPI cards row ── */}
+                <div className="grid grid-cols-3 gap-4">
+                  <StatCard icon={Activity} label="Transactions"
+                    value={fmtCount(detail?.total_transactions ?? selectedBranch.transactions)}
+                    color={T.cyan} loading={detailLoading} />
+                  <StatCard icon={TrendingUp} label="Avg Daily Revenue"
+                    value={fmtRevenue(detail?.avg_daily_revenue ?? 0)}
+                    color={T.green} loading={detailLoading} />
+                  <StatCard icon={Zap} label="Avg Ticket"
+                    value={avgTicket > 0 ? fmtRevenue(avgTicket) : '—'}
+                    color={T.amber} loading={detailLoading} />
+                </div>
+
+                {/* ── Revenue trend chart ── */}
+                <div className="rounded-2xl p-6" style={{ background: card.bg, border: card.border }}>
+                  <div className="flex items-center justify-between mb-5">
+                    <div>
+                      <h3 className="text-sm font-semibold" style={{ color: isDark ? T.text : '#0F172A' }}>
+                        Revenue Trend
+                      </h3>
+                      <p className="text-xs mt-0.5" style={{ color: T.muted }}>
+                        Daily revenue for {selectedBranch.branch}
+                      </p>
+                    </div>
+                    {!detailLoading && trendAvg > 0 && (
+                      <span className="text-xs px-2.5 py-1 rounded-lg font-semibold"
+                        style={{ background: `${T.cyan}15`, color: T.cyan }}>
+                        Avg {fmtRevenue(trendAvg)}/day
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ height: 260 }}>
+                    {detailLoading ? (
+                      <div className="h-full flex items-end gap-1.5">
+                        {[...Array(18)].map((_, i) => (
+                          <div key={i} className="flex-1 rounded-t animate-pulse"
+                            style={{ height: `${20 + (i % 6) * 12}%`, background: 'rgba(6,182,212,0.08)' }} />
+                        ))}
+                      </div>
+                    ) : detail && detail.trend.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={detail.trend.map(d => ({ ...d, label: d.date?.slice(5) }))}
+                          margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="brGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={T.cyan} stopOpacity={0.2} />
+                              <stop offset="95%" stopColor={T.cyan} stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3"
+                            stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} />
+                          <XAxis dataKey="label"
+                            tick={{ fill: T.subtle, fontSize: 10 }}
+                            axisLine={false} tickLine={false} interval={2} />
+                          <YAxis
+                            tick={{ fill: T.subtle, fontSize: 10 }}
+                            axisLine={false} tickLine={false}
+                            tickFormatter={v => `₹${(v / 100000).toFixed(0)}L`} width={46} />
+                          {trendAvg > 0 && (
+                            <ReferenceLine y={trendAvg} stroke={`${T.amber}60`} strokeDasharray="4 3"
+                              label={{ value: 'Avg', position: 'right', fill: T.amber, fontSize: 10 }} />
+                          )}
+                          <Tooltip content={<ChartTooltip />} />
+                          <Area type="monotone" dataKey="revenue" stroke={T.cyan} strokeWidth={2.5}
+                            fill="url(#brGrad)" dot={false} activeDot={{ r: 4, fill: T.cyan, stroke: '#111827', strokeWidth: 2 }} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-sm" style={{ color: T.muted }}>
+                        No trend data for this period
+                      </div>
                     )}
                   </div>
                 </div>
 
-                {/* Stat chips */}
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  {[
-                    {
-                      label: 'Transactions',
-                      value: fmtCount(detail?.total_transactions ?? selectedBranch.transactions),
-                      icon: Activity,
-                      color: '#00b8e6',
-                    },
-                    {
-                      label: 'Avg Daily Rev',
-                      value: fmtRevenue(detail?.avg_daily_revenue ?? 0),
-                      icon: TrendingUp,
-                      color: '#00e67a',
-                    },
-                    {
-                      label: 'Avg Ticket',
-                      value: detail && detail.total_transactions > 0
-                        ? fmtRevenue(detail.total_revenue / detail.total_transactions)
-                        : '—',
-                      icon: Zap,
-                      color: '#ffb800',
-                    },
-                  ].map(stat => {
-                    const Icon = stat.icon;
-                    return (
-                      <div key={stat.label} className="p-3 rounded-xl text-center"
-                        style={{ background: innerBg, border: innerBorder }}>
-                        <Icon size={14} style={{ color: stat.color }} className="mx-auto mb-1" />
-                        {detailLoading ? (
-                          <div className="h-4 rounded animate-pulse mx-auto"
-                            style={{ background: innerBg, width: '65%' }} />
-                        ) : (
-                          <p className="text-sm font-bold" style={{ color: stat.color }}>
-                            {stat.value}
-                          </p>
-                        )}
-                        <p className="text-2xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          {stat.label}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Trend chart */}
-                <div className="h-36">
-                  {detailLoading ? (
-                    <div className="h-full flex items-end gap-1">
-                      {[...Array(14)].map((_, i) => (
-                        <div key={i} className="flex-1 rounded-t animate-pulse"
-                          style={{ height: `${25 + (i % 5) * 13}%`, background: 'rgba(0,184,230,0.10)' }} />
-                      ))}
-                    </div>
-                  ) : detail && detail.trend.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={detail.trend.map(d => ({ ...d, label: d.date?.slice(5) }))}
-                        margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="brGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#00b8e6" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="#00b8e6" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3"
-                          stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} />
-                        <XAxis dataKey="label"
-                          tick={{ fill: 'var(--text-muted)', fontSize: 9 }}
-                          axisLine={false} tickLine={false} interval={2} />
-                        <YAxis
-                          tick={{ fill: 'var(--text-muted)', fontSize: 9 }}
-                          axisLine={false} tickLine={false}
-                          tickFormatter={v => `₹${(v / 100000).toFixed(0)}L`} />
-                        <Tooltip formatter={(v: number) => [fmtRevenue(v), 'Revenue']}
-                          contentStyle={{
-                            background: isDark ? '#0f172a' : '#fff',
-                            border: cardBorder,
-                            borderRadius: 8,
-                            fontSize: 11,
-                            color: isDark ? '#e8eeff' : '#0f172a',
-                          }}
-                          labelStyle={{ color: isDark ? '#94a3b8' : '#64748b', fontWeight: 500 }}
-                          itemStyle={{ color: isDark ? '#00b8e6' : '#0369a1' }} />
-                        <Area type="monotone" dataKey="revenue" stroke="#00b8e6" strokeWidth={2}
-                          fill="url(#brGrad)" dot={false} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-xs"
-                      style={{ color: 'var(--text-muted)' }}>
-                      No trend data for this period
-                    </div>
-                  )}
-                </div>
               </motion.div>
             ) : (
               <motion.div key="empty"
-                className="rounded-2xl p-8 flex flex-col items-center justify-center gap-2"
-                style={{ background: cardBg, border: cardBorder }}>
-                <Building2 size={24} style={{ color: 'var(--text-muted)' }} />
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Select a branch to view details</p>
+                className="rounded-2xl p-16 flex flex-col items-center justify-center gap-3"
+                style={{ background: card.bg, border: card.border }}>
+                <BarChart2 size={28} style={{ color: T.subtle }} />
+                <p className="text-sm" style={{ color: T.muted }}>Select a branch to view analytics</p>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* All-branches ranking chart */}
-          <motion.div variants={item} className="rounded-2xl p-5"
-            style={{ background: cardBg, backdropFilter: 'blur(20px)', border: cardBorder }}>
-            <div className="flex items-center justify-between mb-4">
+          {/* ── Revenue Ranking — All Branches ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="rounded-2xl p-6"
+            style={{ background: card.bg, border: card.border }}>
+            <div className="flex items-center justify-between mb-5">
               <div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <BarChart2 size={13} style={{ color: '#00b8e6' }} />
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    Revenue Ranking — All Branches
-                  </h3>
-                </div>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Top 10 branches by {PERIOD_TABS.find(t => t.key === period)?.label} revenue
+                <h3 className="text-sm font-semibold" style={{ color: isDark ? T.text : '#0F172A' }}>
+                  Revenue Ranking
+                </h3>
+                <p className="text-xs mt-0.5" style={{ color: T.muted }}>
+                  Top 10 branches · {PERIOD_TABS.find(t => t.key === period)?.label} revenue
                 </p>
               </div>
             </div>
-            <div className="h-40">
-              {listSkeleton ? (
-                <div className="h-full flex items-end gap-2">
-                  {[...Array(8)].map((_, i) => (
-                    <div key={i} className="flex-1 rounded-t animate-pulse"
-                      style={{ height: `${25 + i * 9}%`, background: 'rgba(0,184,230,0.10)' }} />
-                  ))}
-                </div>
-              ) : branches.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={branches.slice(0, 10).map(b => ({
-                      label: b.branch?.slice(0, 9) ?? '?',
-                      revenue: b.revenue,
-                    }))}
-                    margin={{ top: 5, right: 5, left: 0, bottom: 5 }}
-                    barSize={18}
-                  >
-                    <CartesianGrid strokeDasharray="3 3"
-                      stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} />
-                    <XAxis dataKey="label"
-                      tick={{ fill: 'var(--text-muted)', fontSize: 8 }}
-                      axisLine={false} tickLine={false} />
-                    <YAxis
-                      tick={{ fill: 'var(--text-muted)', fontSize: 9 }}
-                      axisLine={false} tickLine={false}
-                      tickFormatter={v => `₹${(v / 100000).toFixed(0)}L`} />
-                    <Tooltip formatter={(v: number) => [fmtRevenue(v), 'Revenue']}
-                      contentStyle={{
-                        background: isDark ? '#0f172a' : '#fff',
-                        border: cardBorder,
-                        borderRadius: 8,
-                        fontSize: 11,
-                        color: isDark ? '#e8eeff' : '#0f172a',
+
+            {/* Horizontal bar list */}
+            {listSkeleton ? (
+              <div className="flex flex-col gap-2.5">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-6 h-3 rounded animate-pulse" style={{ background: 'rgba(255,255,255,0.05)' }} />
+                    <div className="flex-1 h-8 rounded-xl animate-pulse" style={{ background: 'rgba(255,255,255,0.04)' }} />
+                    <div className="w-16 h-4 rounded animate-pulse" style={{ background: 'rgba(255,255,255,0.05)' }} />
+                  </div>
+                ))}
+              </div>
+            ) : branches.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {branches.slice(0, 10).map((b, i) => {
+                  const isSelected = selectedBranch?.branch === b.branch;
+                  const pct = (b.revenue / maxRevenue) * 100;
+                  const isAboveAvg = b.revenue >= avgRevenue;
+                  return (
+                    <motion.button key={b.branch} type="button"
+                      onClick={() => setSelectedBranch(b)}
+                      initial={{ opacity: 0, x: 8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.04 }}
+                      className="w-full flex items-center gap-3 rounded-xl px-3 py-2 text-left"
+                      style={{
+                        background: isSelected ? `${T.cyan}10` : 'transparent',
+                        border: isSelected ? `1px solid ${T.cyan}30` : '1px solid transparent',
                       }}
-                      labelStyle={{ color: isDark ? '#94a3b8' : '#64748b', fontWeight: 500 }}
-                      itemStyle={{ color: isDark ? '#00b8e6' : '#0369a1' }} />
-                    <Bar dataKey="revenue" radius={[4, 4, 0, 0]} opacity={0.85}
-                      fill="#00b8e6" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-xs"
-                  style={{ color: 'var(--text-muted)' }}>No data available</div>
-              )}
-            </div>
+                      whileHover={{ background: isSelected ? `${T.cyan}15` : 'rgba(255,255,255,0.03)' }}>
+                      {/* Rank */}
+                      <span className="text-[11px] font-bold tabular-nums w-6 shrink-0 text-right"
+                        style={{ color: i < 3 ? T.cyan : T.subtle }}>
+                        #{i + 1}
+                      </span>
+                      {/* Bar + name */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-semibold"
+                            style={{ color: isSelected ? T.cyan : isDark ? T.text : '#1E293B' }}>
+                            {b.branch}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {isAboveAvg
+                              ? <TrendingUp size={11} style={{ color: T.green }} />
+                              : <TrendingDown size={11} style={{ color: T.subtle }} />}
+                            <span className="text-[11px] font-bold tabular-nums" style={{ color: isSelected ? T.cyan : T.muted }}>
+                              {fmtRevenue(b.revenue)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden"
+                          style={{ background: 'rgba(255,255,255,0.06)' }}>
+                          <motion.div className="h-full rounded-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 0.6, delay: i * 0.04 }}
+                            style={{ background: isSelected ? T.cyan : i < 3 ? `${T.cyan}bb` : `${T.cyan}55` }} />
+                        </div>
+                      </div>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-10 text-center text-sm" style={{ color: T.muted }}>No branch data</div>
+            )}
           </motion.div>
 
-        </div>
-      </div>
-    </motion.div>
+        </div>{/* end right content */}
+      </div>{/* end grid */}
+    </div>
   );
 }

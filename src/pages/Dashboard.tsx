@@ -25,7 +25,7 @@ import {
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { useDashboardPage, summaryFromKpis, resolveTodaySummary, fetchAndApplySnapshot, useTransactions } from '../hooks/useAnalytics';
+import { useDashboardPage, summaryFromKpis, resolveTodaySummary, useTransactions } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtRupees, fmtSmart } from '../lib/format';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -316,11 +316,7 @@ export default function Dashboard() {
   const [spinning, setSpinning] = useState(false);
   const [now, setNow] = useState(new Date());
 
-  // ── Fire snapshot on mount — populates SWR cache instantly from server memory
-  // This ensures the dashboard renders real data on first paint with zero SQL delay.
-  useEffect(() => {
-    void fetchAndApplySnapshot();
-  }, []);
+  // ── Dashboard data loads via useDashboardPage → /analytics/dashboard-page
 
   // Live clock
   useEffect(() => {
@@ -334,8 +330,6 @@ export default function Dashboard() {
   } = useDashboardPage();
 
   const doRefresh = useCallback(() => {
-    // Re-fetch snapshot + full data on manual refresh
-    void fetchAndApplySnapshot();
     refetch();
     setSpinning(true);
     setTimeout(() => setSpinning(false), 900);

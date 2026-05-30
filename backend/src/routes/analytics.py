@@ -101,22 +101,16 @@ async def home_kpis(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-# ─── Fast bundle (one HTTP round-trip; server-side parallel SQL + cache) ─────
+# ─── Fast bundle (one HTTP round-trip; server-side parallel SQL) ───────────────
 
-@router.get("/bundle")
-async def analytics_bundle(
-    period: str = Query(default="mtd"),
-    top_n: int = Query(default=100, ge=1, le=100),
-    include_departments: bool = Query(default=False),
-    include_kpis: bool = Query(default=False),
-    user: TokenPayload = Depends(get_current_user),
+async def _fetch_analytics_bundle(
+    period: str,
+    top_n: int = 100,
+    *,
+    include_departments: bool = False,
+    include_kpis: bool = False,
 ) -> Dict[str, Any]:
-    """
-    Single request that runs branches, trend, categories, (optional) kpis and departments
-    in parallel on the server — same data as test/*_breakdown.py split mode, less HTTP overhead.
-    Whole response is cached (repeat calls ~instant when warm).
-    """
-    _validate_period(period)
+    """Run branches + trend + categories (+ optional kpis/depts) in parallel."""
     n = top_n
     specs: List[Tuple[str, Any]] = [
         ("branches", get_branch_chart(period)),
@@ -124,7 +118,7 @@ async def analytics_bundle(
         ("categories", get_category_breakdown(period, n)),
     ]
     if include_kpis:
-        specs.append(("kpis", get_home_kpis(period)))
+        specs.append(("kpis", get_home_kpis(period, include_customers=False)))
     if include_departments:
         specs.append(("departments", get_department_chart(period, n)))
 
@@ -140,43 +134,83 @@ async def analytics_bundle(
         except Exception as exc:
             return name, exc, round((time.perf_counter() - t0) * 1000, 1)
 
+    results = await asyncio.gather(*[_timed(name, coro) for name, coro in specs])
+    for name, outcome, ms in results:
+        timings_ms[name] = ms
+        if isinstance(outcome, Exception):
+            errors[name] = str(outcome)
+            logger.warning("Bundle partial failure", period=period, key=name, error=str(outcome))
+            continue
+        if name == "kpis":
+            payload["kpis"] = outcome
+        elif name == "trend":
+            payload["trend"] = outcome
+        else:
+            payload[name] = outcome
+
+    if errors:
+        payload["errors"] = errors
+    payload["timings_ms"] = timings_ms
+
+    required = {"branches", "trend", "categories"}
+    missing = required - {k for k in required if k in payload}
+    if missing:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Bundle missing required keys: {sorted(missing)}. Errors: {errors}",
+        )
     try:
-        results = await asyncio.gather(*[_timed(name, coro) for name, coro in specs])
-        for name, outcome, ms in results:
-            timings_ms[name] = ms
-            if isinstance(outcome, Exception):
-                errors[name] = str(outcome)
-                logger.warning("Bundle partial failure", period=period, key=name, error=str(outcome))
-                continue
-            if name == "kpis":
-                payload["kpis"] = outcome
-            elif name == "trend":
-                payload["trend"] = outcome
-            else:
-                payload[name] = outcome
+        prime_chart_caches_from_bundle(period, payload, top_n=n)
+    except Exception:
+        pass
+    return payload
 
-        if errors:
-            payload["errors"] = errors
-        payload["timings_ms"] = timings_ms
 
-        required = {"branches", "trend", "categories"}
-        missing = required - {k for k in required if k in payload}
-        if missing:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Bundle missing required keys: {sorted(missing)}. Errors: {errors}",
-            )
-        # Seed the chart/kpi cache keys that auto_insights reads so the AI
-        # Insights page works immediately after any bundle call.
-        try:
-            prime_chart_caches_from_bundle(period, payload, top_n=n)
-        except Exception:
-            pass
-        return payload
+@router.get("/bundle")
+async def analytics_bundle(
+    period: str = Query(default="mtd"),
+    top_n: int = Query(default=100, ge=1, le=100),
+    include_departments: bool = Query(default=False),
+    include_kpis: bool = Query(default=False),
+    user: TokenPayload = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    Single request: branches, trend, categories, optional KPIs/departments
+    in parallel on the server — one HTTP round-trip for a full analytics slice.
+    """
+    _validate_period(period)
+    try:
+        return await _fetch_analytics_bundle(
+            period,
+            top_n,
+            include_departments=include_departments,
+            include_kpis=include_kpis,
+        )
     except HTTPException:
         raise
     except Exception as exc:
         logger.error("Bundle fetch failed", period=period, error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/dashboard-page")
+async def dashboard_page(
+    user: TokenPayload = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    One HTTP call for the home dashboard: MTD + Today bundles (with KPIs) in parallel.
+    Replaces separate /bundle, /kpis, and /dashboard calls from the frontend.
+    """
+    try:
+        mtd, today = await asyncio.gather(
+            _fetch_analytics_bundle("mtd", 100, include_kpis=True),
+            _fetch_analytics_bundle("today", 10, include_kpis=True),
+        )
+        return {"success": True, "mtd": mtd, "today": today}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Dashboard page fetch failed", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

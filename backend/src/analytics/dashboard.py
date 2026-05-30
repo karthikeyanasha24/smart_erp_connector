@@ -80,7 +80,6 @@ async def _query_summary(dr: DateRange, ly_dr: DateRange) -> Dict[str, Any]:
         FROM {table} WITH (NOLOCK)
         WHERE [{date_col}] >= @lyStart
           AND [{date_col}] < DATEADD(day,1,CAST(@endDate AS DATE))
-        OPTION (RECOMPILE)
     """
     result = await execute_query(
         sql,
@@ -90,7 +89,7 @@ async def _query_summary(dr: DateRange, ly_dr: DateRange) -> Dict[str, Any]:
             "lyStart": ly_dr.start,
             "lyEnd": ly_dr.end,
         },
-        nolock=False,
+        nolock=True,
         recompile=False,
     )
     row = result["records"][0] if result["records"] else {}
@@ -128,7 +127,6 @@ async def _query_customers(dr: DateRange) -> Optional[int]:
         FROM {sql_table(c.SALES_VIEW)} WITH (NOLOCK)
         WHERE [{c.SALES_FILTER_DATE_COLUMN}] >= @startDate
           AND [{c.SALES_FILTER_DATE_COLUMN}] < DATEADD(day,1,CAST(@endDate AS DATE))
-        OPTION (RECOMPILE)
     """
     try:
         result = await execute_query(
@@ -157,12 +155,24 @@ async def _query_customers(dr: DateRange) -> Optional[int]:
 
 
 async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> List[Dict[str, Any]]:
+    """Single table scan for current + prior-year trend (was two separate queries)."""
     c = cfg
     table = sql_table(c.SALES_AI_TABLE)
     date_col = c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN
     amt_col = c.SALES_ANALYTICS_AMOUNT_COLUMN
     qty_col = quantity_column()
-    bills_agg = transactions_aggregate()
+    end_curr = "DATEADD(day,1,CAST(@endDate AS DATE))"
+    end_ly = "DATEADD(day,1,CAST(@lyEnd AS DATE))"
+    curr_win = f"[{date_col}] >= @startDate AND [{date_col}] < {end_curr}"
+    ly_win = f"[{date_col}] >= @lyStart AND [{date_col}] < {end_ly}"
+
+    if c.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
+        bills_expr = f"SUM(CASE WHEN {curr_win} THEN 1 ELSE 0 END)"
+    else:
+        bc = c.SALES_ANALYTICS_BILL_COUNT_COLUMN
+        bills_expr = (
+            f"SUM(CASE WHEN {curr_win} THEN [{bc}] ELSE 0 END)"
+        )
 
     if granularity == "month":
         period_expr = f"FORMAT([{date_col}], 'yyyy-MM')"
@@ -171,57 +181,48 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
         period_expr = f"CAST([{date_col}] AS DATE)"
         label_expr = f"FORMAT(CAST([{date_col}] AS DATE), 'dd-MMM')"
 
-    sql_curr = f"""
+    sql = f"""
         SELECT
             {period_expr} AS PeriodKey,
             MIN({label_expr}) AS Label,
-            SUM([{amt_col}]) AS Revenue,
-            {bills_agg} AS Bills,
-            SUM([{qty_col}]) AS Quantity
-        FROM {table} WITH (NOLOCK)
-        WHERE [{date_col}] >= @startDate
-          AND [{date_col}] < DATEADD(day,1,CAST(@endDate AS DATE))
-        GROUP BY {period_expr}
-        ORDER BY PeriodKey ASC
-        OPTION (RECOMPILE)
-    """
-    sql_ly = f"""
-        SELECT
-            {period_expr} AS PeriodKey,
-            SUM([{amt_col}]) AS Revenue
+            SUM(CASE WHEN {curr_win} THEN [{amt_col}] ELSE 0 END) AS Revenue,
+            SUM(CASE WHEN {ly_win} THEN [{amt_col}] ELSE 0 END) AS PriorRevenue,
+            {bills_expr} AS Bills,
+            SUM(CASE WHEN {curr_win} THEN [{qty_col}] ELSE 0 END) AS Quantity
         FROM {table} WITH (NOLOCK)
         WHERE [{date_col}] >= @lyStart
-          AND [{date_col}] < DATEADD(day,1,CAST(@lyEnd AS DATE))
+          AND [{date_col}] < {end_curr}
         GROUP BY {period_expr}
         ORDER BY PeriodKey ASC
-        OPTION (RECOMPILE)
     """
-
-    curr_res, ly_res = await asyncio.gather(
-        execute_query(
-            sql_curr,
-            params={"startDate": dr.start, "endDate": dr.end},
-            nolock=False,
-            recompile=False,
-        ),
-        execute_query(
-            sql_ly,
-            params={"lyStart": ly_dr.start, "lyEnd": ly_dr.end},
-            nolock=False,
-            recompile=False,
-        ),
+    result = await execute_query(
+        sql,
+        params={
+            "startDate": dr.start,
+            "endDate": dr.end,
+            "lyStart": ly_dr.start,
+            "lyEnd": ly_dr.end,
+        },
+        nolock=True,
+        recompile=False,
     )
 
     ly_map: Dict[str, float] = {}
-    for r in ly_res["records"]:
+    for r in result["records"]:
         key = _period_key(r.get("PeriodKey"))
-        if granularity == "month" and len(key) >= 7:
-            ly_map[key[5:7]] = _safe_float(r.get("Revenue"))
-        else:
-            ly_map[key] = _safe_float(r.get("Revenue"))
+        ly_val = _safe_float(r.get("PriorRevenue"))
+        if ly_val > 0:
+            if granularity == "month" and len(key) >= 7:
+                ly_map[key[5:7]] = ly_val
+            else:
+                ly_map[key] = ly_val
 
     points: List[Dict[str, Any]] = []
-    for r in curr_res["records"]:
+    for r in result["records"]:
+        curr = _safe_float(r.get("Revenue"))
+        bills = int(_safe_float(r.get("Bills")))
+        if curr == 0 and bills == 0:
+            continue
         key = _period_key(r.get("PeriodKey"))
         label = str(r.get("Label", key))
         if granularity == "month" and len(key) >= 7:
@@ -236,9 +237,9 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
         points.append({
             "label": label,
             "date": key,
-            "current": _safe_float(r.get("Revenue")),
+            "current": curr,
             "prior": prior,
-            "bills": int(_safe_float(r.get("Bills"))),
+            "bills": bills,
             "quantity": _safe_float(r.get("Quantity")),
         })
     return points
@@ -256,12 +257,11 @@ async def _query_contribution(dr: DateRange, dim: str, limit: int = 50) -> List[
           AND [{c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN}] < DATEADD(day,1,CAST(@endDate AS DATE))
         GROUP BY [{col}]
         ORDER BY Revenue DESC
-        OPTION (RECOMPILE)
     """
     result = await execute_query(
         sql,
         params={"startDate": dr.start, "endDate": dr.end},
-        nolock=False,
+        nolock=True,
         recompile=False,
     )
     rows = result["records"]

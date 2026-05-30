@@ -52,7 +52,6 @@ async def get_revenue_trend(period: str = "last_30d") -> List[Dict[str, Any]]:
                   AND [{dc}] < DATEADD(day,1,CAST(@endDate AS DATE))
                 GROUP BY {period_expr}
                 ORDER BY PeriodKey ASC
-                OPTION (RECOMPILE)
             """
             result = await execute_query(
                 sql, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False,
@@ -79,7 +78,6 @@ async def get_revenue_trend(period: str = "last_30d") -> List[Dict[str, Any]]:
               AND [{dc}] < DATEADD(day,1,CAST(@endDate AS DATE))
             GROUP BY CAST([{dc}] AS DATE)
             ORDER BY TransactionDate ASC
-            OPTION (RECOMPILE)
         """
         result = await execute_query(
             sql, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False,
@@ -122,7 +120,6 @@ async def get_category_breakdown(period: str = "mtd", top_n: Optional[int] = Non
               AND [{dc}] < DATEADD(day,1,CAST(@endDate AS DATE))
             GROUP BY [{c.SALES_ANALYTICS_CATEGORY_DIM}]
             ORDER BY Revenue DESC
-            OPTION (RECOMPILE)
         """
         result = await execute_query(sql, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False)
         return [
@@ -156,7 +153,6 @@ async def get_branch_chart(period: str = "mtd") -> List[Dict[str, Any]]:
               AND [{dc}] < DATEADD(day,1,CAST(@endDate AS DATE))
             GROUP BY [{c.SALES_ANALYTICS_BRANCH_DIM}]
             ORDER BY Revenue DESC
-            OPTION (RECOMPILE)
         """
         result = await execute_query(sql, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False)
         return [
@@ -192,7 +188,6 @@ async def get_department_chart(period: str = "mtd", top_n: Optional[int] = None)
             GROUP BY [{c.SALES_ANALYTICS_DEPARTMENT_DIM}]
             HAVING SUM([{c.SALES_ANALYTICS_AMOUNT_COLUMN}]) > 0
             ORDER BY Revenue DESC
-            OPTION (RECOMPILE)
         """
         result = await execute_query(sql, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False)
         rows: List[Dict[str, Any]] = []
@@ -233,7 +228,6 @@ async def get_top_salespersons(period: str = "mtd", top_n: int = 10) -> List[Dic
               AND [{c.SALESPERSON_DATE_COLUMN}] < DATEADD(day,1,CAST(@endDate AS DATE))
             GROUP BY SalesPersonName, BranchAlias
             ORDER BY Revenue DESC
-            OPTION (RECOMPILE)
         """
         result = await execute_query(sql, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False)
         return [
@@ -268,7 +262,6 @@ async def get_hourly_heatmap(period: str = "last_30d") -> List[Dict[str, Any]]:
               AND [{dc}] < DATEADD(day,1,CAST(@endDate AS DATE))
             GROUP BY DATEPART(HOUR, [{dc}]), DATEPART(WEEKDAY, [{dc}])
             ORDER BY DayOfWeek, HourOfDay
-            OPTION (RECOMPILE)
         """
         result = await execute_query(sql, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False)
         day_names = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -304,7 +297,6 @@ async def get_branch_detail(branch_alias: str, period: str = "last_14d") -> Dict
           AND [{c.SALES_ANALYTICS_BRANCH_DIM}] = @branch
         GROUP BY CAST([{dc}] AS DATE)
         ORDER BY TransactionDate ASC
-        OPTION (RECOMPILE)
     """
 
     result = await execute_query(

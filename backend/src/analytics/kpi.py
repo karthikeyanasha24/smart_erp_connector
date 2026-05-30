@@ -62,7 +62,6 @@ async def _fetch_revenue_kpi(period: str) -> Dict[str, Any]:
                      THEN [{qty_col}] ELSE 0 END), 0) AS PriorQuantity
         FROM {table} WITH (NOLOCK)
         WHERE [{date_col}] >= @priorStart AND [{date_col}] <= @endDate
-        OPTION (RECOMPILE)
     """
 
     result = await execute_query(
@@ -140,7 +139,6 @@ async def _fetch_customer_kpi(period: str) -> Dict[str, Any]:
         FROM {table} WITH (NOLOCK)
         WHERE CAST([{date_col}] AS DATE) >= @priorStart
           AND CAST([{date_col}] AS DATE) <= @endDate
-        OPTION (RECOMPILE)
     """
 
     result = await execute_query(
@@ -172,17 +170,23 @@ async def _fetch_customer_kpi(period: str) -> Dict[str, Any]:
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
-async def get_home_kpis(period: str = "mtd") -> Dict[str, Any]:
-    """Returns all home-screen KPIs for the given period — always live from SQL Server."""
+async def get_home_kpis(
+    period: str = "mtd",
+    *,
+    include_customers: bool = False,
+) -> Dict[str, Any]:
+    """Returns home-screen KPIs for the given period — live from SQL Server."""
     try:
         revenue_task = asyncio.create_task(_fetch_revenue_kpi(period))
-        customer_task = asyncio.create_task(_fetch_customer_kpi(period))
+        tasks: list[Any] = [revenue_task]
+        customer_task = None
+        if include_customers:
+            customer_task = asyncio.create_task(_fetch_customer_kpi(period))
+            tasks.append(customer_task)
 
-        rev_data, cust_data = await asyncio.gather(
-            revenue_task,
-            customer_task,
-            return_exceptions=True,
-        )
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        rev_data = results[0]
+        cust_data = results[1] if customer_task else None
 
         result: Dict[str, Any] = {}
 
@@ -199,7 +203,7 @@ async def get_home_kpis(period: str = "mtd") -> Dict[str, Any]:
 
         if isinstance(cust_data, dict):
             result.update(cust_data)
-        else:
+        elif include_customers:
             result["customers"] = None
 
         return result

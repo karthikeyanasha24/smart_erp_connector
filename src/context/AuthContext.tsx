@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { auth, setAuthToken, clearAuthToken, getAuthToken } from '../lib/api';
-import { clearAnalyticsCache, fetchAndApplySnapshot } from '../hooks/useAnalytics';
+import { clearAnalyticsCache, prefetchCriticalDashboard } from '../hooks/useAnalytics';
 
 export interface AuthUser {
   id: string;
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(r.user);
           writeCachedUser(r.user);
           // Background data prefetch (non-blocking)
-          void fetchAndApplySnapshot();
+          void prefetchCriticalDashboard();
         })
         .catch(() => {
           // Token is invalid — sign out silently
@@ -101,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .then((r) => {
           setUser(r.user);
           writeCachedUser(r.user);
-          void fetchAndApplySnapshot();
+          void prefetchCriticalDashboard();
         })
         .catch(() => {
           clearAuthToken();
@@ -120,10 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const u = res.user as AuthUser;
     setUser(u);
     writeCachedUser(u);
-    void fetchAndApplySnapshot().then(() => {
-      void prefetchCriticalDashboard();
-      void prefetchAll();
-    });
+    void prefetchCriticalDashboard();
   }, []);
 
   const logout = useCallback(() => {

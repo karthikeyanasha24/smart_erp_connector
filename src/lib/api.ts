@@ -109,6 +109,12 @@ export interface AnalyticsBundleResponse {
   errors?: Record<string, string>;
 }
 
+export interface DashboardPageResponse {
+  success: boolean;
+  mtd: AnalyticsBundleResponse;
+  today: AnalyticsBundleResponse;
+}
+
 export interface CategoryPoint {
   category: string;
   revenue: number;
@@ -420,6 +426,10 @@ export const analytics = {
     qs.set('include_kpis', opts?.includeKpis ? 'true' : 'false');
     return apiFetchDeduped<AnalyticsBundleResponse>(`/analytics/bundle?${qs}`, { timeoutMs: 600_000 });
   },
+
+  /** One HTTP call: MTD + Today bundles with KPIs (home dashboard). */
+  dashboardPage: () =>
+    apiFetchDeduped<DashboardPageResponse>('/analytics/dashboard-page', { timeoutMs: 600_000 }),
 
   departments: (period = 'mtd', topN = 10) =>
     apiFetchDeduped<{ success: boolean; period: string; departments: DeptPoint[] }>(
