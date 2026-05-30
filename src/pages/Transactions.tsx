@@ -166,7 +166,12 @@ export default function Transactions() {
     return { pending, failed };
   }, [transactions]);
 
-  const completedDisplay = summaryLoading ? '…' : fmtCount(summary.total_transactions);
+  // Use list totalCount as fallback for "completed" when the fast-view summary
+  // disagrees (CashmemoDt vs XnDt date-column mismatch across ERP views).
+  const effectiveTotalTxns = (!summaryLoading && summary.total_transactions > 0)
+    ? summary.total_transactions
+    : (!txnLoading && totalCount > 0 ? totalCount : summary.total_transactions);
+  const completedDisplay = (summaryLoading && txnLoading) ? '…' : fmtCount(effectiveTotalTxns);
   const pendingDisplay = txnLoading ? '…' : fmtCount(pageStatusCounts.pending);
   const failedDisplay = txnLoading ? '…' : fmtCount(pageStatusCounts.failed);
 

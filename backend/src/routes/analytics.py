@@ -39,6 +39,7 @@ from src.analytics.products_catalog import fetch_product_catalog, fetch_top_prod
 from src.analytics.transactions import get_transactions, get_transaction_summary
 from src.analytics.view_explorer import fetch_view_page, list_catalog_views
 from src.analytics.concurrency import run_analytics_sql
+from src.analytics.cache_prime import prime_chart_caches_from_bundle
 from src.analytics.dashboard import get_dashboard
 from src.db.mssql import check_mssql_health
 from src.middleware.auth import get_current_user, require_permission, require_roles
@@ -165,6 +166,12 @@ async def analytics_bundle(
                 status_code=500,
                 detail=f"Bundle missing required keys: {sorted(missing)}. Errors: {errors}",
             )
+        # Seed the chart/kpi cache keys that auto_insights reads so the AI
+        # Insights page works immediately after any bundle call.
+        try:
+            prime_chart_caches_from_bundle(period, payload, top_n=n)
+        except Exception:
+            pass
         return payload
     except HTTPException:
         raise
@@ -359,9 +366,8 @@ async def views_query(
         # Do not use run_analytics_sql — view browse must not queue behind dashboard warmup.
         data = await fetch_view_page(view, page, page_size, skip_count=skip_count)
         return {"success": True, **data}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.error("views_query_failed", view=view, page=page, error=str(exc))
+        logger.error("views_query_failed", view=view, error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
-

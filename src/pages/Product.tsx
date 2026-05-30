@@ -69,6 +69,7 @@ export default function Product() {
   const [topProducts, setTopProducts] = useState<TopProductRow[]>(_cachedTop?.products ?? []);
   const [topLoading, setTopLoading] = useState(!_cachedTop);
   const [topError, setTopError] = useState<string | null>(null);
+  const [topSlowQuery, setTopSlowQuery] = useState(false);
 
   const { categories, loading: catLoading, refetch: refetchCat, fromApi: catFromApi } = useCategories(period, 8);
 
@@ -129,6 +130,9 @@ export default function Product() {
 
     setTopLoading(true);
     setTopError(null);
+    setTopSlowQuery(false);
+    // Warn user after 8 seconds that this query is slow (item-master view)
+    const slowTimer = setTimeout(() => setTopSlowQuery(true), 8000);
     try {
       const res = await analytics.topProducts(period, 15);
       setTopProducts(res.products ?? []);
@@ -136,7 +140,9 @@ export default function Product() {
       setTopProducts([]);
       setTopError(e instanceof Error ? e.message : 'Top products unavailable');
     } finally {
+      clearTimeout(slowTimer);
       setTopLoading(false);
+      setTopSlowQuery(false);
     }
   }, [period]);
 
@@ -300,16 +306,25 @@ export default function Product() {
                 </tr>
               </thead>
               <tbody>
+                {topLoading && topSlowQuery && (
+                  <tr>
+                    <td colSpan={6} className="py-2 px-2 text-center text-xs" style={{ color: '#f59e0b' }}>
+                      ⏳ Querying item-level data… this view is slow. Please wait.
+                    </td>
+                  </tr>
+                )}
                 {topLoading && topProducts.length === 0 ? (
-                  [...Array(8)].map((_, i) => (
-                    <tr key={i}>
-                      {[...Array(6)].map((__, j) => (
-                        <td key={j} className="py-2 px-2">
-                          <div className="h-2.5 rounded animate-pulse" style={{ background: 'rgba(128,128,128,0.12)' }} />
-                        </td>
-                      ))}
-                    </tr>
-                  ))
+                  <>
+                    {[...Array(8)].map((_, i) => (
+                      <tr key={i}>
+                        {[...Array(6)].map((__, j) => (
+                          <td key={j} className="py-2 px-2">
+                            <div className="h-2.5 rounded animate-pulse" style={{ background: 'rgba(128,128,128,0.12)' }} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </>
                 ) : topProducts.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>No product sales for this period</td>

@@ -1,11 +1,14 @@
 """
 SQL Generation Engine
 Converts a structured intent + date range into a validated T-SQL query
-using Claude with schema-catalog context and few-shot examples.
+using Claude with schema-catalog context, live routing hints, and few-shot examples.
 
-Schema context is now driven by schema_catalog.json (28 real ERP views) —
-the AI receives exact column names and table names, enabling accurate SQL
-for any question about sales, stock, purchases, customers, salespersons, etc.
+Improvements:
+- Routing hints from schema_index.json (live-probed column names) injected into
+  every prompt so Claude uses exact view+column from the actual DB.
+- Few-shot examples corrected to fast-view columns (SalesNetAmount/CashmemoDt/SalesQuantity).
+- generate_sql_template pulls column names from the routing map dynamically.
+- Salesperson template uses correct columns (SalesPersonName/CashmemoDt/SalesNetAmount).
 """
 
 from __future__ import annotations
@@ -13,7 +16,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Dict, Optional
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 import anthropic
 
@@ -34,70 +39,154 @@ class GeneratedSQL:
     uses_date_range: bool
 
 
-# ─── Few-Shot Examples (covers all major query domains) ──────────────────────
+# ─── Live Routing Map (from schema_index.json) ────────────────────────────────
+
+_INDEX_PATH = Path(__file__).parent.parent / "schema_index.json"
+
+
+@lru_cache(maxsize=1)
+def _load_routing() -> Dict[str, Any]:
+    try:
+        with open(_INDEX_PATH, encoding="utf-8") as f:
+            return json.load(f).get("routing", {})
+    except Exception:
+        return {}
+
+
+def _sales_route() -> Dict[str, Any]:
+    return _load_routing().get("sales_main", {})
+
+
+def build_routing_hints() -> str:
+    routing = _load_routing()
+    if not routing:
+        return ""
+
+    lines = ["## Live Routing Hints (probed from actual database — use these exactly)", ""]
+    label_map = {
+        "sales_main":          "General sales / revenue queries (MTD, YTD, QTD, last N days)",
+        "today_sales":         "Today sales (same view as sales_main, filter date_col = today)",
+        "salesperson":         "Salesperson performance queries",
+        "stock":               "Stock / inventory queries",
+        "stock_transfers_out": "Stock transfers OUT between branches",
+        "stock_transfers_in":  "Stock transfers IN between branches",
+        "product_master":      "Product catalog / item master queries",
+    }
+
+    for key, route in routing.items():
+        lines.append(f"### {label_map.get(key, key)}")
+        if v := route.get("view"):
+            lines.append(f"  - View: `{v}`")
+        if c := route.get("date_col"):
+            lines.append(f"  - Date column (WHERE filter): `{c}`")
+        if c := route.get("amount_col"):
+            lines.append(f"  - Revenue column: `{c}`")
+        if c := route.get("quantity_col"):
+            lines.append(f"  - Quantity column: `{c}`")
+        if c := route.get("bill_count_col"):
+            lines.append(f"  - Bill count column: `{c}`")
+        elif route.get("bill_count_mode") == "rows":
+            lines.append("  - Bill count: COUNT(DISTINCT [CashmemoNo]) — no dedicated column")
+        if c := route.get("branch_col"):
+            lines.append(f"  - Branch column: `{c}`")
+        if c := route.get("category_col"):
+            lines.append(f"  - Category column: `{c}`")
+        if c := route.get("department_col"):
+            lines.append(f"  - Department column: `{c}`")
+        if c := route.get("item_id_col"):
+            lines.append(f"  - Item ID column: `{c}`")
+        if c := route.get("item_name_col"):
+            lines.append(f"  - Item name column: `{c}`")
+        if c := route.get("mrp_col"):
+            lines.append(f"  - MRP column: `{c}`")
+        if c := route.get("purchase_price_col"):
+            lines.append(f"  - Purchase price column: `{c}`")
+        lines.append("")
+
+    lines.append("**IMPORTANT**: Always use the exact column names above. Do not substitute aliases or alternative names.")
+    return "\n".join(lines)
+
+
+# ─── Few-Shot Examples ────────────────────────────────────────────────────────
+# Uses fast view (VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID):
+#   date=CashmemoDt, amount=SalesNetAmount, qty=SalesQuantity
+#   branch=BranchAlias, category=CategoryShortName, dept=DepartmentShortName
+#   salesperson=SalesPersonName, bill=COUNT(DISTINCT CashmemoNo)
 
 _FEW_SHOT = """
 ## Few-Shot Examples
 
 ### Example 1 — MTD revenue by branch
 Query: "Sales by branch this month"
-{"sql": "SELECT [BranchAlias] AS Branch, SUM([NetSlsNetAmount]) AS Revenue, SUM([BillCount]) AS Transactions FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate GROUP BY [BranchAlias] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "MTD revenue by branch", "estimatedRows": "few"}
+{"sql": "SELECT [BranchAlias] AS Branch, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, COUNT(DISTINCT [CashmemoNo]) AS Transactions, SUM([SalesQuantity]) AS Quantity FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [BranchAlias] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "MTD revenue by branch", "estimatedRows": "few"}
 
 ### Example 2 — Daily revenue trend
 Query: "Daily sales trend last 30 days"
-{"sql": "SELECT CAST([XnDt] AS DATE) AS TransactionDate, SUM([NetSlsNetAmount]) AS Revenue, SUM([BillCount]) AS Transactions FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate GROUP BY CAST([XnDt] AS DATE) ORDER BY TransactionDate ASC OPTION (RECOMPILE)", "description": "Daily revenue trend", "estimatedRows": "moderate"}
+{"sql": "SELECT CAST([CashmemoDt] AS DATE) AS TransactionDate, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, COUNT(DISTINCT [CashmemoNo]) AS Transactions FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY CAST([CashmemoDt] AS DATE) ORDER BY TransactionDate ASC OPTION (RECOMPILE)", "description": "Daily revenue trend", "estimatedRows": "moderate"}
 
 ### Example 3 — Top 5 categories
 Query: "Top 5 categories by revenue YTD"
-{"sql": "SELECT TOP 5 [CategoryShortName] AS Category, SUM([NetSlsNetAmount]) AS Revenue, SUM([AppQty]) AS Quantity FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate GROUP BY [CategoryShortName] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Top 5 categories YTD", "estimatedRows": "few"}
+{"sql": "SELECT TOP 5 [CategoryShortName] AS Category, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, SUM([SalesQuantity]) AS Quantity FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [CategoryShortName] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Top 5 categories YTD", "estimatedRows": "few"}
 
 ### Example 4 — Total KPI
 Query: "Total sales this quarter"
-{"sql": "SELECT ISNULL(SUM([NetSlsNetAmount]), 0) AS TotalRevenue, SUM([BillCount]) AS TotalTransactions, SUM([AppQty]) AS TotalQuantity FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate OPTION (RECOMPILE)", "description": "Total revenue QTD", "estimatedRows": "few"}
+{"sql": "SELECT ISNULL(SUM([SalesNetAmount]), 0) AS TotalRevenue, COUNT(DISTINCT [CashmemoNo]) AS TotalTransactions, SUM([SalesQuantity]) AS TotalQuantity FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate OPTION (RECOMPILE)", "description": "Total revenue QTD", "estimatedRows": "few"}
 
 ### Example 5 — Category breakdown with %
 Query: "Revenue breakdown by category this month"
-{"sql": "SELECT [CategoryShortName] AS Category, SUM([NetSlsNetAmount]) AS Revenue, CAST(SUM([NetSlsNetAmount]) * 100.0 / NULLIF(SUM(SUM([NetSlsNetAmount])) OVER (), 0) AS DECIMAL(10,2)) AS Percentage FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate GROUP BY [CategoryShortName] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Category revenue share MTD", "estimatedRows": "few"}
+{"sql": "SELECT [CategoryShortName] AS Category, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, CAST(ISNULL(SUM([SalesNetAmount]), 0) * 100.0 / NULLIF(SUM(SUM([SalesNetAmount])) OVER (), 0) AS DECIMAL(10,2)) AS Percentage FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [CategoryShortName] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Category revenue share MTD", "estimatedRows": "few"}
 
 ### Example 6 — Salesperson performance
 Query: "Top 10 salespersons by revenue this month"
-{"sql": "SELECT TOP 10 [SalesPersonName] AS Salesperson, [BranchAlias] AS Branch, SUM([NetAmount]) AS Revenue, COUNT(DISTINCT [XnId]) AS Transactions FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [XnMemoDate] >= @startDate AND [XnMemoDate] <= @endDate GROUP BY [SalesPersonName], [BranchAlias] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Top 10 salespersons by revenue", "estimatedRows": "few"}
+{"sql": "SELECT TOP 10 [SalesPersonName] AS Salesperson, [BranchAlias] AS Branch, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, COUNT(DISTINCT [CashmemoNo]) AS Transactions FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [SalesPersonName], [BranchAlias] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Top 10 salespersons by revenue", "estimatedRows": "few"}
 
-### Example 7 — Stock on hand by category
+### Example 7 — Department breakdown
+Query: "Revenue by department this year"
+{"sql": "SELECT [DepartmentShortName] AS Department, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, SUM([SalesQuantity]) AS Quantity, COUNT(DISTINCT [CashmemoNo]) AS Transactions FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [DepartmentShortName] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Revenue by department YTD", "estimatedRows": "few"}
+
+### Example 8 — Discount analysis (MRP vs Net)
+Query: "Discount given this month — MRP vs net sales"
+{"sql": "SELECT [BranchAlias] AS Branch, ISNULL(SUM([ItemMRP] * [SalesQuantity]), 0) AS TotalMRP, ISNULL(SUM([SalesNetAmount]), 0) AS NetRevenue, ISNULL(SUM([ItemMRP] * [SalesQuantity]) - SUM([SalesNetAmount]), 0) AS TotalDiscount, CAST(ISNULL((SUM([ItemMRP] * [SalesQuantity]) - SUM([SalesNetAmount])) * 100.0 / NULLIF(SUM([ItemMRP] * [SalesQuantity]), 0), 0) AS DECIMAL(10,2)) AS DiscountPct FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [BranchAlias] ORDER BY DiscountPct DESC OPTION (RECOMPILE)", "description": "Discount analysis by branch MTD", "estimatedRows": "few"}
+
+### Example 9 — Stock on hand by category
 Query: "Current stock by category"
 {"sql": "SELECT [CategoryShortName] AS Category, SUM([ClosingQty]) AS OnHandQty, SUM([ClosingValue]) AS StockValue FROM [dbo].[VW_MB_POWERBI_STOCK_REPORT] WITH (NOLOCK) GROUP BY [CategoryShortName] ORDER BY StockValue DESC OPTION (RECOMPILE)", "description": "Stock on hand by category", "estimatedRows": "few"}
 
-### Example 8 — Purchase by supplier
+### Example 10 — Purchase by supplier
 Query: "Purchases from each supplier this month"
 {"sql": "SELECT [SupplierAlias] AS Supplier, [SupplierName] AS SupplierFullName, SUM([NetAmount]) AS PurchaseValue, SUM([Qty]) AS PurchaseQty FROM [dbo].[VW_MB_POWERBI_PUR_REPORT] WITH (NOLOCK) WHERE [PurDate] >= @startDate AND [PurDate] <= @endDate GROUP BY [SupplierAlias], [SupplierName] ORDER BY PurchaseValue DESC OPTION (RECOMPILE)", "description": "Purchase by supplier MTD", "estimatedRows": "few"}
 
-### Example 9 — New customers this month
+### Example 11 — New customers
 Query: "How many new customers registered this month?"
 {"sql": "SELECT COUNT(DISTINCT [CustomerId]) AS NewCustomers, COUNT(DISTINCT [BranchName]) AS BranchesWithSignups FROM [dbo].[VwAICustomerDetails] WITH (NOLOCK) WHERE [CreatedOn] >= @startDate AND [CreatedOn] <= @endDate OPTION (RECOMPILE)", "description": "New customer signups MTD", "estimatedRows": "few"}
 
-### Example 10 — CTE: negative growth categories
+### Example 12 — CTE: negative growth categories
 Query: "Which categories are showing negative growth trends?"
-{"sql": ";WITH CurPeriod AS (SELECT [CategoryShortName] AS Category, SUM([NetSlsNetAmount]) AS Revenue FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate GROUP BY [CategoryShortName]), PriorPeriod AS (SELECT [CategoryShortName] AS Category, SUM([NetSlsNetAmount]) AS Revenue FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= DATEADD(MONTH, -1, @startDate) AND [XnDt] < @startDate GROUP BY [CategoryShortName]) SELECT c.Category, c.Revenue AS CurrentRevenue, ISNULL(p.Revenue, 0) AS PriorRevenue, CAST((c.Revenue - ISNULL(p.Revenue, 0)) * 100.0 / NULLIF(p.Revenue, 0) AS DECIMAL(10,2)) AS GrowthPct FROM CurPeriod c LEFT JOIN PriorPeriod p ON c.Category = p.Category WHERE c.Revenue < ISNULL(p.Revenue, 0) ORDER BY GrowthPct ASC OPTION (RECOMPILE)", "description": "Categories with negative growth vs prior period", "estimatedRows": "few"}
+{"sql": ";WITH CurPeriod AS (SELECT [CategoryShortName] AS Category, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [CategoryShortName]), PriorPeriod AS (SELECT [CategoryShortName] AS Category, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= DATEADD(MONTH, -1, @startDate) AND [CashmemoDt] < @startDate GROUP BY [CategoryShortName]) SELECT c.Category, c.Revenue AS CurrentRevenue, ISNULL(p.Revenue, 0) AS PriorRevenue, CAST((c.Revenue - ISNULL(p.Revenue, 0)) * 100.0 / NULLIF(p.Revenue, 0) AS DECIMAL(10,2)) AS GrowthPct FROM CurPeriod c LEFT JOIN PriorPeriod p ON c.Category = p.Category WHERE c.Revenue < ISNULL(p.Revenue, 0) ORDER BY GrowthPct ASC OPTION (RECOMPILE)", "description": "Categories with negative growth vs prior period", "estimatedRows": "few"}
 
-### Example 11 — Peak billing hours
-Query: "Peak sales hours / peak billing time analysis"
-{"sql": ";WITH HourlyBilling AS (SELECT DATEPART(HOUR, [XnDt]) AS BillHour, SUM([BillCount]) AS TotalBills, SUM([NetSlsNetAmount]) AS Revenue FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate GROUP BY DATEPART(HOUR, [XnDt])) SELECT BillHour, TotalBills, Revenue, CAST(TotalBills * 100.0 / NULLIF(SUM(TotalBills) OVER (), 0) AS DECIMAL(10,2)) AS PctOfDayBills FROM HourlyBilling ORDER BY BillHour ASC OPTION (RECOMPILE)", "description": "Hourly billing distribution", "estimatedRows": "moderate"}
+### Example 13 — Peak billing hours
+Query: "Peak sales hours"
+{"sql": ";WITH HourlyBilling AS (SELECT DATEPART(HOUR, [CashmemoDt]) AS BillHour, COUNT(DISTINCT [CashmemoNo]) AS TotalBills, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY DATEPART(HOUR, [CashmemoDt])) SELECT BillHour, TotalBills, Revenue, CAST(TotalBills * 100.0 / NULLIF(SUM(TotalBills) OVER (), 0) AS DECIMAL(10,2)) AS PctOfDayBills FROM HourlyBilling ORDER BY BillHour ASC OPTION (RECOMPILE)", "description": "Hourly billing distribution", "estimatedRows": "moderate"}
 
-### Example 12 — Stock transfers between branches
+### Example 14 — Stock transfers out
 Query: "Stock transfers sent out this month"
 {"sql": "SELECT [FromBranchAlias] AS FromBranch, [ToBranchAlias] AS ToBranch, [CategoryShortName] AS Category, SUM([TransferQty]) AS Qty, SUM([TransferValue]) AS Value FROM [dbo].[VW_MB_POWERBI_STO_REPORT] WITH (NOLOCK) WHERE [StoDate] >= @startDate AND [StoDate] <= @endDate GROUP BY [FromBranchAlias], [ToBranchAlias], [CategoryShortName] ORDER BY Value DESC OPTION (RECOMPILE)", "description": "Stock transfers out MTD", "estimatedRows": "moderate"}
 
-### Example 13 — Department breakdown
-Query: "Revenue by department this year"
-{"sql": "SELECT [DepartmentShortName] AS Department, SUM([NetSlsNetAmount]) AS Revenue, SUM([AppQty]) AS Quantity, SUM([BillCount]) AS Transactions FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate GROUP BY [DepartmentShortName] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Revenue by department YTD", "estimatedRows": "few"}
+### Example 15 — Revenue by supplier
+Query: "Revenue contribution by supplier this month"
+{"sql": "SELECT [SupplierName] AS Supplier, [SupplierAlias] AS SupplierAlias, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, SUM([SalesQuantity]) AS Quantity FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [SupplierName], [SupplierAlias] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Revenue by supplier MTD", "estimatedRows": "few"}
 
-### Example 14 — MRP vs Net comparison
-Query: "Discount given this month — MRP vs net sales"
-{"sql": "SELECT [BranchAlias] AS Branch, SUM([MrpValue]) AS TotalMRP, SUM([NetSlsNetAmount]) AS NetRevenue, SUM([MrpValue] - [NetSlsNetAmount]) AS TotalDiscount, CAST(SUM([MrpValue] - [NetSlsNetAmount]) * 100.0 / NULLIF(SUM([MrpValue]), 0) AS DECIMAL(10,2)) AS DiscountPct FROM [dbo].[VW_MB_POWERBI_APP_REPORT] WITH (NOLOCK) WHERE [XnDt] >= @startDate AND [XnDt] <= @endDate GROUP BY [BranchAlias] ORDER BY DiscountPct DESC OPTION (RECOMPILE)", "description": "Discount analysis by branch MTD", "estimatedRows": "few"}
+### Example 16 — Top customers
+Query: "Top 10 customers by purchase value this month"
+{"sql": "SELECT TOP 10 [CustomerId] AS CustomerId, [CustomerName] AS CustomerName, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, COUNT(DISTINCT [CashmemoNo]) AS Visits FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [CustomerId], [CustomerName] ORDER BY Revenue DESC OPTION (RECOMPILE)", "description": "Top 10 customers by revenue MTD", "estimatedRows": "few"}
+
+### Example 17 — Branch + category cross-tab
+Query: "Revenue by branch and category this month"
+{"sql": "SELECT [BranchAlias] AS Branch, [CategoryShortName] AS Category, ISNULL(SUM([SalesNetAmount]), 0) AS Revenue, SUM([SalesQuantity]) AS Quantity FROM [dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] WITH (NOLOCK) WHERE [CashmemoDt] >= @startDate AND [CashmemoDt] <= @endDate GROUP BY [BranchAlias], [CategoryShortName] ORDER BY Branch ASC, Revenue DESC OPTION (RECOMPILE)", "description": "Revenue by branch and category MTD", "estimatedRows": "moderate"}
 """
 
 
-def _build_system_prompt(schema_section: str) -> str:
+def _build_system_prompt(schema_section: str, routing_hints: str) -> str:
     return f"""You are an expert Microsoft SQL Server T-SQL writer for a retail ERP analytics system (database: zRetailHQ0).
 
 Your task: given a natural language query and its extracted intent, generate a correct, safe T-SQL SELECT query.
@@ -115,7 +204,11 @@ STRICT OUTPUT RULES:
 10. Use ISNULL(SUM(...), 0) for revenue columns to avoid NULL.
 11. For percentage calculations use NULLIF in the denominator.
 12. For CTEs: use ;WITH CTE_Name AS (...) SELECT ... pattern.
-13. Use the EXACT column names and view names from the schema below — do not invent names.
+13. Use the EXACT column names and view names from Routing Hints and Schema — do not invent names.
+14. PREFER the fast view (VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID) for all general sales/revenue
+    queries unless item-level detail is needed (that requires VW_MB_POWERBI_SLS_REPORT).
+
+{routing_hints}
 
 {schema_section}
 
@@ -139,9 +232,9 @@ async def generate_sql(
     date_range: DateRange,
     conversation_context: Optional[str] = None,
 ) -> GeneratedSQL:
-    # Use catalog-backed schema: selects up to 4 most relevant views for this query
     schema_section = build_catalog_schema_prompt(intent.raw, max_views=4)
-    system = _build_system_prompt(schema_section)
+    routing_hints = build_routing_hints()
+    system = _build_system_prompt(schema_section, routing_hints)
 
     lines = []
     if conversation_context:
@@ -150,7 +243,7 @@ async def generate_sql(
     lines.append(f'## User Query\n"{intent.raw}"\n')
     lines.append("## Extracted Intent")
     lines.append(f"- Intent type: {intent.intent}")
-    lines.append(f"- Period: {intent.period} ({date_range.label}: {date_range.start} → {date_range.end})")
+    lines.append(f"- Period: {intent.period} ({date_range.label}: {date_range.start} -> {date_range.end})")
     lines.append(f"- Metric: {intent.metric}")
     if intent.dimension:
         lines.append(f"- Group by: {intent.dimension}")
@@ -170,7 +263,7 @@ async def generate_sql(
     try:
         response = await client.messages.create(
             model=cfg.ANTHROPIC_MODEL,
-            max_tokens=1200,
+            max_tokens=1400,
             system=system,
             messages=[{"role": "user", "content": user_msg}],
         )
@@ -207,18 +300,18 @@ def generate_sql_template(
     """
     Template-based SQL for the most common patterns.
     Returns None if pattern isn't handled → AI fallback.
-    All column/table names match the real schema_catalog.json.
+    Column names are pulled from schema_index.json routing map (live-probed).
     """
-    c = cfg
-    # Primary sales view — covers 90% of analytics queries
-    main_table = "[dbo].[VW_MB_POWERBI_APP_REPORT]"
-    date_col   = "[XnDt]"
-    amount_col = "[NetSlsNetAmount]"
-    branch_col = "[BranchAlias]"
-    cat_col    = "[CategoryShortName]"
-    dept_col   = "[DepartmentShortName]"
-    bill_col   = "[BillCount]"
-    qty_col    = "[AppQty]"
+    route = _sales_route()
+
+    main_table = f"[dbo].[{route.get('source_view_name', 'VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID')}]"
+    date_col   = f"[{route.get('date_col', 'CashmemoDt')}]"
+    amount_col = f"[{route.get('amount_col', 'SalesNetAmount')}]"
+    branch_col = f"[{route.get('branch_col', 'BranchAlias')}]"
+    cat_col    = f"[{route.get('category_col', 'CategoryShortName')}]"
+    dept_col   = f"[{route.get('department_col', 'DepartmentShortName')}]"
+    qty_col    = f"[{route.get('quantity_col', 'SalesQuantity')}]"
+    bill_expr  = "COUNT(DISTINCT [CashmemoNo])"
 
     params = {"startDate": date_range.start, "endDate": date_range.end}
     where  = f"WHERE {date_col} >= @startDate AND {date_col} <= @endDate"
@@ -229,7 +322,7 @@ def generate_sql_template(
         return GeneratedSQL(
             sql=(
                 f"SELECT ISNULL(SUM({amount_col}), 0) AS TotalRevenue, "
-                f"SUM({bill_col}) AS TotalTransactions, SUM({qty_col}) AS TotalQuantity "
+                f"{bill_expr} AS TotalTransactions, SUM({qty_col}) AS TotalQuantity "
                 f"FROM {main_table} WITH (NOLOCK) {where} {opts}"
             ),
             params=params,
@@ -242,7 +335,7 @@ def generate_sql_template(
     if intent.intent == "kpi" and intent.metric == "transaction_count":
         return GeneratedSQL(
             sql=(
-                f"SELECT SUM({bill_col}) AS TotalTransactions, "
+                f"SELECT {bill_expr} AS TotalTransactions, "
                 f"ISNULL(SUM({amount_col}), 0) AS TotalRevenue "
                 f"FROM {main_table} WITH (NOLOCK) {where} {opts}"
             ),
@@ -259,7 +352,7 @@ def generate_sql_template(
             sql=(
                 f"SELECT {top}{branch_col} AS Branch, "
                 f"ISNULL(SUM({amount_col}), 0) AS Revenue, "
-                f"SUM({bill_col}) AS Transactions, SUM({qty_col}) AS Quantity "
+                f"{bill_expr} AS Transactions, SUM({qty_col}) AS Quantity "
                 f"FROM {main_table} WITH (NOLOCK) {where} "
                 f"GROUP BY {branch_col} ORDER BY Revenue DESC {opts}"
             ),
@@ -276,7 +369,7 @@ def generate_sql_template(
             sql=(
                 f"SELECT {top}{cat_col} AS Category, "
                 f"ISNULL(SUM({amount_col}), 0) AS Revenue, "
-                f"SUM({bill_col}) AS Transactions, SUM({qty_col}) AS Quantity "
+                f"{bill_expr} AS Transactions, SUM({qty_col}) AS Quantity "
                 f"FROM {main_table} WITH (NOLOCK) {where} "
                 f"GROUP BY {cat_col} ORDER BY Revenue DESC {opts}"
             ),
@@ -293,7 +386,7 @@ def generate_sql_template(
             sql=(
                 f"SELECT {top}{dept_col} AS Department, "
                 f"ISNULL(SUM({amount_col}), 0) AS Revenue, "
-                f"SUM({bill_col}) AS Transactions, SUM({qty_col}) AS Quantity "
+                f"{bill_expr} AS Transactions, SUM({qty_col}) AS Quantity "
                 f"FROM {main_table} WITH (NOLOCK) {where} "
                 f"GROUP BY {dept_col} ORDER BY Revenue DESC {opts}"
             ),
@@ -305,15 +398,19 @@ def generate_sql_template(
 
     # ── Aggregate by salesperson ──────────────────────────────────────────
     if intent.dimension == "salesperson":
-        sp_table = "[dbo].[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID]"
+        sp_route = _load_routing().get("salesperson", {})
+        sp_view  = sp_route.get("source_view_name", "VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID")
+        sp_table = f"[dbo].[{sp_view}]"
+        sp_date  = f"[{sp_route.get('date_col', 'CashmemoDt')}]"
+        sp_amt   = f"[{sp_route.get('amount_col', 'SalesNetAmount')}]"
         top = f"TOP {min(intent.top_n, 100)} " if intent.top_n else ""
         return GeneratedSQL(
             sql=(
                 f"SELECT {top}[SalesPersonName] AS Salesperson, [BranchAlias] AS Branch, "
-                f"ISNULL(SUM([NetAmount]), 0) AS Revenue, "
-                f"COUNT(DISTINCT [XnId]) AS Transactions "
+                f"ISNULL(SUM({sp_amt}), 0) AS Revenue, "
+                f"COUNT(DISTINCT [CashmemoNo]) AS Transactions "
                 f"FROM {sp_table} WITH (NOLOCK) "
-                f"WHERE [XnMemoDate] >= @startDate AND [XnMemoDate] <= @endDate "
+                f"WHERE {sp_date} >= @startDate AND {sp_date} <= @endDate "
                 f"GROUP BY [SalesPersonName], [BranchAlias] ORDER BY Revenue DESC {opts}"
             ),
             params=params,
@@ -328,7 +425,7 @@ def generate_sql_template(
             sql=(
                 f"SELECT CAST({date_col} AS DATE) AS TransactionDate, "
                 f"ISNULL(SUM({amount_col}), 0) AS Revenue, "
-                f"SUM({bill_col}) AS Transactions, SUM({qty_col}) AS Quantity "
+                f"{bill_expr} AS Transactions, SUM({qty_col}) AS Quantity "
                 f"FROM {main_table} WITH (NOLOCK) {where} "
                 f"GROUP BY CAST({date_col} AS DATE) ORDER BY TransactionDate ASC {opts}"
             ),

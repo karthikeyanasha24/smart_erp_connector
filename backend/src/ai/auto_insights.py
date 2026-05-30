@@ -89,10 +89,6 @@ async def _load_data(period: str) -> Dict[str, Any]:
         f"chart:category:v2:{period}:30",
     ])
 
-    # ── 2. Cache-only: no live SQL fallback ───────────────────────────────────
-    # Insights must load instantly. SQL fallbacks that take 10+ minutes are not
-    # acceptable here — if the cache is cold, we return what we have (possibly nothing).
-    # The warmup engine will populate the cache; call /ai/page-insights again after.
     logger.debug(
         "auto_insights cache check",
         period=period,
@@ -101,6 +97,58 @@ async def _load_data(period: str) -> Dict[str, Any]:
         has_trend=bool(trend_data),
         has_categories=bool(categories),
     )
+
+    # ── 2. Live SQL fallback when cache is cold ───────────────────────────────
+    # If any key piece is missing, fetch it directly so insights always render.
+    # Each call is bounded by DB_REQUEST_TIMEOUT_MS (60s); we gather in parallel.
+    cache_cold = not (kpis and branches and trend_data and categories)
+    if cache_cold:
+        try:
+            from src.analytics.kpi import get_home_kpis
+            from src.analytics.charts import (
+                get_branch_chart, get_revenue_trend, get_category_breakdown,
+            )
+            from src.analytics.cache_prime import prime_chart_caches_from_bundle
+
+            fetch_tasks = []
+            if not kpis:
+                fetch_tasks.append(("kpis", get_home_kpis(period)))
+            if not branches:
+                fetch_tasks.append(("branches", get_branch_chart(period)))
+            if not trend_data:
+                fetch_tasks.append(("trend", get_revenue_trend(period)))
+            if not categories:
+                fetch_tasks.append(("categories", get_category_breakdown(period, 30)))
+
+            if fetch_tasks:
+                names, coros = zip(*fetch_tasks)
+                results = await asyncio.wait_for(
+                    asyncio.gather(*coros, return_exceptions=True),
+                    timeout=30.0,
+                )
+                fetched: Dict[str, Any] = {}
+                for name, result in zip(names, results):
+                    if not isinstance(result, Exception) and result is not None:
+                        fetched[name] = result
+                if fetched.get("kpis") and not kpis:
+                    kpis = fetched["kpis"]
+                if fetched.get("branches") and not branches:
+                    branches = fetched["branches"]
+                if fetched.get("trend") and not trend_data:
+                    trend_data = fetched["trend"]
+                if fetched.get("categories") and not categories:
+                    categories = fetched["categories"]
+                # Seed cache for next time
+                prime_chart_caches_from_bundle(period, {
+                    "branches": branches, "trend": trend_data,
+                    "categories": categories,
+                    **({"kpis": kpis} if kpis else {}),
+                }, top_n=30)
+                logger.info("auto_insights: live SQL fallback populated cache", period=period)
+        except asyncio.TimeoutError:
+            logger.warning("auto_insights: live fallback timed out (30s)", period=period)
+        except Exception as exc:
+            logger.warning("auto_insights: live fallback failed", error=str(exc))
 
     return {
         "kpis": kpis or {},
@@ -630,10 +678,12 @@ async def generate_page_insights(period: str = "mtd") -> Dict[str, Any]:
     if period not in valid_periods:
         period = "mtd"
 
-    # ── Step 0: Return cached insights instantly if fresh ─────────────────────
+    # ── Step 0: Return cached insights instantly if fresh AND has real data ─────
     insights_cache_key = f"insights:v3:{period}"
     cached_insights, is_fresh = _cache.get(insights_cache_key)
-    if is_fresh and cached_insights is not None:
+    # Only serve from cache if it actually contains insights — don't serve an
+    # empty result that was cached when the analytics cache was cold.
+    if is_fresh and cached_insights is not None and cached_insights.get("data_available"):
         logger.debug("auto_insights cache hit", period=period)
         return {**cached_insights, "from_cache": True}
 

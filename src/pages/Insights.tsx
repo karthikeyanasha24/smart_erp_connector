@@ -107,10 +107,10 @@ export default function Insights() {
           }}>AI Insights</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             {loading
-              ? 'Analysing ERP data…'
+              ? 'Querying live ERP data — this takes a few seconds on first load…'
               : dataAvailable
                 ? `${insights.length} active signals · Last updated ${lastRefreshed}`
-                : 'No cached data yet — insights appear after first warmup'
+                : 'No data available — try refreshing or visiting another page first'
             }
           </p>
         </div>
@@ -320,8 +320,8 @@ export default function Insights() {
                 <Database size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
                 <p className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>No data for this period</p>
                 <p className="text-xs text-center max-w-xs" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
-                  The backend could not fetch analytics for <strong>{period.toUpperCase()}</strong>.
-                  Try refreshing, or visit the Dashboard first to warm the cache.
+                  Could not load analytics for <strong>{period.toUpperCase()}</strong>.
+                  The SQL query may have timed out. Try refreshing — it usually succeeds on retry.
                 </p>
                 <motion.button
                   onClick={handleRefresh}

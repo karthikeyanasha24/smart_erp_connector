@@ -25,7 +25,7 @@ import {
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { useDashboardPage, summaryFromKpis, resolveTodaySummary, fetchAndApplySnapshot } from '../hooks/useAnalytics';
+import { useDashboardPage, summaryFromKpis, resolveTodaySummary, fetchAndApplySnapshot, useTransactions } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtRupees, fmtSmart } from '../lib/format';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -378,6 +378,8 @@ export default function Dashboard() {
   const effectiveCats     = demo ? DEMO.categories : (categories.length > 0 ? categories : (isSkeletonMode ? DEMO.categories : []));
   const effectiveBranches = demo ? DEMO.branches   : (branches.length > 0  ? branches  : (isSkeletonMode ? DEMO.branches   : []));
   const txns              = demo ? DEMO.transactions : [];
+  const { transactions: recentTxns, loading: recentTxnsLoading } = useTransactions({ period: 'mtd', page: 1, page_size: 8 });
+  const displayTxns = demo ? txns : recentTxns;
 
   const CATEGORY_PIE_TOP = 8;
   const pieCategories = useMemo((): CatPt[] => {
@@ -822,7 +824,7 @@ export default function Dashboard() {
             <div>
               <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Recent Transactions</p>
               <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>
-                {txns.length > 0 ? `Latest ${txns.length} records` : 'Open Transactions page for live list'}
+                {displayTxns.length > 0 ? `Latest ${displayTxns.length} records` : recentTxnsLoading ? 'Loading…' : 'Open Transactions page for live list'}
               </p>
             </div>
             <Link to="/transactions" className="text-xs font-semibold flex items-center gap-1" style={{ color:'#5882ff' }}>
@@ -841,13 +843,13 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {txns.length === 0 && !demo && (
+                {displayTxns.length === 0 && !demo && !recentTxnsLoading && (
                   <tr><td colSpan={6} className="py-8 text-center text-xs" style={{ color:'var(--text-muted)' }}>
                     Transaction feed unavailable — use{' '}
                     <Link to="/transactions" className="font-semibold" style={{ color:'#5882ff' }}>Transactions</Link>
                   </td></tr>
                 )}
-                {txns.slice(0,8).map((t, i) => (
+                {displayTxns.slice(0,8).map((t, i) => (
                   <motion.tr key={t.id}
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.025 }}

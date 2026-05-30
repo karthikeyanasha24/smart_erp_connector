@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Bell, Sun, Moon, Sparkles, Command, TrendingUp,
@@ -7,6 +7,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useNavigation } from '../../context/NavigationContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useKPIs, useBranches } from '../../hooks/useAnalytics';
 
 const pageLabels: Record<string, string> = {
   dashboard: 'AI Dashboard',
@@ -30,6 +31,27 @@ export default function Topbar() {
   const [notifOpen, setNotifOpen] = useState(false);
 
   const sidebarW = sidebarExpanded ? 240 : 72;
+
+  // Live KPI data for ticker — MTD snapshot, non-blocking
+  const { kpis } = useKPIs('mtd');
+  const { branches } = useBranches('mtd');
+
+  const revGrowth = kpis.revenue.growth;
+  const txnCount  = kpis.transactions.value;
+  const branchCount = useMemo(() => branches?.length ?? 0, [branches]);
+
+  const fmtGrowth = (g: number | null) => g !== null ? `${g >= 0 ? '+' : ''}${g.toFixed(1)}%` : '—';
+  const fmtCount  = (n: number) => n >= 1e5 ? `${(n / 1e3).toFixed(1)}K` : n >= 1000 ? `${(n / 1e3).toFixed(0)}K` : String(n);
+
+  const tickerItems = useMemo(() => {
+    const base = [
+      { label: 'Revenue MTD Growth', value: fmtGrowth(revGrowth), color: (revGrowth ?? 0) >= 0 ? 'text-accent-400' : 'text-error-400' },
+      { label: 'MTD Transactions',   value: txnCount > 0 ? fmtCount(txnCount) : '…', color: 'text-primary-400' },
+      { label: 'Active Branches',    value: branchCount > 0 ? String(branchCount) : '…', color: 'text-warning-400' },
+    ];
+    // Duplicate for seamless loop
+    return [...base, ...base];
+  }, [revGrowth, txnCount, branchCount]);
 
   return (
     <motion.header
@@ -82,18 +104,16 @@ export default function Topbar() {
         <div className="overflow-hidden flex-1">
           <motion.div
             animate={{ x: ['0%', '-50%'] }}
-            transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+            transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
             className="flex gap-8 whitespace-nowrap text-xs"
             style={{ color: 'var(--text-muted)' }}
           >
-            <span><span className="text-accent-400 font-medium">+18.4%</span> Revenue MoM</span>
-            <span><span className="text-primary-400 font-medium">248.7K</span> Active Transactions</span>
-            <span><span className="text-warning-400 font-medium">99.4%</span> AI Accuracy</span>
-            <span><span className="text-error-400 font-medium">$1.24M</span> Fraud Blocked Today</span>
-            <span><span className="text-accent-400 font-medium">6</span> Branches Online</span>
-            <span><span className="text-primary-400 font-medium">+18.4%</span> Revenue MoM</span>
-            <span><span className="text-accent-400 font-medium">248.7K</span> Active Transactions</span>
-            <span><span className="text-warning-400 font-medium">99.4%</span> AI Accuracy</span>
+            {tickerItems.map((item, i) => (
+              <span key={i}>
+                <span className={`${item.color} font-medium`}>{item.value}</span>
+                {' '}{item.label}
+              </span>
+            ))}
           </motion.div>
         </div>
       </div>
