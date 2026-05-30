@@ -29,6 +29,8 @@ import {
   DashboardPageResponse,
 } from '../lib/api';
 
+import { growthPct } from '../lib/format';
+
 export {
   fmtLakhs,
   fmtCount,
@@ -39,6 +41,13 @@ export {
   fmtSmart,
   fmtLakhs as fmtRevenue,
 } from '../lib/format';
+
+export {
+  hasLyTrendData,
+  formatLySub,
+  lyGrowthReady,
+  lyChartSubtitle,
+} from '../lib/lyDisplay';
 
 // ─── Persistent SWR Cache ───────────────────────────────────────────────────
 // Layer 1: localStorage (survives reload — data on first paint)
@@ -58,8 +67,14 @@ const STALE_TTL  = 30 * 60 * 1000;   // 30 min — show stale + bg revalidate
 const LS_MAX_TTL = 60 * 60 * 1000;   // 1 hr — evict from localStorage
 const TODAY_FRESH_TTL = 60 * 1000;   // 1 min — today’s sales change intraday
 
-const INTRADAY_CACHE_KEYS = new Set([
-  // Today keys persist to localStorage (short fresh TTL) so reload matches MTD speed.
+const INTRADAY_CACHE_KEYS = new Set<string>([
+  // Empty — today keys persist to localStorage for fast reload.
+]);
+
+/** Shorter revalidation window for today KPIs (still persisted to localStorage). */
+const TODAY_CACHE_KEYS = new Set([
+  'kpis:v2:today',
+  'dashboard:v2:today::',
 ]);
 
 // ── Init: restore localStorage into _store on module load ──
@@ -115,6 +130,7 @@ function cacheSet(key: string, data: unknown): void {
 }
 
 function cacheTtl(key: string): number {
+  if (TODAY_CACHE_KEYS.has(key)) return TODAY_FRESH_TTL;
   return INTRADAY_CACHE_KEYS.has(key) ? TODAY_FRESH_TTL : FRESH_TTL;
 }
 
@@ -122,9 +138,14 @@ function isFresh(key: string)  {
   const e = _store.get(key);
   return !!e && Date.now() - e.ts < cacheTtl(key);
 }
+
 function isUsable(key: string) {
   const e = _store.get(key);
-  const ttl = INTRADAY_CACHE_KEYS.has(key) ? TODAY_FRESH_TTL : STALE_TTL;
+  const ttl = TODAY_CACHE_KEYS.has(key)
+    ? TODAY_FRESH_TTL
+    : INTRADAY_CACHE_KEYS.has(key)
+      ? TODAY_FRESH_TTL
+      : STALE_TTL;
   return !!e && Date.now() - e.ts < ttl;
 }
 
@@ -356,13 +377,23 @@ function todaySummaryFromMtdDashboard(mtd: DashboardResponse | null): DashboardR
   if (!mtd?.trend?.length) return null;
   const todayIso = localTodayIso();
   const pt = mtd.trend.find((p) => p.date?.slice(0, 10) === todayIso);
-  if (!pt) return null;
+  if (pt) {
+    return {
+      mtd_sales: pt.current,
+      ly_sales: pt.prior ?? 0,
+      sales_growth_pct: null,
+      bills: pt.bills ?? 0,
+      quantity: pt.quantity ?? 0,
+      customers: null,
+    };
+  }
+  // MTD trend is loaded but today has no row yet (no sales today) — show zero, not skeleton.
   return {
-    mtd_sales: pt.current,
-    ly_sales: pt.prior ?? 0,
+    mtd_sales: 0,
+    ly_sales: 0,
     sales_growth_pct: null,
-    bills: pt.bills ?? 0,
-    quantity: pt.quantity ?? 0,
+    bills: 0,
+    quantity: 0,
     customers: null,
   };
 }
@@ -692,17 +723,20 @@ function dashboardFromBundle(
     label: String(t.label || t.date).slice(0, 10),
     date: String(t.date).slice(0, 10),
     current: t.revenue,
-    prior: 0,
+    prior: typeof t.prior === 'number' ? t.prior : 0,
     bills: t.transactions ?? 0,
     quantity: t.quantity ?? 0,
   }));
+
+  const lyFromTrend = yoyTrend.reduce((s, p) => s + (p.prior ?? 0), 0);
+  const lyTrendReady = yoyTrend.some((p) => (p.prior ?? 0) > 0);
 
   const summary: DashboardResponse['summary'] =
     kpis && (kpis.revenue != null || kpis.transactions != null)
       ? {
           mtd_sales: kpis.revenue?.value ?? 0,
-          ly_sales: kpis.revenue?.prior ?? 0,
-          sales_growth_pct: kpis.revenue?.growth ?? null,
+          ly_sales: lyTrendReady ? (lyFromTrend || kpis.revenue?.prior || 0) : 0,
+          sales_growth_pct: lyTrendReady ? (kpis.revenue?.growth ?? null) : null,
           bills: kpis.transactions?.value ?? 0,
           quantity: kpis.quantity?.value ?? 0,
           customers:
@@ -712,7 +746,7 @@ function dashboardFromBundle(
         }
       : {
           mtd_sales: yoyTrend.reduce((s, p) => s + p.current, 0),
-          ly_sales: 0,
+          ly_sales: lyTrendReady ? lyFromTrend : 0,
           sales_growth_pct: null,
           bills: yoyTrend.reduce((s, p) => s + p.bills, 0),
           quantity: yoyTrend.reduce((s, p) => s + p.quantity, 0),
@@ -869,7 +903,7 @@ function fetchTodayBundleFast(
 }
 
 function clearIntradayClientCache(): void {
-  for (const key of INTRADAY_CACHE_KEYS) {
+  for (const key of TODAY_CACHE_KEYS) {
     _store.delete(key);
     try {
       localStorage.removeItem(LS_PREFIX + key);
@@ -938,7 +972,11 @@ export function useDashboardPage(): DashboardPageResult {
   const cachedTodayKpi = cacheGet<KPIsResponse>(KEY_KPIS_TODAY);
 
   const [mtdRaw,      setMtd]          = useState<DashboardResponse | null>(cachedMtd);
-  const [todayRaw,    setToday]        = useState<DashboardResponse | null>(cachedToday);
+  const [todayRaw,    setToday]        = useState<DashboardResponse | null>(() => {
+    if (cachedToday) return cachedToday;
+    const s = todaySummaryFromMtdDashboard(cachedMtd);
+    return s ? buildTodayDashboard(s) : null;
+  });
   const [kpis,        setKpis]         = useState<KPIsResponse | null>(cachedKpis);
   const [todayKpis,   setTodayKpis]    = useState<KPIsResponse | null>(cachedTodayKpi);
   const [loading,     setLoading]      = useState<boolean>(!cachedKpis);
@@ -956,19 +994,32 @@ export function useDashboardPage(): DashboardPageResult {
       setLoading(false);
     }
     const tk = cacheGet<KPIsResponse>(KEY_KPIS_TODAY);
-    if (tk) setTodayKpis(tk);
+    if (tk) {
+      setTodayKpis(tk);
+      setTodayLoading(false);
+    }
     const m = getDashboardCache(KEY_DASH_MTD);
     if (m) setMtd(m);
     const t = getDashboardCache(KEY_DASH_TODAY);
     if (t) setToday(t);
-    setTodayLoading(!hasTodaySnapshot(t, tk));
+    if (hydrateTodayFromMtd(m, { setToday, setTodayLoading })) {
+      /* today derived from MTD trend */
+    } else if (!hasTodaySnapshot(t, tk)) {
+      setTodayLoading(true);
+    } else {
+      setTodayLoading(false);
+    }
   }, []);
 
-  const run = useCallback(async (silent = false) => {
+  const run = useCallback(async (silent = false, clearToday = false) => {
+    if (clearToday) clearIntradayClientCache();
     if (!silent) {
       setLoading(!cacheGet<KPIsResponse>(KEY_KPIS_MTD));
-      setTodayLoading(!hasTodaySnapshot(getDashboardCache(KEY_DASH_TODAY), cacheGet(KEY_KPIS_TODAY)));
-      clearIntradayClientCache();
+    }
+    // Instant today from cached MTD trend while live SQL runs
+    const hydrated = hydrateTodayFromMtd(getDashboardCache(KEY_DASH_MTD), { setToday, setTodayLoading });
+    if (!hydrated && !hasTodaySnapshot(getDashboardCache(KEY_DASH_TODAY), cacheGet(KEY_KPIS_TODAY))) {
+      if (!silent) setTodayLoading(true);
     }
     setError(null);
 
@@ -1015,9 +1066,8 @@ export function useDashboardPage(): DashboardPageResult {
     todayLoading,
     error,
     refetch: useCallback(() => {
-      clearIntradayClientCache();
       setTodayLoading(true);
-      run(false);
+      run(false, true);
     }, [run]),
   };
 }
@@ -1175,7 +1225,7 @@ function daywiseFromTrend(trend: TrendPoint[]): AnalyticsDayRow[] {
     date: String(t.date).slice(0, 10),
     label: trendLabel(t),
     sales: t.revenue,
-    prior: 0,
+    prior: typeof t.prior === 'number' ? t.prior : 0,
     bills: t.transactions ?? 0,
     quantity: t.quantity ?? 0,
   }));
@@ -1186,7 +1236,7 @@ function trendToYoyPoints(trend: TrendPoint[]): DashboardResponse['trend'] {
     label: trendLabel(t),
     date: String(t.date).slice(0, 10),
     current: t.revenue,
-    prior: 0,
+    prior: typeof t.prior === 'number' ? t.prior : 0,
     bills: t.transactions ?? 0,
     quantity: t.quantity ?? 0,
   }));
@@ -1284,6 +1334,20 @@ export function buildAnalyticsPageData(
       quantity: daywise.reduce((s, d) => s + d.quantity, 0),
       customers: null,
     };
+  }
+
+  const lyFromDaywise = daywise.reduce((s, d) => s + (d.prior ?? 0), 0);
+  const lyTrendReady = daywise.some((d) => (d.prior ?? 0) > 0);
+  if (summary && lyTrendReady) {
+    summary = {
+      ...summary,
+      ly_sales: lyFromDaywise || summary.ly_sales,
+      sales_growth_pct:
+        summary.sales_growth_pct ??
+        (lyFromDaywise > 0 ? growthPct(summary.mtd_sales, lyFromDaywise) : null),
+    };
+  } else if (summary && !lyTrendReady) {
+    summary = { ...summary, ly_sales: 0, sales_growth_pct: null };
   }
 
   const yoyTrend = dashTrend.length > 0 ? dashTrend : trendToYoyPoints(apiTrend);

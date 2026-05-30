@@ -25,7 +25,7 @@ import {
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { useDashboardPage, summaryFromKpis, resolveTodaySummary, useTransactions } from '../hooks/useAnalytics';
+import { useDashboardPage, summaryFromKpis, resolveTodaySummary, useTransactions, hasLyTrendData, formatLySub, lyGrowthReady, lyChartSubtitle } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtRupees, fmtSmart } from '../lib/format';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -359,18 +359,18 @@ export default function Dashboard() {
   const mtdBills     = dash(fmtCount(mS?.bills ?? 0));
   const mtdQty       = dash(fmtCount(mS?.quantity ?? 0));
   const mtdAvg       = dash(fmtRupees(mS && mS.bills > 0 ? mS.mtd_sales / mS.bills : 0));
-  const mtdGrowth    = mS?.sales_growth_pct ?? null;
   const todaySales   = todayPending ? '…' : fmtLakhs(tS?.mtd_sales ?? 0);
   const todayBills   = todayPending ? '…' : (tS?.bills ? fmtCount(tS.bills) : '—');
   const todayQty     = todayPending ? '…' : (tS?.quantity ? fmtCount(tS.quantity) : '—');
   const todayAvg     = todayPending ? '…' : (tS && tS.bills > 0 ? fmtRupees(tS.mtd_sales / tS.bills) : '—');
   const mtdCustomers = mS?.customers != null ? fmtCount(mS.customers) : null;
 
-  // When we have real data, use it. Only fall back to demo ghost shapes when
-  // isSkeletonMode is true (snapshot cold + SWR still loading — rare after first run).
   const effectiveTrend    = demo ? DEMO_TREND      : (trend.length > 0 ? trend : (isSkeletonMode ? DEMO_TREND : []));
   const effectiveCats     = demo ? DEMO.categories : (categories.length > 0 ? categories : (isSkeletonMode ? DEMO.categories : []));
   const effectiveBranches = demo ? DEMO.branches   : (branches.length > 0  ? branches  : (isSkeletonMode ? DEMO.branches   : []));
+  const lyReady           = demo || hasLyTrendData(effectiveTrend);
+  const lyPending         = !demo && !dataPending && effectiveTrend.length > 0 && !lyReady;
+  const mtdGrowth         = lyGrowthReady(lyReady, mS?.sales_growth_pct);
   const txns              = demo ? DEMO.transactions : [];
   const { transactions: recentTxns, loading: recentTxnsLoading } = useTransactions({ period: 'mtd', page: 1, page_size: 8 });
   const displayTxns = demo ? txns : recentTxns;
@@ -385,7 +385,11 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveCats, demo]);
 
-  const trendChart  = effectiveTrend.map(p => ({ label: p.label, Revenue: p.current, 'Last Year': p.prior }));
+  const trendChart  = effectiveTrend.map(p => ({
+    label: p.label,
+    Revenue: p.current,
+    ...(lyReady ? { 'Last Year': p.prior } : {}),
+  }));
   const billsChart  = effectiveTrend.slice(-30).map(p => ({ label: p.label, Bills: p.bills }));
   const branchChart = effectiveBranches.slice(0, 6);
   const revSpark    = effectiveTrend.slice(-15).map(p => p.current);
@@ -495,7 +499,7 @@ export default function Dashboard() {
               <p style={{ fontSize:10, color:'rgba(255,255,255,0.45)', marginTop:2 }}>{chip.label}</p>
             </div>
           ))}
-          {mtdGrowth != null && (
+          {mtdGrowth != null && lyReady && !dataPending && (
             <div style={{
               background: mtdGrowth >= 0 ? 'rgba(0,230,122,0.1)' : 'rgba(239,68,68,0.1)',
               borderRadius:12, padding:'8px 18px',
@@ -530,8 +534,8 @@ export default function Dashboard() {
           icon={<TrendingUp size={16} style={{ color:'#5882ff' }} />}
           value={mtdSales}
           label="Total Revenue"
-          sub={dataPending ? undefined : `LY: ${fmtLakhs(mS?.ly_sales ?? 0)}`}
-          growth={dataPending ? null : mtdGrowth}
+          sub={dataPending ? undefined : (lyPending ? 'LY: Loading…' : formatLySub(mS?.ly_sales, lyReady))}
+          growth={lyGrowthReady(lyReady && !dataPending, mtdGrowth)}
           sparkData={revSpark}
           color="#5882ff"
           delay={0.00}
@@ -561,14 +565,14 @@ export default function Dashboard() {
         />
         <KpiCard
           icon={<TrendingUp size={16} style={{ color:'#00e67a' }} />}
-          value={dataPending ? '…' : (mtdGrowth != null ? `${mtdGrowth >= 0 ? '+' : ''}${mtdGrowth.toFixed(1)}%` : '—')}
+          value={dataPending || lyPending ? '…' : (mtdGrowth != null ? `${mtdGrowth >= 0 ? '+' : ''}${mtdGrowth.toFixed(1)}%` : '—')}
           label="Growth"
-          sub={dataPending ? undefined : 'vs same period LY'}
+          sub={dataPending ? undefined : (lyPending ? 'Loading…' : 'vs same period LY')}
           growth={null}
           sparkData={revSpark.map((v, i, arr) => (i > 0 ? (v - arr[i-1]) / (arr[i-1] || 1) * 100 : 0))}
           color="#00e67a"
           delay={0.15}
-          pending={dataPending}
+          pending={dataPending || lyPending}
         />
         <KpiCard
           icon={<Zap size={16} style={{ color:'#8B5CF6' }} />}
@@ -630,11 +634,15 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Daily sales trend</p>
-                <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Each day in {mtdLabel} vs same day last year</p>
+                <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{lyChartSubtitle(mtdLabel, lyReady)}</p>
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 rounded" style={{ background:'#5882ff' }} /><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Revenue</span></div>
-                <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 rounded" style={{ borderTop:'1px dashed #26C6DA', background:'transparent' }} /><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Last Year</span></div>
+                {lyReady ? (
+                  <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 rounded" style={{ borderTop:'1px dashed #26C6DA', background:'transparent' }} /><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Last Year</span></div>
+                ) : lyPending ? (
+                  <span className="text-[10px] animate-pulse" style={{ color:'var(--text-muted)' }}>Last year loading…</span>
+                ) : null}
               </div>
             </div>
             <ResponsiveContainer width="100%" height={200}>
@@ -654,7 +662,9 @@ export default function Dashboard() {
                 <YAxis tickFormatter={v => fmtLakhs(v)} tick={{ fontSize: 9, fill:'var(--text-muted)' }} tickLine={false} axisLine={false} />
                 <ReTooltip content={<ChartTip />} />
                 <Area type="monotone" dataKey="Revenue"   stroke="#5882ff" strokeWidth={2}   fill="url(#revGrad)" dot={false} />
-                <Area type="monotone" dataKey="Last Year" stroke="#26C6DA" strokeWidth={1.5} fill="url(#lyGrad)"  dot={false} strokeDasharray="5 3" />
+                {lyReady && (
+                  <Area type="monotone" dataKey="Last Year" stroke="#26C6DA" strokeWidth={1.5} fill="url(#lyGrad)"  dot={false} strokeDasharray="5 3" />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </div>

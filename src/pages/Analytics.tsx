@@ -10,7 +10,7 @@ import {
   TrendingUp, TrendingDown, ShoppingBag, Users, Receipt, BarChart2, CalendarRange,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot } from '../hooks/useAnalytics';
+import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtLakhsAxis, formatChartLabel } from '../lib/format';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -177,6 +177,11 @@ export default function Analytics() {
     }));
   }, [data, gran]);
 
+  const hasLyData = useMemo(
+    () => chartData.some((p) => (p.prior ?? 0) > 0),
+    [chartData],
+  );
+
   const allCategories = data?.categories ?? [];
 
   // Build clean donut data: top 8 + "Others" grouping
@@ -211,8 +216,9 @@ export default function Analytics() {
   const isError = !!error && !uiLoading;
   /** After /analytics/dashboard merges, KPIs/LY/customers match transaction totals checksum. */
   const dashMerged = data?.checksum != null;
-  const lyKpiDisplay =
-    dashMerged || ((s?.ly_sales ?? 0) !== 0) ? fmtLakhs(s?.ly_sales ?? 0) : '—';
+  const lyKpiDisplay = hasLyData
+    ? fmtLakhs(s?.ly_sales ?? 0)
+    : (uiLoading || chartLoading ? 'Loading…' : '—');
   const customerKpiDisplay = (() => {
     const c = s?.customers;
     if (c == null) return '—';
@@ -227,8 +233,8 @@ export default function Analytics() {
 
   const kpiCards = s ? [
     { label: period === 'today' ? "Today's Sales" : `${PERIOD_TABS.find(t=>t.period===period)?.label ?? ''} Sales`,
-      value: fmtLakhs(s.mtd_sales), sub: `LY: ${lyKpiDisplay}`,
-      growth: s.sales_growth_pct, icon: KPI_ICONS[0], color: KPI_COLORS[0] },
+      value: fmtLakhs(s.mtd_sales), sub: lyKpiDisplay === 'Loading…' ? 'LY: Loading…' : `LY: ${lyKpiDisplay}`,
+      growth: lyGrowthReady(hasLyData, s.sales_growth_pct), icon: KPI_ICONS[0], color: KPI_COLORS[0] },
     { label: 'Quantity Sold', value: fmtCount(s.quantity), sub: 'Units sold',
       icon: KPI_ICONS[1], color: KPI_COLORS[1] },
     { label: 'Bills Generated', value: fmtCount(s.bills), sub: 'Total invoices',
@@ -241,16 +247,7 @@ export default function Analytics() {
 
   const showBarLabels = chartData.length <= 31;
 
-  // Show Last Year series only when at least one point has actual LY data.
-  // After a server restart the bundle returns prior=0 for all points; hiding
-  // the ghost bars prevents misleading "Last Year = 0" on the chart.
-  const hasLyData = useMemo(
-    () => chartData.some((p) => (p.prior ?? 0) > 0),
-    [chartData],
-  );
-
-  // Show a subtle "loading LY data" badge for periods that have YoY comparison
-  // but the dashboard merge hasn't arrived yet (LY bars will appear shortly).
+  // Show a subtle "loading LY data" badge for YoY periods until prior values arrive.
   const lyLoadingBadge =
     !hasLyData
     && !chartLoading

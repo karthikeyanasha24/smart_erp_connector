@@ -95,6 +95,8 @@ export interface TrendPoint {
   revenue: number;
   transactions: number;
   quantity?: number;
+  /** Same-day / same-period last year revenue (YoY). */
+  prior?: number;
 }
 
 export interface AnalyticsBundleResponse {

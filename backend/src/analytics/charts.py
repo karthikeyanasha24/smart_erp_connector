@@ -14,6 +14,7 @@ from src.utils.date_utils import resolve_date_range, trend_granularity
 from src.utils.sql_ref import sql_table
 from src.db.mssql import execute_query
 from src.analytics.metrics_sql import transactions_aggregate, quantity_column
+from src.analytics.trend_yoy import YOY_TREND_PERIODS, fetch_revenue_trend_yoy
 
 
 def _safe_float(val: Any) -> float:
@@ -28,6 +29,9 @@ def _safe_float(val: Any) -> float:
 # ─── Revenue Trend ────────────────────────────────────────────────────────────
 
 async def get_revenue_trend(period: str = "last_30d") -> List[Dict[str, Any]]:
+    if period in YOY_TREND_PERIODS:
+        return await fetch_revenue_trend_yoy(period)
+
     gran = trend_granularity(period)
 
     async def _fetch() -> List[Dict[str, Any]]:
