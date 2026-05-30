@@ -350,6 +350,14 @@ export default function Dashboard() {
   const txnGrowth = demo ? null : (kpis?.transactions?.growth ?? null);
   const aovGrowth = demo ? null : (kpis?.avg_order_value?.growth ?? null);
 
+  // ── PowerBI-equivalent extras ──────────────────────────────────────────────
+  // distinct_clients  = COUNT(DISTINCT CustomerId) from sales view (unique buyers in period)
+  // distinct_suppliers= COUNT(DISTINCT SupplierAlias) from sales view
+  // unique_invoices   = COUNT(DISTINCT CashmemoNo) — PowerBI "Unique Invoices" (≠ line-item count)
+  const distinctClients   = !demo && kpis?.distinct_clients?.value   != null ? fmtCount(kpis.distinct_clients.value)   : (dataPending ? '…' : '—');
+  const distinctSuppliers = !demo && kpis?.distinct_suppliers?.value != null ? fmtCount(kpis.distinct_suppliers.value) : (dataPending ? '…' : '—');
+  const uniqueInvoices    = !demo && kpis?.unique_invoices?.value    != null ? fmtCount(kpis.unique_invoices.value)    : (dataPending ? '…' : '—');
+
   // ── KPI strip: wrap in skeleton opacity when data is pending ─────────────
   // isSkeletonMode already handles charts; for KPI numbers we rely on dataPending/'…'
 
@@ -590,11 +598,54 @@ export default function Dashboard() {
           value={todaySales}
           label="Today's Sales"
           sub={todayPending ? undefined : `${todayBills} bills · ${todayQty} units`}
-          growth={todayPending ? null : (tS?.sales_growth_pct ?? null)}
+          growth={
+            // Suppress growth when today has < 20 bills — data is clearly partial
+            // (comparing a partial trading day vs a full LY day gives misleading ±99% swings)
+            todayPending || !tS || (tS.bills ?? 0) < 20
+              ? null
+              : (tS.sales_growth_pct ?? null)
+          }
           sparkData={[]}
           color="#EC407A"
           delay={0.25}
           pending={todayPending}
+        />
+      </div>
+
+      {/* ── PowerBI KPI row: Distinct Clients / Suppliers / Unique Invoices ─── */}
+      <div className="grid grid-cols-3 gap-3">
+        <KpiCard
+          icon={<Activity size={16} style={{ color:'#0EA5E9' }} />}
+          value={distinctClients}
+          label="Distinct Clients"
+          sub={dataPending ? undefined : 'Unique buyers MTD'}
+          growth={null}
+          sparkData={[]}
+          color="#0EA5E9"
+          delay={0.30}
+          pending={dataPending}
+        />
+        <KpiCard
+          icon={<Zap size={16} style={{ color:'#F97316' }} />}
+          value={distinctSuppliers}
+          label="Distinct Suppliers"
+          sub={dataPending ? undefined : 'Active suppliers MTD'}
+          growth={null}
+          sparkData={[]}
+          color="#F97316"
+          delay={0.35}
+          pending={dataPending}
+        />
+        <KpiCard
+          icon={<ArrowUpRight size={16} style={{ color:'#A855F7' }} />}
+          value={uniqueInvoices}
+          label="Unique Invoices"
+          sub={dataPending ? undefined : 'Distinct CashmemoNo'}
+          growth={null}
+          sparkData={[]}
+          color="#A855F7"
+          delay={0.40}
+          pending={dataPending}
         />
       </div>
 

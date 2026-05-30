@@ -36,6 +36,7 @@ from src.analytics.charts import (
     get_branch_detail,
 )
 from src.analytics.products_catalog import fetch_product_catalog, fetch_top_products
+from src.analytics.customers import get_customer_count
 from src.analytics.transactions import get_transactions, get_transaction_summary
 from src.analytics.view_explorer import fetch_view_page, list_catalog_views
 from src.analytics.concurrency import run_analytics_sql
@@ -109,8 +110,9 @@ async def _fetch_analytics_bundle(
     *,
     include_departments: bool = False,
     include_kpis: bool = False,
+    include_customer_count: bool = True,
 ) -> Dict[str, Any]:
-    """Run branches + trend + categories (+ optional kpis/depts) in parallel."""
+    """Run branches + trend + categories (+ optional kpis/depts/customers) in parallel."""
     n = top_n
     specs: List[Tuple[str, Any]] = [
         ("branches", get_branch_chart(period)),
@@ -121,6 +123,8 @@ async def _fetch_analytics_bundle(
         specs.append(("kpis", get_home_kpis(period, include_customers=False)))
     if include_departments:
         specs.append(("departments", get_department_chart(period, n)))
+    if include_customer_count:
+        specs.append(("customers", get_customer_count(period)))
 
     timings_ms: Dict[str, float] = {}
     errors: Dict[str, str] = {}
@@ -145,6 +149,8 @@ async def _fetch_analytics_bundle(
             payload["kpis"] = outcome
         elif name == "trend":
             payload["trend"] = outcome
+        elif name == "customers":
+            payload["customer_count"] = outcome
         else:
             payload[name] = outcome
 
@@ -172,6 +178,7 @@ async def analytics_bundle(
     top_n: int = Query(default=100, ge=1, le=100),
     include_departments: bool = Query(default=False),
     include_kpis: bool = Query(default=False),
+    include_customer_count: bool = Query(default=True),
     user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
@@ -185,6 +192,7 @@ async def analytics_bundle(
             top_n,
             include_departments=include_departments,
             include_kpis=include_kpis,
+            include_customer_count=include_customer_count,
         )
     except HTTPException:
         raise

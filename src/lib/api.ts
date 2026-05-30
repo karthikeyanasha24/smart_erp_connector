@@ -79,6 +79,11 @@ export interface KPIValue {
   period: string;
 }
 
+export interface KPISimple {
+  value: number | null;
+  period: string;
+}
+
 export interface KPIsResponse {
   success: boolean;
   period: string;
@@ -87,6 +92,10 @@ export interface KPIsResponse {
   avg_order_value: KPIValue;
   quantity?: KPIValue;
   customers: KPIValue;
+  // PowerBI-equivalent extras: distinct buyers, suppliers, unique invoice count
+  distinct_clients?:   KPISimple;
+  distinct_suppliers?: KPISimple;
+  unique_invoices?:    KPISimple;
 }
 
 export interface TrendPoint {
@@ -107,6 +116,7 @@ export interface AnalyticsBundleResponse {
   categories: CategoryPoint[];
   departments?: DeptPoint[];
   kpis?: KPIsResponse;
+  customer_count?: number | null;
   timings_ms?: Record<string, number>;
   errors?: Record<string, string>;
 }
@@ -419,13 +429,14 @@ export const analytics = {
   /** Fast path — server parallel SQL + cache (see test/qtd_breakdown.py). */
   bundle: (
     period = 'mtd',
-    opts?: { topN?: number; includeDepartments?: boolean; includeKpis?: boolean },
+    opts?: { topN?: number; includeDepartments?: boolean; includeKpis?: boolean; includeCustomerCount?: boolean },
   ) => {
     const qs = new URLSearchParams({ period });
     const topN = opts?.topN ?? 100;
     qs.set('top_n', String(topN));
     qs.set('include_departments', opts?.includeDepartments ? 'true' : 'false');
     qs.set('include_kpis', opts?.includeKpis ? 'true' : 'false');
+    qs.set('include_customer_count', opts?.includeCustomerCount !== false ? 'true' : 'false');
     return apiFetchDeduped<AnalyticsBundleResponse>(`/analytics/bundle?${qs}`, { timeoutMs: 600_000 });
   },
 

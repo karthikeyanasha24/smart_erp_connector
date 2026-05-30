@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 from src.config import cfg
 from src.utils.logger import logger
-from src.utils.date_utils import resolve_date_range, get_comparison_range
+from src.utils.date_utils import resolve_date_range, get_prior_year_range
 from src.utils.sql_ref import sql_table
 from src.db.mssql import execute_query
 from src.analytics.metrics_sql import bill_count_case, quantity_column
@@ -36,7 +36,7 @@ def _safe_float(val: Any) -> float:
 
 async def _fetch_revenue_kpi(period: str) -> Dict[str, Any]:
     date_range = resolve_date_range(period)
-    prior_range = get_comparison_range(period)
+    prior_range = get_prior_year_range(period)
 
     c = cfg
     table = sql_table(c.SALES_AI_TABLE)
@@ -122,7 +122,7 @@ async def _fetch_customer_kpi(period: str) -> Dict[str, Any]:
         return {"customers": {"value": None, "prior": None, "growth": None, "period": period}}
 
     date_range = resolve_date_range(period)
-    prior_range = get_comparison_range(period)
+    prior_range = get_prior_year_range(period)
 
     c = cfg
     table = sql_table(c.CUSTOMER_VIEW)
@@ -168,6 +168,44 @@ async def _fetch_customer_kpi(period: str) -> Dict[str, Any]:
     }
 
 
+async def _fetch_extras_kpi(period: str) -> Dict[str, Any]:
+    """Distinct clients (buyers), distinct suppliers, unique invoices — mirrors PowerBI KPIs."""
+    date_range = resolve_date_range(period)
+    c = cfg
+    table = sql_table(c.SALES_AI_TABLE)
+    date_col = c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN
+    end_expr = "DATEADD(day,1,CAST(@endDate AS DATE))"
+
+    sql = f"""
+        SELECT
+            COUNT(DISTINCT CASE WHEN [{date_col}] >= @startDate
+                                     AND [{date_col}] < {end_expr}
+                                THEN [CustomerId] END)    AS DistinctClients,
+            COUNT(DISTINCT CASE WHEN [{date_col}] >= @startDate
+                                     AND [{date_col}] < {end_expr}
+                                THEN [SupplierAlias] END) AS DistinctSuppliers,
+            COUNT(DISTINCT CASE WHEN [{date_col}] >= @startDate
+                                     AND [{date_col}] < {end_expr}
+                                THEN [CashmemoNo] END)    AS UniqueInvoices
+        FROM {table} WITH (NOLOCK)
+        WHERE [{date_col}] >= @startDate AND [{date_col}] < {end_expr}
+    """
+
+    result = await execute_query(
+        sql,
+        params={"startDate": date_range.start, "endDate": date_range.end},
+        nolock=True,
+        recompile=False,
+    )
+    row = (result["records"] or [{}])[0]
+
+    return {
+        "distinct_clients":   {"value": int(_safe_float(row.get("DistinctClients"))),   "period": date_range.label},
+        "distinct_suppliers": {"value": int(_safe_float(row.get("DistinctSuppliers"))), "period": date_range.label},
+        "unique_invoices":    {"value": int(_safe_float(row.get("UniqueInvoices"))),     "period": date_range.label},
+    }
+
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 async def get_home_kpis(
@@ -178,15 +216,17 @@ async def get_home_kpis(
     """Returns home-screen KPIs for the given period — live from SQL Server."""
     try:
         revenue_task = asyncio.create_task(_fetch_revenue_kpi(period))
-        tasks: list[Any] = [revenue_task]
+        extras_task  = asyncio.create_task(_fetch_extras_kpi(period))
+        tasks: list[Any] = [revenue_task, extras_task]
         customer_task = None
         if include_customers:
             customer_task = asyncio.create_task(_fetch_customer_kpi(period))
             tasks.append(customer_task)
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        rev_data = results[0]
-        cust_data = results[1] if customer_task else None
+        rev_data   = results[0]
+        extras_data = results[1]
+        cust_data  = results[2] if customer_task else None
 
         result: Dict[str, Any] = {}
 
@@ -195,11 +235,15 @@ async def get_home_kpis(
         else:
             logger.error("Revenue KPI fetch failed", error=str(rev_data))
             result.update({
-                "revenue": None,
-                "transactions": None,
-                "avg_order_value": None,
-                "quantity": None,
+                "revenue": None, "transactions": None,
+                "avg_order_value": None, "quantity": None,
             })
+
+        if isinstance(extras_data, dict):
+            result.update(extras_data)
+        else:
+            logger.error("Extras KPI fetch failed", error=str(extras_data))
+            result.update({"distinct_clients": None, "distinct_suppliers": None, "unique_invoices": None})
 
         if isinstance(cust_data, dict):
             result.update(cust_data)

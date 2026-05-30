@@ -47,6 +47,9 @@ export {
   formatLySub,
   lyGrowthReady,
   lyChartSubtitle,
+  bundleTrendHasLy,
+  bundleHasCustomerCount,
+  formatCustomerKpi,
 } from '../lib/lyDisplay';
 
 // ─── Persistent SWR Cache ───────────────────────────────────────────────────
@@ -1450,6 +1453,24 @@ const PERIODS_WITH_YOY_DASHBOARD = new Set([
   'mtd', 'qtd', 'ytd', 'last_6m',
 ]);
 
+function applyBundleCustomerCount(
+  page: AnalyticsPageData,
+  count: number | null | undefined,
+): AnalyticsPageData {
+  if (count == null || !page.summary) return page;
+  return { ...page, summary: { ...page.summary, customers: count } };
+}
+
+function bundleNeedsDashboardMerge(period: string, core: AnalyticsBundleResponse): boolean {
+  if (PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period) && !bundleHasCustomerCount(core)) {
+    return true;
+  }
+  if (PERIODS_WITH_YOY_DASHBOARD.has(period)) {
+    return !bundleTrendHasLy(core) || !bundleHasCustomerCount(core);
+  }
+  return false;
+}
+
 /**
  * Periods that still need a background dashboard fetch even if they don't
  * require YoY bars — used to populate customer count and other dashboard-only fields.
@@ -1530,17 +1551,13 @@ function emitPageUpdate(period: string, data: AnalyticsPageData): void {
  */
 /** True when cached data is fully merged and no background dashboard fetch is needed. */
 function cachedIsFullyMerged(d: AnalyticsPageData, period: string): boolean {
-  // Dashboard checksum = fully merged — nothing left to fetch.
   if (d.checksum != null) return true;
-  // For YoY periods, need at least one prior value to skip dashboard re-fetch.
-  if (PERIODS_WITH_YOY_DASHBOARD.has(period)) {
-    return (d.yoyTrend ?? []).some((p) => (p.prior ?? 0) > 0);
+  if (PERIODS_WITH_YOY_DASHBOARD.has(period) || PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period)) {
+    const hasLy = (d.yoyTrend ?? []).some((p) => (p.prior ?? 0) > 0);
+    const hasCust = d.summary?.customers != null;
+    return hasLy && hasCust;
   }
-  // For today/yesterday: need customer count to skip dashboard re-fetch.
-  if (PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period)) {
-    return d.summary?.customers != null;
-  }
-  return true;  // No dashboard needed for this period
+  return true;
 }
 
 export function prefetchAnalyticsPage(
@@ -1576,21 +1593,13 @@ export function prefetchAnalyticsPage(
   }
 
   const job = (async (): Promise<AnalyticsPageData | null> => {
-    // Fire dashboard fetch for both YoY periods AND today/yesterday (for customer count).
-    const needsDash =
-      PERIODS_WITH_YOY_DASHBOARD.has(period) ||
-      PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period);
-    const dashP = needsDash
-      ? analytics.dashboard(period).catch(() => null)
-      : Promise.resolve(null);
-
     try {
       const n = API_TOP_N_MAX;
-      // Lean bundle first (fast paint); departments fire in parallel and merge next.
       const bundleP = analytics.bundle(period, {
         topN: n,
         includeDepartments: false,
         includeKpis: true,
+        includeCustomerCount: true,
       });
       const deptCached = cacheGet<{ departments: DeptPoint[] }>(`departments:${period}:${n}`);
       const deptP = deptCached
@@ -1613,6 +1622,7 @@ export function prefetchAnalyticsPage(
       };
       const prevSnap = cacheGet<AnalyticsPageData>(key);
       let built = buildAnalyticsPageData(leanSplit, null, period);
+      built = applyBundleCustomerCount(built, core.customer_count);
       if (built.summary && kpiRes) {
         built = { ...built, summary: enrichSummaryFromKpi(built.summary, kpiRes) };
       }
@@ -1635,6 +1645,7 @@ export function prefetchAnalyticsPage(
       };
 
       built = buildAnalyticsPageData(split, null, period);
+      built = applyBundleCustomerCount(built, core.customer_count);
       if (built.summary && kpiRes) {
         built = { ...built, summary: enrichSummaryFromKpi(built.summary, kpiRes) };
       }
@@ -1647,34 +1658,38 @@ export function prefetchAnalyticsPage(
         onPartial?.(built);
       }
 
-      void (async () => {
-        try {
-          const dash = await dashP;
-          const dashOk =
-            dash && typeof dash === 'object' && !isEmptyDashboard(dash as DashboardResponse)
-              ? (dash as DashboardResponse)
-              : null;
-          if (!dashOk) return;
-          let full = buildAnalyticsPageData(split, dashOk, period);
-          const kpiHint = cacheGet<KPIsResponse>(`kpis:v2:${period}`) ?? cacheGet<KPIsResponse>(`kpis:${period}`);
-          const baseSummary = full.summary ?? dashOk.summary;
-          if (baseSummary) {
-            full = {
-              ...full,
-              summary: enrichSummaryFromKpi(baseSummary, kpiHint),
-            };
+      if (bundleNeedsDashboardMerge(period, core)) {
+        void (async () => {
+          try {
+            const dash = await analytics.dashboard(period).catch(() => null);
+            const dashOk =
+              dash && typeof dash === 'object' && !isEmptyDashboard(dash as DashboardResponse)
+                ? (dash as DashboardResponse)
+                : null;
+            if (!dashOk) return;
+            let full = buildAnalyticsPageData(split, dashOk, period);
+            const kpiHint = cacheGet<KPIsResponse>(`kpis:v2:${period}`) ?? cacheGet<KPIsResponse>(`kpis:${period}`);
+            const baseSummary = full.summary ?? dashOk.summary;
+            if (baseSummary) {
+              full = {
+                ...full,
+                summary: enrichSummaryFromKpi(baseSummary, kpiHint),
+              };
+            }
+            if (!isEmptyAnalyticsPage(full)) {
+              cacheSet(key, full);
+              emitPageUpdate(period, full);
+              onPartial?.(full);
+            }
+          } catch {
+            /* keep partial bundle visible */
+          } finally {
+            _prefetchInflight.delete(period);
           }
-          if (!isEmptyAnalyticsPage(full)) {
-            cacheSet(key, full);
-            emitPageUpdate(period, full);
-            onPartial?.(full);
-          }
-        } catch {
-          /* keep partial bundle visible */
-        } finally {
-          _prefetchInflight.delete(period);
-        }
-      })();
+        })();
+      } else {
+        _prefetchInflight.delete(period);
+      }
 
       return built;
     } catch {
@@ -1859,6 +1874,7 @@ export function useAnalyticsPage(
       const freshComplete =
         isFresh(cacheKey)
         && isCompleteAnalyticsPage(cached, period)
+        && cachedIsFullyMerged(cached, period)
         && !needsDepartmentBackfill(cached);
       if (freshComplete) return;
       void run(true);

@@ -152,7 +152,7 @@ class Settings(BaseSettings):
     ANALYTICS_RECOMPILE_THRESHOLD: int = 30
     ANALYTICS_TOP_N: int = 30
     ANALYTICS_TOP_N_MAX: int = 200
-    ANALYTICS_SKIP_CUSTOMER_COUNT: bool = True
+    ANALYTICS_SKIP_CUSTOMER_COUNT: bool = False
     ANALYTICS_WARMUP: bool = True
     # Keep startup warmup focused on dashboard-critical keys only.
     # Deep warmup (last_30d/last_6m/qtd/ytd) can run later via scheduled re-warm.

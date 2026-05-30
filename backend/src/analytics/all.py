@@ -383,7 +383,7 @@ def _growth(current: float, prior: float) -> Optional[float]:
 
 async def _fetch_revenue_kpi(period: str) -> Dict[str, Any]:
     date_range = resolve_date_range(period)
-    prior_range = get_comparison_range(period)
+    prior_range = get_prior_year_range(period)  # YoY: same window last year (matches dashboard)
 
     c = cfg
     table = sql_table(c.SALES_AI_TABLE)
@@ -455,7 +455,7 @@ async def _fetch_customer_kpi(period: str) -> Dict[str, Any]:
         return {"customers": {"value": None, "prior": None, "growth": None, "period": period}}
 
     date_range = resolve_date_range(period)
-    prior_range = get_comparison_range(period)
+    prior_range = get_prior_year_range(period)  # YoY: same window last year (matches dashboard)
 
     c = cfg
     table = sql_table(c.CUSTOMER_VIEW)

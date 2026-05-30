@@ -10,7 +10,7 @@ import {
   TrendingUp, TrendingDown, ShoppingBag, Users, Receipt, BarChart2, CalendarRange,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady } from '../hooks/useAnalytics';
+import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady, formatCustomerKpi } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtLakhsAxis, formatChartLabel } from '../lib/format';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -219,17 +219,10 @@ export default function Analytics() {
   const lyKpiDisplay = hasLyData
     ? fmtLakhs(s?.ly_sales ?? 0)
     : (uiLoading || chartLoading ? 'Loading…' : '—');
-  const customerKpiDisplay = (() => {
-    const c = s?.customers;
-    if (c == null) return '—';
-    if (c === 0 && !dashMerged && (s?.mtd_sales ?? 0) === 0) return '—';
-    // Material sales/invoices but zero distinct IDs usually means CustomerId/Cnt isn’t wired, not real zero.
-    const hasActivity =
-      (s.mtd_sales ?? 0) > 0 &&
-      (((s.bills ?? 0) > 0) || ((s.quantity ?? 0) > 0));
-    if (c === 0 && hasActivity) return '—';
-    return fmtCount(c);
-  })();
+  const customerKpiDisplay = formatCustomerKpi(s?.customers, {
+    loading: (uiLoading || chartLoading) && s?.customers == null,
+    hasSalesActivity: (s?.mtd_sales ?? 0) > 0 && ((s?.bills ?? 0) > 0 || (s?.quantity ?? 0) > 0),
+  });
 
   const kpiCards = s ? [
     { label: period === 'today' ? "Today's Sales" : `${PERIOD_TABS.find(t=>t.period===period)?.label ?? ''} Sales`,
@@ -239,7 +232,7 @@ export default function Analytics() {
       icon: KPI_ICONS[1], color: KPI_COLORS[1] },
     { label: 'Bills Generated', value: fmtCount(s.bills), sub: 'Total invoices',
       icon: KPI_ICONS[2], color: KPI_COLORS[2] },
-    { label: 'Customer Count', value: customerKpiDisplay, sub: 'Unique customers',
+    { label: 'Customer Count', value: customerKpiDisplay, sub: customerKpiDisplay === 'Loading…' ? 'Distinct customers' : 'Unique customers',
       icon: KPI_ICONS[3], color: KPI_COLORS[3] },
   ] : [];
 
