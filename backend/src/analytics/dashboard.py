@@ -12,6 +12,7 @@ from src.config import cfg
 from src.db.mssql import execute_query
 from src.utils.sql_ref import sql_table
 from src.analytics.metrics_sql import bill_count_case, quantity_column, transactions_aggregate
+from src.analytics.cache import cache
 from src.utils.logger import logger
 from src.utils.date_utils import (
     resolve_date_range,
@@ -281,6 +282,13 @@ async def get_dashboard(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> Dict[str, Any]:
+    # Custom-range dashboards are not cached (date params vary).
+    cache_key = f"dashboard:v2:{period}" if period != "custom" else None
+    if cache_key:
+        cached, is_fresh = cache.get(cache_key)
+        if cached is not None:
+            logger.debug("🔍 dashboard cache hit", period=period, fresh=is_fresh)
+            return cached
     logger.info("🔍 dashboard requested", period=period)
 
     async def _fetch() -> Dict[str, Any]:
@@ -350,4 +358,7 @@ async def get_dashboard(
             },
         }
 
-    return await _fetch()
+    result = await _fetch()
+    if cache_key:
+        cache.set(cache_key, result)
+    return result
