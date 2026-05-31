@@ -56,6 +56,12 @@ _VALID_PERIODS = {
     "last_month", "last_quarter", "last_year", "custom",
 }
 
+# Periods too long for COUNT(DISTINCT) customer queries — skip to avoid timeouts.
+_LONG_PERIODS = {
+    "ytd", "qtd", "last_6m", "last_90d", "last_180d",
+    "last_365d", "last_year", "last_quarter",
+}
+
 
 def _validate_period(period: str) -> str:
     if period not in _VALID_PERIODS:
@@ -95,7 +101,9 @@ async def home_kpis(
 ) -> Dict[str, Any]:
     _validate_period(period)
     try:
-        data = await get_home_kpis(period)
+        # include_extras=True only here — adds COUNT(DISTINCT) KPIs for the dashboard
+        # cards. Opt-in because these are expensive on long date ranges.
+        data = await get_home_kpis(period, include_extras=True)
         return {"success": True, "period": period, **data}
     except Exception as exc:
         logger.error("KPI fetch failed", period=period, error=str(exc))
@@ -110,6 +118,7 @@ async def _fetch_analytics_bundle(
     *,
     include_departments: bool = False,
     include_kpis: bool = False,
+    include_extras: bool = False,
     include_customer_count: bool = True,
 ) -> Dict[str, Any]:
     """Run branches + trend + categories (+ optional kpis/depts/customers) in parallel."""
@@ -120,10 +129,11 @@ async def _fetch_analytics_bundle(
         ("categories", get_category_breakdown(period, n)),
     ]
     if include_kpis:
-        specs.append(("kpis", get_home_kpis(period, include_customers=False)))
+        specs.append(("kpis", get_home_kpis(period, include_customers=False, include_extras=include_extras)))
     if include_departments:
         specs.append(("departments", get_department_chart(period, n)))
-    if include_customer_count:
+    # Skip customer COUNT(DISTINCT) for long periods — too slow (47s+) on large views.
+    if include_customer_count and period not in _LONG_PERIODS:
         specs.append(("customers", get_customer_count(period)))
 
     timings_ms: Dict[str, float] = {}
@@ -211,8 +221,8 @@ async def dashboard_page(
     """
     try:
         mtd, today = await asyncio.gather(
-            _fetch_analytics_bundle("mtd", 100, include_kpis=True),
-            _fetch_analytics_bundle("today", 10, include_kpis=True),
+            _fetch_analytics_bundle("mtd", 100, include_kpis=True, include_extras=True),
+            _fetch_analytics_bundle("today", 10, include_kpis=True, include_extras=False),
         )
         return {"success": True, "mtd": mtd, "today": today}
     except HTTPException:

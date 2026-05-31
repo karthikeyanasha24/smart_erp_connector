@@ -137,13 +137,19 @@ export default function Transactions() {
   }, []);
 
   const { summary, loading: summaryLoading, fromApi: summaryFromApi, refetch: refetchSummary } = useTransactionSummary(period);
-  const { transactions, totalCount, totalPages, loading: txnLoading, refetch, fromApi: txnFromApi } =
+  const { transactions, totalCount, totalPages, dataPeriod, loading: txnLoading, refetch, fromApi: txnFromApi } =
     useTransactions({
       period,
       page,
       page_size: PAGE_SIZE,
       search: debouncedSearch || undefined,
     });
+
+  // True while we're waiting for data that actually belongs to the current period.
+  // This fires when the user switches periods and there is NO cache for the new period yet —
+  // the hook keeps old-period rows visible (stale-while-revalidate) but we should show
+  // skeletons in the table body so "Today" doesn't display MTD rows.
+  const tableLoading = txnLoading || (!!dataPeriod && dataPeriod !== period);
 
   const fromApi = summaryFromApi || txnFromApi;
 
@@ -418,7 +424,7 @@ export default function Transactions() {
             </p>
             {summaryLoading && (card.label === 'Total Volume' || card.label === 'Completed') ? (
               <div className="h-8 w-24 rounded animate-pulse" style={{ background: isDark ? '#21262d' : '#eaeef2' }} />
-            ) : txnLoading && (card.label === 'Pending' || card.label === 'Failed') ? (
+            ) : tableLoading && (card.label === 'Pending' || card.label === 'Failed') ? (
               <div className="h-8 w-10 rounded animate-pulse" style={{ background: isDark ? '#21262d' : '#eaeef2' }} />
             ) : (
               <p
@@ -451,7 +457,7 @@ export default function Transactions() {
               Recent Transactions
             </h2>
             <p className="text-xs mt-0.5" style={{ color: isDark ? '#8b949e' : '#57606a' }}>
-              {txnLoading && totalCount === 0 ? 'Loading…' : `${totalCount.toLocaleString('en-IN')} records`}
+              {tableLoading ? 'Loading…' : `${totalCount.toLocaleString('en-IN')} records`}
             </p>
           </div>
           <div className="relative w-full sm:max-w-xs">
@@ -488,7 +494,7 @@ export default function Transactions() {
               </tr>
             </thead>
             <tbody>
-              {txnLoading && sortedRows.length === 0 ? (
+              {tableLoading ? (
                 [...Array(8)].map((_, i) => (
                   <tr key={i} style={{ borderBottom: surface.borderSoft }}>
                     {[...Array(7)].map((__, j) => (

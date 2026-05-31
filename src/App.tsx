@@ -15,9 +15,9 @@ import Branch from './pages/Branch';
 import Product from './pages/Product';
 import DataViews from './pages/DataViews';
 import ERPViews from './pages/ERPViews';
-import Insights from './pages/Insights';
 import Settings from './pages/Settings';
 import { pathToPage } from './lib/routes';
+import ScrollToTop from './components/ScrollToTop';
 
 function AppLayout() {
   const { pathname } = useLocation();
@@ -35,6 +35,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <NavigationProvider>
+            <ScrollToTop />
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route element={<ProtectedRoute><Outlet /></ProtectedRoute>}>
@@ -53,11 +54,6 @@ export default function App() {
                   <Route path="/product" element={<Product />} />
                   <Route path="/data" element={<DataViews />} />
                   <Route path="/erp-views" element={<ERPViews />} />
-                  <Route path="/insights" element={
-                    <RoleRoute allowed={['admin', 'manager', 'analyst']}>
-                      <Insights />
-                    </RoleRoute>
-                  } />
                   <Route path="/settings" element={
                     <RoleRoute allowed={['admin', 'manager']}>
                       <Settings />

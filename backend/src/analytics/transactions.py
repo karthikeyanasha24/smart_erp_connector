@@ -149,38 +149,32 @@ async def get_transactions(
         sel = _transactions_catalog_select_sql().strip()
         order_sql = "ORDER BY T.[XnDt] DESC, T.[XnNo] DESC, T.[XnId] DESC"
 
-        # Use a high TOP cap so we get a real total count for the UI.
-        # SLSXNS has ~120K rows/month — 500K covers YTD comfortably without a full scan.
-        COUNT_CAP = 500_001
-        fast_count_cap = COUNT_CAP
-        # Note: OPTION (RECOMPILE) cannot be used inside a subquery in SQL Server.
-        count_sql = f"""
-            SELECT COUNT(*) AS TotalCount
-            FROM (
-                SELECT TOP ({fast_count_cap}) 1 AS _r
-                FROM {SLSXNS_VIEW} T WITH (NOLOCK)
-                WHERE {where_sql}
-            ) _sub
-        """
         data_sql = f"""
             SELECT {sel}
             FROM {SLSXNS_VIEW} T WITH (NOLOCK)
             WHERE {where_sql}
             {order_sql}
             OFFSET {offset} ROWS FETCH NEXT {page_size} ROWS ONLY
+        OPTION (RECOMPILE)
         """
 
-        # Run count and data in parallel for speed
         import asyncio
+        COUNT_CAP = 500_001
+        count_sql = f"""
+            SELECT COUNT(*) AS TotalCount
+            FROM (
+                SELECT TOP ({COUNT_CAP}) 1 AS _r
+                FROM {SLSXNS_VIEW} T WITH (NOLOCK)
+                WHERE {where_sql}
+            ) _sub
+        OPTION (RECOMPILE)
+        """
         count_res, data_res = await asyncio.gather(
             execute_query(count_sql, params=params, nolock=False, recompile=False),
             execute_query(data_sql, params=params, nolock=False, recompile=False),
         )
         counted = int(_safe_float(count_res["records"][0].get("TotalCount", 0))) if count_res["records"] else 0
-        # If we hit the cap (500K+), report exact cap — extremely rare for any single period
-        total_count = counted
-
-        return {"total_count": total_count, "records": data_res["records"]}
+        return {"total_count": counted, "records": data_res["records"]}
 
     async def run_legacy() -> Dict[str, Any]:
         where_sql, filt = _transactions_where_clause(branch, category, search, legacy_search=True)
@@ -189,33 +183,32 @@ async def get_transactions(
         sel = _transactions_legacy_select_sql().strip()
         order_sql = "ORDER BY [XnDt] DESC, [CashmemoNo] DESC"
 
-        COUNT_CAP = 500_001
-        fast_count_cap = COUNT_CAP
-        count_sql = f"""
-            SELECT COUNT(*) AS TotalCount
-            FROM (
-                SELECT TOP ({fast_count_cap}) 1 AS _r
-                FROM {SLSXNS_VIEW} WITH (NOLOCK)
-                WHERE {where_sql}
-            ) _sub
-        """
         data_sql = f"""
             SELECT {sel}
             FROM {SLSXNS_VIEW} WITH (NOLOCK)
             WHERE {where_sql}
             {order_sql}
             OFFSET {offset} ROWS FETCH NEXT {page_size} ROWS ONLY
+        OPTION (RECOMPILE)
         """
 
         import asyncio
+        COUNT_CAP = 500_001
+        count_sql = f"""
+            SELECT COUNT(*) AS TotalCount
+            FROM (
+                SELECT TOP ({COUNT_CAP}) 1 AS _r
+                FROM {SLSXNS_VIEW} WITH (NOLOCK)
+                WHERE {where_sql}
+            ) _sub
+        OPTION (RECOMPILE)
+        """
         count_res, data_res = await asyncio.gather(
             execute_query(count_sql, params=params, nolock=False, recompile=False),
             execute_query(data_sql, params=params, nolock=False, recompile=False),
         )
         counted = int(_safe_float(count_res["records"][0].get("TotalCount", 0))) if count_res["records"] else 0
-        total_count = counted
-
-        return {"total_count": total_count, "records": data_res["records"]}
+        return {"total_count": counted, "records": data_res["records"]}
 
     try:
         pack = await run_catalog()
@@ -286,4 +279,3 @@ async def get_transaction_summary(period: str = "mtd") -> Dict[str, Any]:
         "period": period,
         "period_label": dr.label,
     }
-  

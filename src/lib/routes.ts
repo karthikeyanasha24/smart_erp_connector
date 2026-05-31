@@ -10,7 +10,6 @@ export const ROUTES: Record<Page, string> = {
   product: '/product',
   data: '/data',
   'erp-views': '/erp-views',
-  insights: '/insights',
   settings: '/settings',
 };
 

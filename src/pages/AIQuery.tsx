@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, BarChart, Bar,
@@ -8,7 +8,8 @@ import {
   Send, Sparkles, Code2, BarChart2, Loader2,
   Zap, Brain, Terminal, Copy, Check, ArrowRight, Database, ShieldCheck,
   ChevronDown, ThumbsUp, ThumbsDown, BookMarked, Star, Plus, Trash2,
-  Search, X, LayoutTemplate, CheckCircle2, AlertCircle,
+  Search, X, LayoutTemplate, CheckCircle2, AlertCircle, MessageSquarePlus,
+  TrendingUp, Building2, Package, Users, Clock, Hash,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { ai, NLQResponse, fetchPublicHealth } from '../lib/api';
@@ -22,7 +23,7 @@ import verifiedQueriesFallback from '../data/verified_nlq_queries.json';
 
 const PIE_COLORS = ['#00b8e6', '#00e67a', '#ffb800', '#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#4ade80'];
 
-// ── Predefined templates (hardcoded, always available) ────────────────────────
+// ── Predefined templates ──────────────────────────────────────────────────────
 const PREDEFINED_TEMPLATES: QueryTemplate[] = [
   { id: 'tpl_1', label: 'Top branches by revenue', question: 'Show top 10 branches by revenue this month', category: 'Revenue', builtin: true },
   { id: 'tpl_2', label: 'Daily revenue trend', question: 'Show daily revenue trend for the last 30 days', category: 'Trends', builtin: true },
@@ -33,6 +34,103 @@ const PREDEFINED_TEMPLATES: QueryTemplate[] = [
   { id: 'tpl_7', label: 'Revenue vs last year', question: 'Compare this month\'s revenue to the same period last year', category: 'Trends', builtin: true },
   { id: 'tpl_8', label: 'Department performance', question: 'Show revenue by department for the current month', category: 'Departments', builtin: true },
 ];
+
+// ── Context topic detection ───────────────────────────────────────────────────
+
+type Topic = 'branch' | 'product' | 'trend' | 'salesperson' | 'customer' | 'revenue' | 'department' | null;
+
+function detectTopic(text: string): Topic {
+  const q = text.toLowerCase();
+  if (/department.*categor|categor.*department|dept.*level|5\s+year.*department/i.test(q)) return 'department';
+  if (/branch|store|outlet|location/.test(q)) return 'branch';
+  if (/product|item|sku|category|department/.test(q)) return 'product';
+  if (/trend|daily|weekly|monthly|over time|last \d+/.test(q)) return 'trend';
+  if (/salesperson|staff|sales person|rep/.test(q)) return 'salesperson';
+  if (/customer|buyer|client/.test(q)) return 'customer';
+  if (/revenue|sales|amount|income/.test(q)) return 'revenue';
+  if (/department|dept/.test(q)) return 'department';
+  return null;
+}
+
+const TOPIC_FOLLOW_UPS: Record<NonNullable<Topic>, string[]> = {
+  branch: [
+    'What is the trend for the top branch this month?',
+    'Which branch had the highest growth vs last year?',
+    'Compare top 3 branches side by side',
+    'Show daily breakdown for the top performing branch',
+  ],
+  product: [
+    'Which categories are growing fastest this month?',
+    'Show top 20 products by revenue this quarter',
+    'What is the revenue contribution % by category?',
+    'Which products declined vs last month?',
+  ],
+  trend: [
+    'What caused the peaks in this period?',
+    'Show the same trend for last year',
+    'Break this down by branch over time',
+    'Compare weekday vs weekend revenue',
+  ],
+  salesperson: [
+    'How have the top salespersons performed vs last month?',
+    'Which salesperson has the highest average order value?',
+    'Show salesperson performance by branch',
+    'Who are the top 5 salespersons this quarter?',
+  ],
+  customer: [
+    'Which branch has the most unique customers?',
+    'How many new customers vs returning customers this month?',
+    'What is the average spend per customer?',
+    'Show customer count trend over last 6 months',
+  ],
+  revenue: [
+    'Break this down by product category',
+    'Which branch is driving the most revenue?',
+    'How does this compare to last year?',
+    'Show day-by-day revenue this month',
+  ],
+  department: [
+    'Which department has the highest growth?',
+    'Show department performance by branch',
+    'Compare departments this month vs last month',
+    'Top 5 products within the top department',
+  ],
+};
+
+function generateFollowUps(userQuestion: string, msg: Message): string[] {
+  const topic = detectTopic(userQuestion);
+  if (!topic) {
+    // Fallback generic follow-ups based on chart type
+    if (msg.chartType === 'bar' || msg.chartType === 'pie') {
+      return [
+        'Show as a trend over the last 30 days',
+        'Compare this to last year',
+        'Break this down further by branch',
+      ];
+    }
+    if (msg.chartType === 'area' || msg.chartType === 'line') {
+      return [
+        'Show the same trend for last year',
+        'What is the total for this period?',
+        'Break down by top category',
+      ];
+    }
+    return [];
+  }
+  const pool = TOPIC_FOLLOW_UPS[topic];
+  // Pick up to 3, excluding the original question
+  return pool.filter(s => !s.toLowerCase().includes(userQuestion.toLowerCase().slice(0, 12))).slice(0, 3);
+}
+
+const TOPIC_ICONS: Record<NonNullable<Topic>, React.ElementType> = {
+  branch: Building2,
+  product: Package,
+  trend: TrendingUp,
+  salesperson: Users,
+  customer: Users,
+  revenue: Hash,
+  department: Database,
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,15 +164,15 @@ interface Message {
   kpiCards?: KPICard[];
   table?: { columns: string[]; rows: string[][] };
   insights?: Array<{ title?: string; description?: string; severity?: string }>;
+  warnings?: string[];
   thinking?: string;
   faqTemplateId?: string | null;
   provider?: 'claude' | 'openai';
   timestamp: string;
   feedback?: Feedback;
-  /** If this reply reused an approved SQL, store the original approved question */
   reusedFrom?: string;
-  /** The user question that generated this AI reply (for saving) */
   userQuestion?: string;
+  followUps?: string[];
 }
 
 // ── Similarity helpers ────────────────────────────────────────────────────────
@@ -127,9 +225,9 @@ function saveUserTemplates(list: QueryTemplate[]) {
   localStorage.setItem(LS_TEMPLATES, JSON.stringify(list.slice(0, 100)));
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Sub-components (memoized) ─────────────────────────────────────────────────
 
-function SQLBlock({ sql }: { sql: string }) {
+const SQLBlock = memo(function SQLBlock({ sql }: { sql: string }) {
   const { isDark } = useTheme();
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -156,9 +254,9 @@ function SQLBlock({ sql }: { sql: string }) {
       <pre className="p-4 text-xs font-mono overflow-x-auto max-h-48" style={{ color: isDark ? '#a5f3fc' : '#0369a1' }}>{sql}</pre>
     </div>
   );
-}
+});
 
-function KPICards({ cards }: { cards: KPICard[] }) {
+const KPICards = memo(function KPICards({ cards }: { cards: KPICard[] }) {
   const { isDark } = useTheme();
   if (!cards.length) return null;
   return (
@@ -172,9 +270,9 @@ function KPICards({ cards }: { cards: KPICard[] }) {
       ))}
     </div>
   );
-}
+});
 
-function ResultChart({ type, data, valueKey }: { type: 'bar' | 'area' | 'line' | 'pie'; data: ChartPoint[]; valueKey: string }) {
+const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 'bar' | 'area' | 'line' | 'pie'; data: ChartPoint[]; valueKey: string }) {
   const { isDark } = useTheme();
   if (!data.length) return null;
   const tick = { fill: 'var(--text-muted)', fontSize: 9 };
@@ -228,9 +326,9 @@ function ResultChart({ type, data, valueKey }: { type: 'bar' | 'area' | 'line' |
       </div>
     </div>
   );
-}
+});
 
-function ResultTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
+const ResultTable = memo(function ResultTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
   const { isDark } = useTheme();
   return (
     <div className="mt-3 rounded-xl overflow-x-auto"
@@ -251,9 +349,9 @@ function ResultTable({ columns, rows }: { columns: string[]; rows: string[][] })
       </table>
     </div>
   );
-}
+});
 
-function ThinkingBubble({ text }: { text: string }) {
+const ThinkingBubble = memo(function ThinkingBubble({ text }: { text: string }) {
   const { isDark } = useTheme();
   return (
     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
@@ -263,11 +361,76 @@ function ThinkingBubble({ text }: { text: string }) {
       <span style={{ opacity: 0.8 }}>{text}</span>
     </motion.div>
   );
-}
+});
+
+// ── Adaptive follow-up chips ──────────────────────────────────────────────────
+
+const AdaptiveChips = memo(function AdaptiveChips({
+  followUps, onSelect, disabled,
+}: { followUps: string[]; onSelect: (q: string) => void; disabled: boolean }) {
+  const { isDark } = useTheme();
+  if (!followUps.length) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.3, duration: 0.25 }}
+      className="mt-3 flex flex-wrap gap-1.5"
+    >
+      <span className="text-2xs self-center mr-0.5" style={{ color: 'var(--text-muted)' }}>Ask next:</span>
+      {followUps.map((q, i) => (
+        <motion.button
+          key={i}
+          type="button"
+          disabled={disabled}
+          onClick={() => onSelect(q)}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-2xs font-medium disabled:opacity-40"
+          style={{
+            background: isDark ? 'rgba(0,184,230,0.08)' : 'rgba(0,184,230,0.06)',
+            border: isDark ? '1px solid rgba(0,184,230,0.2)' : '1px solid rgba(0,184,230,0.15)',
+            color: '#00b8e6',
+          }}
+          whileHover={{ scale: 1.03, background: isDark ? 'rgba(0,184,230,0.15)' : 'rgba(0,184,230,0.1)' }}
+          whileTap={{ scale: 0.97 }}
+        >
+          <ArrowRight size={9} />
+          {q.length > 52 ? q.slice(0, 52) + '…' : q}
+        </motion.button>
+      ))}
+    </motion.div>
+  );
+});
+
+// ── Topic context pill ────────────────────────────────────────────────────────
+
+const TopicPill = memo(function TopicPill({ topic }: { topic: NonNullable<Topic> }) {
+  const Icon = TOPIC_ICONS[topic];
+  const labels: Record<NonNullable<Topic>, string> = {
+    branch: 'Branch context',
+    product: 'Product context',
+    trend: 'Trend context',
+    salesperson: 'Sales staff context',
+    customer: 'Customer context',
+    revenue: 'Revenue context',
+    department: 'Department context',
+  };
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-2xs font-semibold"
+      style={{ background: 'rgba(0,184,230,0.1)', color: '#00b8e6', border: '1px solid rgba(0,184,230,0.2)' }}
+    >
+      <Icon size={10} />
+      {labels[topic]}
+    </motion.div>
+  );
+});
 
 // ── Toast notification ────────────────────────────────────────────────────────
 
-function Toast({ message, type, visible }: { message: string; type: 'success' | 'error'; visible: boolean }) {
+const Toast = memo(function Toast({ message, type, visible }: { message: string; type: 'success' | 'error'; visible: boolean }) {
   return (
     <AnimatePresence>
       {visible && (
@@ -284,11 +447,17 @@ function Toast({ message, type, visible }: { message: string; type: 'success' | 
       )}
     </AnimatePresence>
   );
-}
+});
 
 // ── NLQ → Message converter ───────────────────────────────────────────────────
 
-function nlqToMessage(resp: NLQResponse, id: string, usedProvider: 'claude' | 'openai', userQuestion: string, reusedFrom?: string): Message {
+function nlqToMessage(
+  resp: NLQResponse,
+  id: string,
+  usedProvider: 'claude' | 'openai',
+  userQuestion: string,
+  reusedFrom?: string,
+): Message {
   const viz = buildNLQVisualization(resp.records ?? [], resp.chart_type);
   const providerLabel = usedProvider === 'openai' ? 'ChatGPT' : 'Claude';
   const thinkingParts = [
@@ -298,7 +467,7 @@ function nlqToMessage(resp: NLQResponse, id: string, usedProvider: 'claude' | 'o
     `${resp.duration_ms}ms`,
     providerLabel,
   ];
-  return {
+  const msg: Message = {
     id,
     role: 'ai',
     content: resp.summary || resp.description || 'Query executed successfully.',
@@ -308,6 +477,7 @@ function nlqToMessage(resp: NLQResponse, id: string, usedProvider: 'claude' | 'o
     kpiCards: viz.kpiCards.length ? viz.kpiCards : undefined,
     table: viz.table,
     insights: (resp.insights ?? []) as Message['insights'],
+    warnings: resp.warnings?.length ? resp.warnings : undefined,
     thinking: thinkingParts.filter(Boolean).join(' · '),
     faqTemplateId: resp.faq_template_id,
     provider: usedProvider,
@@ -316,6 +486,22 @@ function nlqToMessage(resp: NLQResponse, id: string, usedProvider: 'claude' | 'o
     reusedFrom,
     userQuestion,
   };
+  // Attach adaptive follow-up suggestions
+  msg.followUps = generateFollowUps(userQuestion, msg);
+  return msg;
+}
+
+// ── Auto-resize textarea hook ─────────────────────────────────────────────────
+
+function useAutoResize(value: string) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [value]);
+  return ref;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -335,6 +521,9 @@ export default function AIQuery() {
   const [provider, setProvider] = useState<'claude' | 'openai'>('claude');
   const [showProviderMenu, setShowProviderMenu] = useState(false);
 
+  // Conversation context
+  const [activeTopic, setActiveTopic] = useState<Topic>(null);
+
   // Suggestions state
   const [suggestions, setSuggestions] = useState<string[]>(verifiedQueriesFallback as string[]);
   const [suggestionFilter, setSuggestionFilter] = useState('');
@@ -342,7 +531,7 @@ export default function AIQuery() {
   // Left panel tabs
   const [leftTab, setLeftTab] = useState<LeftTab>('suggestions');
 
-  // Templates (predefined + user-saved)
+  // Templates
   const [userTemplates, setUserTemplates] = useState<QueryTemplate[]>(() => loadUserTemplates());
   const [templateFilter, setTemplateFilter] = useState('');
   const [addingTemplate, setAddingTemplate] = useState(false);
@@ -350,13 +539,14 @@ export default function AIQuery() {
   const [newTplQuestion, setNewTplQuestion] = useState('');
   const [newTplCategory, setNewTplCategory] = useState('Custom');
 
-  // Approved queries (semantic SQL reuse)
+  // Approved queries
   const [approvedQueries, setApprovedQueries] = useState<ApprovedQuery[]>(() => loadApproved());
 
   // Toast
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useAutoResize(input);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
@@ -376,7 +566,7 @@ export default function AIQuery() {
   }, []);
 
   // ── Semantic match ─────────────────────────────────────────────────────────
-  const SIMILARITY_THRESHOLD = 0.65; // Jaccard 0.65 ≈ "very similar question"
+  const SIMILARITY_THRESHOLD = 0.65;
 
   const findApprovedMatch = useCallback((query: string): ApprovedQuery | null => {
     let best: ApprovedQuery | null = null;
@@ -388,21 +578,27 @@ export default function AIQuery() {
     return best;
   }, [approvedQueries]);
 
-  // ── Feedback (thumbs) ──────────────────────────────────────────────────────
+  // ── New chat ───────────────────────────────────────────────────────────────
+  const newChat = useCallback(() => {
+    setMessages([]);
+    setConversationId(undefined);
+    setActiveTopic(null);
+    setShowSQL({});
+  }, []);
+
+  // ── Feedback ──────────────────────────────────────────────────────────────
   const handleFeedback = useCallback((msgId: string, fb: Feedback) => {
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId) return m;
       if (fb === 'up' && m.sql && m.userQuestion) {
-        // Save to approved queries
         const newApproved: ApprovedQuery = {
           id: `aq_${Date.now()}`,
           question: m.userQuestion,
           sql: m.sql,
           savedAt: new Date().toISOString(),
         };
-        setApprovedQueries(prev => {
-          // Remove duplicates of same question
-          const deduped = prev.filter(q => jaccardSimilarity(q.question, m.userQuestion!) < 0.9);
+        setApprovedQueries(prev2 => {
+          const deduped = prev2.filter(q => jaccardSimilarity(q.question, m.userQuestion!) < 0.9);
           const updated = [newApproved, ...deduped];
           saveApproved(updated);
           return updated;
@@ -416,10 +612,7 @@ export default function AIQuery() {
   }, [showToast]);
 
   // ── Template management ────────────────────────────────────────────────────
-  const allTemplates = useMemo(() => [
-    ...PREDEFINED_TEMPLATES,
-    ...userTemplates,
-  ], [userTemplates]);
+  const allTemplates = useMemo(() => [...PREDEFINED_TEMPLATES, ...userTemplates], [userTemplates]);
 
   const filteredTemplates = useMemo(() => {
     const q = templateFilter.trim().toLowerCase();
@@ -459,7 +652,6 @@ export default function AIQuery() {
     });
   }, []);
 
-  // ── Save message as template ───────────────────────────────────────────────
   const saveAsTemplate = useCallback((msg: Message) => {
     if (!msg.userQuestion) return;
     const tpl: QueryTemplate = {
@@ -485,6 +677,10 @@ export default function AIQuery() {
     if (!msg || loading) return;
     setInput('');
 
+    // Track conversation topic
+    const topic = detectTopic(msg);
+    if (topic) setActiveTopic(topic);
+
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -494,7 +690,6 @@ export default function AIQuery() {
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
-    // Check for approved SQL match
     const approvedMatch = findApprovedMatch(msg);
     const queryText = approvedMatch ? approvedMatch.question : msg;
 
@@ -509,7 +704,7 @@ export default function AIQuery() {
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'ai',
-        content: `Query failed: ${err instanceof Error ? err.message : 'Unknown error'}. Check login and SQL Server connection.`,
+        content: `Query failed: ${err instanceof Error ? err.message : 'Unknown error'}. Check connection and try again.`,
         timestamp: new Date().toLocaleTimeString(),
         userQuestion: msg,
       }]);
@@ -518,17 +713,33 @@ export default function AIQuery() {
     }
   }, [input, loading, conversationId, provider, findApprovedMatch]);
 
-  // ── Filter suggestions ─────────────────────────────────────────────────────
-  const filteredSuggestions = suggestions.filter(s =>
-    !suggestionFilter.trim() || s.toLowerCase().includes(suggestionFilter.toLowerCase()),
-  );
+  // ── Filter suggestions (topic-aware) ──────────────────────────────────────
+  const filteredSuggestions = useMemo(() => {
+    const base = suggestions.filter(s =>
+      !suggestionFilter.trim() || s.toLowerCase().includes(suggestionFilter.toLowerCase()),
+    );
+    // Bubble topic-relevant suggestions to the top if we have an active topic
+    if (!activeTopic || suggestionFilter.trim()) return base;
+    const topicKeywords: Record<NonNullable<Topic>, string[]> = {
+      branch: ['branch', 'store', 'location'],
+      product: ['product', 'item', 'category', 'sku'],
+      trend: ['trend', 'daily', 'monthly', 'over time'],
+      salesperson: ['salesperson', 'sales person', 'staff'],
+      customer: ['customer', 'buyer', 'client'],
+      revenue: ['revenue', 'sales', 'amount'],
+      department: ['department', 'dept'],
+    };
+    const kw = topicKeywords[activeTopic];
+    const relevant = base.filter(s => kw.some(k => s.toLowerCase().includes(k)));
+    const rest = base.filter(s => !kw.some(k => s.toLowerCase().includes(k)));
+    return [...relevant, ...rest];
+  }, [suggestions, suggestionFilter, activeTopic]);
 
   // ── Render AI message extras ───────────────────────────────────────────────
-  const renderAiResults = (msg: Message) => (
+  const renderAiResults = useCallback((msg: Message) => (
     <div className="w-full mt-1 space-y-0">
       {msg.thinking && <ThinkingBubble text={msg.thinking} />}
 
-      {/* Reused SQL badge */}
       {msg.reusedFrom && (
         <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-medium"
           style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.25)' }}>
@@ -537,7 +748,6 @@ export default function AIQuery() {
         </div>
       )}
 
-      {/* Verified FAQ badge */}
       {msg.faqTemplateId && !msg.reusedFrom && (
         <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-medium"
           style={{ background: 'rgba(0,230,122,0.1)', color: '#00e67a', border: '1px solid rgba(0,230,122,0.25)' }}>
@@ -547,6 +757,17 @@ export default function AIQuery() {
       )}
 
       {msg.kpiCards && <KPICards cards={msg.kpiCards} />}
+      {msg.warnings && msg.warnings.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {msg.warnings.map((w, i) => (
+            <p key={i} className="text-xs px-2 py-1 rounded-lg flex items-start gap-1.5"
+              style={{ background: 'rgba(255,184,0,0.08)', color: '#ffb800', border: '1px solid rgba(255,184,0,0.2)' }}>
+              <AlertCircle size={11} className="flex-shrink-0 mt-0.5" />
+              {w}
+            </p>
+          ))}
+        </div>
+      )}
       {msg.chart && msg.chartType && msg.chartType !== 'none' && (
         <ResultChart type={msg.chartType as 'bar' | 'area' | 'line' | 'pie'} data={msg.chart.data} valueKey={msg.chart.valueKey} />
       )}
@@ -562,6 +783,8 @@ export default function AIQuery() {
           ))}
         </div>
       )}
+
+      {/* SQL toggle */}
       {msg.sql && (
         <div>
           <button onClick={() => setShowSQL(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
@@ -580,72 +803,73 @@ export default function AIQuery() {
         </div>
       )}
 
+      {/* Adaptive follow-up chips */}
+      {msg.followUps && msg.followUps.length > 0 && (
+        <AdaptiveChips followUps={msg.followUps} onSelect={sendMessage} disabled={loading} />
+      )}
+
       {/* Feedback row */}
       <div className="flex items-center gap-2 mt-3 pt-2.5"
         style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}>
         <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>Was this helpful?</span>
-        <motion.button
-          type="button"
-          onClick={() => handleFeedback(msg.id, 'up')}
+        <motion.button type="button" onClick={() => handleFeedback(msg.id, 'up')}
           className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
           style={{
             background: msg.feedback === 'up' ? 'rgba(0,230,122,0.15)' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
             color: msg.feedback === 'up' ? '#00e67a' : 'var(--text-muted)',
             border: msg.feedback === 'up' ? '1px solid rgba(0,230,122,0.3)' : isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
           }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <ThumbsUp size={10} />
           {msg.feedback === 'up' ? 'Approved' : 'Approve'}
         </motion.button>
-        <motion.button
-          type="button"
-          onClick={() => handleFeedback(msg.id, 'down')}
+        <motion.button type="button" onClick={() => handleFeedback(msg.id, 'down')}
           className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
           style={{
             background: msg.feedback === 'down' ? 'rgba(239,68,68,0.12)' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
             color: msg.feedback === 'down' ? '#f87171' : 'var(--text-muted)',
             border: msg.feedback === 'down' ? '1px solid rgba(239,68,68,0.25)' : isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
           }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <ThumbsDown size={10} />
-          {msg.feedback === 'down' ? 'Not helpful' : 'Not helpful'}
+          Not helpful
         </motion.button>
         {msg.sql && msg.userQuestion && (
-          <motion.button
-            type="button"
-            onClick={() => saveAsTemplate(msg)}
+          <motion.button type="button" onClick={() => saveAsTemplate(msg)}
             className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
             style={{
               background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
               color: 'var(--text-muted)',
               border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
             }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
+            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Star size={10} />
-            Save as template
+            Save
           </motion.button>
         )}
       </div>
     </div>
-  );
+  ), [isDark, showSQL, loading, sendMessage, handleFeedback, saveAsTemplate]);
 
-  // ── Template category color ────────────────────────────────────────────────
+  // ── Category color ─────────────────────────────────────────────────────────
   const categoryColor: Record<string, string> = {
     Revenue: '#00b8e6', Trends: '#00e67a', Products: '#ffb800',
     Sales: '#a78bfa', Customers: '#f472b6', Departments: '#fb923c',
     Saved: '#00b8e6', Custom: '#94a3b8',
   };
 
+  // ── Placeholder adapts to context ──────────────────────────────────────────
+  const placeholder = useMemo(() => {
+    if (activeTopic === 'branch') return 'Ask about branches… e.g. "Which branch grew the most this month?"';
+    if (activeTopic === 'product') return 'Ask about products… e.g. "Top 10 items by revenue QTD"';
+    if (activeTopic === 'trend') return 'Ask about trends… e.g. "Show weekly revenue for last 3 months"';
+    if (activeTopic === 'salesperson') return 'Ask about sales staff… e.g. "Top salesperson by avg order value"';
+    return 'Ask anything about your ERP data… Approve answers to reuse SQL.';
+  }, [activeTopic]);
+
   return (
     <div className="flex gap-4 h-[calc(100vh-108px)]">
 
-      {/* Toast */}
       <Toast message={toast?.message ?? ''} type={toast?.type ?? 'success'} visible={!!toast} />
 
       {/* ── Left panel ──────────────────────────────────────────────────────── */}
@@ -658,20 +882,37 @@ export default function AIQuery() {
         {/* Stats card */}
         <div className="rounded-2xl p-4 flex-shrink-0"
           style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, rgba(0,184,230,0.2), rgba(0,230,122,0.2))', border: '1px solid rgba(0,184,230,0.2)' }}>
-              <Brain size={16} className="text-primary-400" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>AI Analyst</p>
-              <div className="flex items-center gap-1">
-                <div className={`w-1.5 h-1.5 rounded-full ${dbConnected ? 'bg-accent-400 animate-pulse' : 'bg-amber-400'}`} />
-                <p className="text-2xs" style={{ color: dbConnected ? '#00e67a' : '#ffb800' }}>
-                  {dbConnected === null ? 'Checking…' : dbConnected ? 'SQL Server connected' : 'DB offline'}
-                </p>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, rgba(0,184,230,0.2), rgba(0,230,122,0.2))', border: '1px solid rgba(0,184,230,0.2)' }}>
+                <Brain size={16} className="text-primary-400" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>AI Analyst</p>
+                <div className="flex items-center gap-1">
+                  <div className={`w-1.5 h-1.5 rounded-full ${dbConnected ? 'bg-accent-400 animate-pulse' : 'bg-amber-400'}`} />
+                  <p className="text-2xs" style={{ color: dbConnected ? '#00e67a' : '#ffb800' }}>
+                    {dbConnected === null ? 'Checking…' : dbConnected ? 'SQL Server connected' : 'DB offline'}
+                  </p>
+                </div>
               </div>
             </div>
+            {/* New Chat button */}
+            {messages.length > 0 && (
+              <motion.button
+                type="button"
+                onClick={newChat}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
+                style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)' }}
+                whileHover={{ scale: 1.05, color: '#00b8e6' }}
+                whileTap={{ scale: 0.95 }}
+                title="Start a new conversation"
+              >
+                <MessageSquarePlus size={11} />
+                New
+              </motion.button>
+            )}
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -688,6 +929,22 @@ export default function AIQuery() {
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Approved SQLs</span>
               <span className="text-xs font-bold" style={{ color: '#00e67a' }}>{approvedQueries.length}</span>
             </div>
+            {/* Active topic display */}
+            <AnimatePresence>
+              {activeTopic && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="pt-1"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Context</span>
+                    <TopicPill topic={activeTopic} />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
@@ -695,7 +952,6 @@ export default function AIQuery() {
         <div className="rounded-2xl flex-1 flex flex-col min-h-0 overflow-hidden"
           style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}>
 
-          {/* Tab bar */}
           <div className="flex flex-shrink-0" style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
             {([
               { id: 'suggestions' as LeftTab, label: 'Suggestions', icon: ShieldCheck },
@@ -704,16 +960,9 @@ export default function AIQuery() {
               const Icon = tab.icon;
               const isActive = leftTab === tab.id;
               return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setLeftTab(tab.id)}
+                <button key={tab.id} type="button" onClick={() => setLeftTab(tab.id)}
                   className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-semibold"
-                  style={{
-                    color: isActive ? '#00b8e6' : 'var(--text-muted)',
-                    borderBottom: isActive ? '2px solid #00b8e6' : '2px solid transparent',
-                  }}
-                >
+                  style={{ color: isActive ? '#00b8e6' : 'var(--text-muted)', borderBottom: isActive ? '2px solid #00b8e6' : '2px solid transparent' }}>
                   <Icon size={11} />
                   {tab.label}
                 </button>
@@ -729,29 +978,27 @@ export default function AIQuery() {
                 <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
                   {suggestions.length} verified queries
                 </p>
+                {activeTopic && (
+                  <span className="text-2xs px-1.5 py-0.5 rounded-full ml-auto"
+                    style={{ background: 'rgba(0,184,230,0.1)', color: '#00b8e6' }}>
+                    sorted by context
+                  </span>
+                )}
               </div>
               <div className="relative mb-2 flex-shrink-0">
                 <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-                <input
-                  type="search"
-                  placeholder="Filter suggestions…"
-                  value={suggestionFilter}
+                <input type="search" placeholder="Filter suggestions…" value={suggestionFilter}
                   onChange={e => setSuggestionFilter(e.target.value)}
                   className="w-full pl-7 pr-3 py-1.5 rounded-lg text-xs outline-none"
-                  style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
-                />
+                  style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }} />
               </div>
               <div className="space-y-1.5 overflow-y-auto flex-1 scrollbar-none pr-0.5">
                 {filteredSuggestions.map((s, i) => (
-                  <motion.button
-                    key={`${i}-${s.slice(0, 24)}`}
-                    onClick={() => sendMessage(s)}
-                    disabled={loading}
+                  <motion.button key={`${i}-${s.slice(0, 24)}`} onClick={() => sendMessage(s)} disabled={loading}
                     className="w-full text-left px-3 py-2 rounded-xl text-xs flex items-start gap-2 disabled:opacity-50"
                     style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}
                     whileHover={{ borderColor: 'rgba(0,184,230,0.3)', background: isDark ? 'rgba(0,184,230,0.06)' : 'rgba(0,184,230,0.04)' }}
-                    whileTap={{ scale: 0.98 }}
-                  >
+                    whileTap={{ scale: 0.98 }}>
                     <Zap size={10} className="flex-shrink-0 mt-0.5" style={{ color: '#00b8e6' }} />
                     <span style={{ color: 'var(--text-secondary)' }}>{s}</span>
                   </motion.button>
@@ -764,93 +1011,52 @@ export default function AIQuery() {
           {leftTab === 'templates' && (
             <div className="flex flex-col flex-1 min-h-0 p-3">
               <div className="flex items-center justify-between mb-2 flex-shrink-0">
-                <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                  {allTemplates.length} templates
-                </p>
-                <motion.button
-                  type="button"
-                  onClick={() => setAddingTemplate(v => !v)}
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{allTemplates.length} templates</p>
+                <motion.button type="button" onClick={() => setAddingTemplate(v => !v)}
                   className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
                   style={{ background: 'rgba(0,184,230,0.1)', color: '#00b8e6', border: '1px solid rgba(0,184,230,0.2)' }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
+                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                   {addingTemplate ? <X size={10} /> : <Plus size={10} />}
                   {addingTemplate ? 'Cancel' : 'New'}
                 </motion.button>
               </div>
 
-              {/* Add template form */}
               <AnimatePresence>
                 {addingTemplate && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="flex-shrink-0 mb-2 space-y-1.5 overflow-hidden"
-                  >
-                    <input
-                      type="text"
-                      placeholder="Template name…"
-                      value={newTplLabel}
-                      onChange={e => setNewTplLabel(e.target.value)}
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                    className="flex-shrink-0 mb-2 space-y-1.5 overflow-hidden">
+                    <input type="text" placeholder="Template name…" value={newTplLabel} onChange={e => setNewTplLabel(e.target.value)}
                       className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
-                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Category (e.g. Revenue)…"
-                      value={newTplCategory}
-                      onChange={e => setNewTplCategory(e.target.value)}
+                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }} />
+                    <input type="text" placeholder="Category (e.g. Revenue)…" value={newTplCategory} onChange={e => setNewTplCategory(e.target.value)}
                       className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
-                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
-                    />
-                    <textarea
-                      placeholder="Question / prompt…"
-                      value={newTplQuestion}
-                      onChange={e => setNewTplQuestion(e.target.value)}
-                      rows={2}
+                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }} />
+                    <textarea placeholder="Question / prompt…" value={newTplQuestion} onChange={e => setNewTplQuestion(e.target.value)} rows={2}
                       className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none resize-none"
-                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
-                    />
-                    <motion.button
-                      type="button"
-                      onClick={saveTemplate}
-                      disabled={!newTplLabel.trim() || !newTplQuestion.trim()}
+                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }} />
+                    <motion.button type="button" onClick={saveTemplate} disabled={!newTplLabel.trim() || !newTplQuestion.trim()}
                       className="w-full py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
-                      style={{ background: 'linear-gradient(135deg, #00b8e6, #00e67a)' }}
-                      whileTap={{ scale: 0.97 }}
-                    >
+                      style={{ background: 'linear-gradient(135deg, #00b8e6, #00e67a)' }} whileTap={{ scale: 0.97 }}>
                       Save Template
                     </motion.button>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Template search */}
               <div className="relative mb-2 flex-shrink-0">
                 <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-                <input
-                  type="search"
-                  placeholder="Search templates…"
-                  value={templateFilter}
-                  onChange={e => setTemplateFilter(e.target.value)}
+                <input type="search" placeholder="Search templates…" value={templateFilter} onChange={e => setTemplateFilter(e.target.value)}
                   className="w-full pl-7 pr-3 py-1.5 rounded-lg text-xs outline-none"
-                  style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }}
-                />
+                  style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }} />
               </div>
 
-              {/* Template list */}
               <div className="space-y-1.5 overflow-y-auto flex-1 scrollbar-none pr-0.5">
                 {filteredTemplates.map(tpl => {
                   const color = categoryColor[tpl.category] ?? '#94a3b8';
                   return (
-                    <motion.div
-                      key={tpl.id}
-                      className="group relative px-3 py-2 rounded-xl text-xs"
+                    <motion.div key={tpl.id} className="group relative px-3 py-2 rounded-xl text-xs"
                       style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}
-                      whileHover={{ borderColor: `${color}50` }}
-                    >
+                      whileHover={{ borderColor: `${color}50` }}>
                       <div className="flex items-start gap-2 pr-5">
                         <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1" style={{ background: color }} />
                         <div className="flex-1 min-w-0">
@@ -859,36 +1065,21 @@ export default function AIQuery() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 mt-1.5">
-                        <motion.button
-                          type="button"
-                          onClick={() => sendMessage(tpl.question)}
-                          disabled={loading}
+                        <motion.button type="button" onClick={() => sendMessage(tpl.question)} disabled={loading}
                           className="flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-semibold disabled:opacity-50"
-                          style={{ background: `${color}18`, color }}
-                          whileHover={{ scale: 1.04 }}
-                          whileTap={{ scale: 0.96 }}
-                        >
-                          <ArrowRight size={9} />
-                          Run
+                          style={{ background: `${color}18`, color }} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
+                          <ArrowRight size={9} /> Run
                         </motion.button>
-                        <motion.button
-                          type="button"
-                          onClick={() => setInput(tpl.question)}
+                        <motion.button type="button" onClick={() => setInput(tpl.question)}
                           className="flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-semibold"
                           style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}
-                          whileHover={{ scale: 1.04 }}
-                          whileTap={{ scale: 0.96 }}
-                        >
+                          whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
                           Edit
                         </motion.button>
                         {!tpl.builtin && (
-                          <motion.button
-                            type="button"
-                            onClick={() => deleteTemplate(tpl.id)}
+                          <motion.button type="button" onClick={() => deleteTemplate(tpl.id)}
                             className="ml-auto flex items-center px-1.5 py-0.5 rounded-md text-2xs opacity-0 group-hover:opacity-100"
-                            style={{ color: '#f87171' }}
-                            whileHover={{ scale: 1.1 }}
-                          >
+                            style={{ color: '#f87171' }} whileHover={{ scale: 1.1 }}>
                             <Trash2 size={9} />
                           </motion.button>
                         )}
@@ -927,7 +1118,6 @@ export default function AIQuery() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Approved queries count */}
             {approvedQueries.length > 0 && (
               <div className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
                 style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.25)' }}>
@@ -936,11 +1126,14 @@ export default function AIQuery() {
               </div>
             )}
 
+            {/* Context pill in header */}
+            <AnimatePresence>
+              {activeTopic && <TopicPill topic={activeTopic} />}
+            </AnimatePresence>
+
             {/* Provider toggle */}
             <div className="relative">
-              <motion.button
-                type="button"
-                onClick={() => setShowProviderMenu(v => !v)}
+              <motion.button type="button" onClick={() => setShowProviderMenu(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
                 style={{
                   background: provider === 'claude'
@@ -949,9 +1142,7 @@ export default function AIQuery() {
                   border: provider === 'claude' ? '1px solid rgba(88,130,255,0.35)' : '1px solid rgba(16,163,127,0.35)',
                   color: provider === 'claude' ? '#818cf8' : '#10a37f',
                 }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
-              >
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
                 <span className="text-base leading-none">{provider === 'claude' ? '⬡' : '⬢'}</span>
                 {provider === 'claude' ? 'Claude' : 'ChatGPT'}
                 <ChevronDown size={11} />
@@ -965,19 +1156,14 @@ export default function AIQuery() {
                     transition={{ duration: 0.12 }}
                     className="absolute right-0 top-full mt-1.5 rounded-xl overflow-hidden z-50 min-w-[160px]"
                     style={{ background: isDark ? '#141929' : 'white', border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}
-                    onMouseLeave={() => setShowProviderMenu(false)}
-                  >
+                    onMouseLeave={() => setShowProviderMenu(false)}>
                     {([
                       { key: 'claude', label: 'Claude', sub: 'Anthropic API', icon: '⬡', color: '#818cf8' },
                       { key: 'openai', label: 'ChatGPT', sub: 'OpenAI API', icon: '⬢', color: '#10a37f' },
                     ] as const).map(opt => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => { setProvider(opt.key); setShowProviderMenu(false); }}
+                      <button key={opt.key} type="button" onClick={() => { setProvider(opt.key); setShowProviderMenu(false); }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left"
-                        style={{ background: provider === opt.key ? isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' : 'transparent' }}
-                      >
+                        style={{ background: provider === opt.key ? isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' : 'transparent' }}>
                         <span className="text-base">{opt.icon}</span>
                         <div>
                           <p className="text-xs font-semibold" style={{ color: provider === opt.key ? opt.color : 'var(--text-primary)' }}>{opt.label}</p>
@@ -994,6 +1180,17 @@ export default function AIQuery() {
               </AnimatePresence>
             </div>
 
+            {/* New chat button (in header, only when messages exist) */}
+            {messages.length > 0 && (
+              <motion.button type="button" onClick={newChat}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-muted)' }}
+                whileHover={{ scale: 1.02, color: '#00b8e6' }} whileTap={{ scale: 0.97 }}>
+                <MessageSquarePlus size={12} />
+                New chat
+              </motion.button>
+            )}
+
             <div className="px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1"
               style={{ background: 'rgba(0,230,122,0.1)', color: '#00e67a', border: '1px solid rgba(0,230,122,0.2)' }}>
               <Database size={10} />
@@ -1006,9 +1203,7 @@ export default function AIQuery() {
         <div className="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-none">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-5 py-8">
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
+              <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                 className="w-20 h-20 rounded-3xl flex items-center justify-center"
                 style={{ background: 'linear-gradient(135deg, rgba(0,184,230,0.15), rgba(0,230,122,0.15))', border: '1px solid rgba(0,184,230,0.2)' }}>
                 <Brain size={36} style={{ color: '#00b8e6' }} />
@@ -1016,7 +1211,7 @@ export default function AIQuery() {
               <div className="text-center max-w-lg">
                 <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Ask your ERP anything</h3>
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  Pick from the {suggestions.length} verified prompts on the left, use a template, or type your own.
+                  Pick from the {suggestions.length} verified prompts on the left, use a template, or type your own question.
                   Approve answers with 👍 to save SQL for instant reuse on similar questions.
                 </p>
               </div>
@@ -1076,7 +1271,12 @@ export default function AIQuery() {
                 style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)' }}>
                 <div className="flex items-center gap-2">
                   <Loader2 size={13} className="animate-spin" style={{ color: '#00b8e6' }} />
-                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Running verified SQL on warehouse…</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {activeTopic === 'branch' ? 'Analysing branch data…'
+                      : activeTopic === 'trend' ? 'Building trend query…'
+                      : activeTopic === 'product' ? 'Querying product catalogue…'
+                      : 'Running verified SQL on warehouse…'}
+                  </span>
                 </div>
               </div>
             </motion.div>
@@ -1087,12 +1287,39 @@ export default function AIQuery() {
         {/* Input bar */}
         <div className="p-4 flex-shrink-0"
           style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
+          {/* Context hint strip */}
+          <AnimatePresence>
+            {activeTopic && messages.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-2.5 flex items-center gap-2"
+              >
+                <Clock size={10} style={{ color: 'var(--text-muted)' }} />
+                <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>
+                  Conversation context: <span style={{ color: '#00b8e6' }}>{activeTopic}</span>
+                  {' '}— follow-up questions will be scoped to this topic
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTopic(null)}
+                  className="ml-auto text-2xs px-1.5 py-0.5 rounded"
+                  style={{ color: 'var(--text-muted)', background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}
+                >
+                  Clear
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="flex gap-3 items-end">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }}
-              placeholder="Ask anything… Approved SQL will be reused for similar questions."
+              placeholder={placeholder}
               rows={1}
               className="flex-1 px-4 py-3 rounded-2xl text-sm resize-none outline-none scrollbar-none"
               style={{
@@ -1100,6 +1327,8 @@ export default function AIQuery() {
                 border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
                 color: 'var(--text-primary)',
                 maxHeight: 120,
+                minHeight: 44,
+                overflowY: 'auto',
               }}
             />
             <motion.button
@@ -1111,6 +1340,9 @@ export default function AIQuery() {
               <Send size={15} className="text-white" />
             </motion.button>
           </div>
+          <p className="text-2xs mt-2 text-center" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
+            Enter to send · Shift+Enter for new line · SQL runs read-only against your ERP
+          </p>
         </div>
       </motion.div>
     </div>

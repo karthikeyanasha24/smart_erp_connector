@@ -9,6 +9,7 @@ Generates natural-language business insights from query results:
 from __future__ import annotations
 
 import json
+import re
 import statistics
 from typing import Any, Dict, List, Optional
 
@@ -136,6 +137,93 @@ def detect_anomalies(
     return insights[:5]   # Cap to top 5
 
 
+def _row_value(row: Dict[str, Any], value_column: str) -> float:
+    try:
+        return float(row.get(value_column) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _is_date_column(col: str, records: List[Dict[str, Any]]) -> bool:
+    cl = col.lower()
+    if any(h in cl for h in ("month", "date", "day", "period")):
+        return True
+    for row in records[:8]:
+        raw = row.get(col)
+        if raw is None:
+            continue
+        s = str(raw)
+        if re.match(r"^\d{4}-\d{2}-\d{2}", s) or re.search(
+            r"jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec", s, re.I
+        ):
+            return True
+    return False
+
+
+def _aggregate_for_insights(
+    records: List[Dict[str, Any]],
+    value_column: str,
+    label_column: str,
+) -> List[Dict[str, Any]]:
+    """Sum metrics by label when rows share the same dimension (e.g. category across months)."""
+    totals: Dict[str, float] = {}
+    for row in records:
+        label = str(row.get(label_column) or "Unknown")
+        totals[label] = totals.get(label, 0.0) + _row_value(row, value_column)
+    return [{label_column: label, value_column: total} for label, total in totals.items()]
+
+
+def _prepare_insight_records(
+    records: List[Dict[str, Any]],
+    value_column: str,
+    label_column: Optional[str],
+) -> tuple[List[Dict[str, Any]], Optional[str]]:
+    """Pick a sensible label column and aggregate multi-grain rows before ranking."""
+    if not records or not label_column:
+        return records, label_column
+
+    cols = list(records[0].keys())
+    date_cols = [c for c in cols if _is_date_column(c, records)]
+    dim_cols = [
+        c for c in cols
+        if c not in date_cols and c != value_column and not _is_numeric_col(c, records)
+    ]
+
+    # Dept + category time series → rank by composite key
+    if date_cols and "Department" in dim_cols and "Category" in dim_cols:
+        composite = "_composite_dept_cat"
+        aggregated: Dict[str, float] = {}
+        for row in records:
+            label = f"{row.get('Department', '')} · {row.get('Category', '')}".strip(" ·")
+            aggregated[label] = aggregated.get(label, 0.0) + _row_value(row, value_column)
+        rows = [{composite: k, value_column: v} for k, v in aggregated.items()]
+        return rows, composite
+
+    # Time series with a single dimension → aggregate by that dimension
+    if date_cols and dim_cols:
+        primary = dim_cols[0]
+        return _aggregate_for_insights(records, value_column, primary), primary
+
+    labels = [str(r.get(label_column) or "") for r in records]
+    if len(set(labels)) < len(labels):
+        return _aggregate_for_insights(records, value_column, label_column), label_column
+
+    return records, label_column
+
+
+def _is_numeric_col(col: str, records: List[Dict[str, Any]]) -> bool:
+    for row in records[:10]:
+        raw = row.get(col)
+        if raw is None:
+            continue
+        try:
+            float(str(raw).replace(",", ""))
+            return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def top_bottom_insights(
     records: List[Dict[str, Any]],
     value_column: str = "Revenue",
@@ -147,18 +235,19 @@ def top_bottom_insights(
     if not records or len(records) < 2:
         return insights
 
-    def _val(row: Dict[str, Any]) -> float:
-        try:
-            return float(row.get(value_column) or 0)
-        except (TypeError, ValueError):
-            return 0.0
+    prepared, label_col = _prepare_insight_records(records, value_column, label_column)
+    if not label_col:
+        return insights
 
-    sorted_rows = sorted(records, key=_val, reverse=True)
-    total = sum(_val(r) for r in records) or 1
+    def _val(row: Dict[str, Any]) -> float:
+        return _row_value(row, value_column)
+
+    sorted_rows = sorted(prepared, key=_val, reverse=True)
+    total = sum(_val(r) for r in prepared) or 1
 
     for i, row in enumerate(sorted_rows[:top_n]):
         v = _val(row)
-        label = row.get(label_column, "Unknown")
+        label = row.get(label_col, "Unknown")
         share = v / total * 100
         rank = i + 1
         insights.append(
@@ -176,7 +265,7 @@ def top_bottom_insights(
     if len(sorted_rows) >= top_n + 1:
         bottom = sorted_rows[-1]
         v = _val(bottom)
-        label = bottom.get(label_column, "Unknown")
+        label = bottom.get(label_col, "Unknown")
         share = v / total * 100
         insights.append(
             Insight(
@@ -202,12 +291,15 @@ def trend_insights(
     if len(records) < 3:
         return insights
 
+    # Aggregate when rows share a date column but have extra dimensions
+    if date_column in (records[0] or {}):
+        labels = [str(r.get(date_column) or "") for r in records]
+        if len(set(labels)) < len(labels):
+            records = _aggregate_for_insights(records, value_column, date_column)
+
     values = []
     for row in records:
-        try:
-            values.append(float(row.get(value_column) or 0))
-        except (TypeError, ValueError):
-            values.append(0.0)
+        values.append(_row_value(row, value_column))
 
     # Compare first half vs second half
     mid = len(values) // 2
@@ -336,13 +428,26 @@ async def generate_insights(
     """
     rule_insights: List[Insight] = []
 
+    # Resolve date column from records when default is absent
+    if records and date_column not in records[0]:
+        for candidate in ("MonthStart", "MonthLabel", "TransactionDate", "InvoiceDt", "XnDt"):
+            if candidate in records[0]:
+                date_column = candidate
+                break
+
     if intent_type == "trend":
         rule_insights.extend(trend_insights(records, value_column, date_column))
+        if label_column:
+            prepared, insight_label = _prepare_insight_records(records, value_column, label_column)
+            rule_insights.extend(
+                top_bottom_insights(prepared, value_column, insight_label or label_column)
+            )
         rule_insights.extend(detect_anomalies(records, value_column, label_column))
 
     elif intent_type in ("aggregate", "ranking", "distribution"):
         if label_column:
-            rule_insights.extend(top_bottom_insights(records, value_column, label_column))
+            prepared, insight_label = _prepare_insight_records(records, value_column, label_column)
+            rule_insights.extend(top_bottom_insights(prepared, value_column, insight_label or label_column))
         rule_insights.extend(detect_anomalies(records, value_column, label_column))
 
     elif intent_type == "comparison":

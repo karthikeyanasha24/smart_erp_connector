@@ -1740,10 +1740,31 @@ export function useAnalyticsPage(
   const cacheKey = `analytics-page:${period}:${startDate ?? ''}:${endDate ?? ''}`;
   const cached = cacheGet<AnalyticsPageData>(cacheKey);
 
+  // ── Stale-data guard ────────────────────────────────────────────────────────
+  // Track which cacheKey the stored `data` belongs to. When the user switches
+  // periods, cacheKey changes immediately on the next render but useState still
+  // holds the old period's data — causing a flash of stale content.
+  //
+  // React's synchronous-update-during-render pattern: calling setState here
+  // (not in an effect) makes React re-render immediately with the new values,
+  // skipping the intermediate render that would show stale data.
+  // ──────────────────────────────────────────────────────────────────────────
+  const [dataCacheKey, setDataCacheKey] = useState(cacheKey);
   const [data, setData]         = useState<AnalyticsPageData | null>(cached);
   const [loading, setLoading]   = useState<boolean>(!cached);
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError]       = useState<string | null>(null);
+
+  if (dataCacheKey !== cacheKey) {
+    // Period switched — synchronously replace stale data so the render that
+    // sees the new tab label also shows the right data (or empty/loading).
+    const fresh = cacheGet<AnalyticsPageData>(cacheKey) ?? null;
+    setDataCacheKey(cacheKey);
+    setData(fresh);
+    setLoading(!fresh);
+    setError(null);
+    setChartLoading(false);
+  }
 
   const run = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -1763,6 +1784,7 @@ export function useAnalyticsPage(
 
     const applyPartial = (partial: AnalyticsPageData) => {
       setData(partial);
+      setDataCacheKey(cacheKey);
       cacheSet(cacheKey, partial);
       if (!silent) setLoading(false);
       if (
@@ -1779,6 +1801,7 @@ export function useAnalyticsPage(
         const dash = await analytics.dashboard(period, startDate, endDate);
         const built = buildAnalyticsPageData(null, dash, period);
         setData(built);
+        setDataCacheKey(cacheKey);
         cacheSet(cacheKey, built);
         return;
       }
@@ -1786,6 +1809,7 @@ export function useAnalyticsPage(
       const built = await prefetchAnalyticsPage(period, applyPartial);
       if (built && !isEmptyAnalyticsPage(built)) {
         setData(built);
+        setDataCacheKey(cacheKey);
         cacheSet(cacheKey, built);
       } else if (!cacheGet<AnalyticsPageData>(cacheKey)) {
         fail(new Error('No analytics data returned'), !silent);
@@ -1799,18 +1823,18 @@ export function useAnalyticsPage(
   }, [period, startDate, endDate, cacheKey]);
 
   useEffect(() => {
+    // The synchronous guard above handles data reset immediately on period change.
+    // This effect handles the __hold__ sentinel and syncs dataCacheKey for future renders.
     if (period === '__hold__') {
       setData(null);
       setLoading(false);
       setChartLoading(false);
       setError(null);
-      return;
+      setDataCacheKey(cacheKey);
     }
-    const c = cacheGet<AnalyticsPageData>(cacheKey);
-    setData(c);
-    setLoading(!c);
-    setError(null);
-  }, [cacheKey, period]);
+    // For normal periods: data was already set synchronously by the guard above;
+    // the fetch-trigger effect (below) handles calling run() when cache is cold.
+  }, [cacheKey, period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // If bundle/snapshot omitted departments, fetch them directly (MTD logs showed no /departments call).
   useEffect(() => {
@@ -1845,6 +1869,7 @@ export function useAnalyticsPage(
     if (period === '__hold__' || period === 'custom') return;
     return subscribePageUpdate(period, (partial) => {
       setData(partial);
+      setDataCacheKey(cacheKey);
       cacheSet(cacheKey, partial);
       setLoading(false);
       setChartLoading(false);
@@ -1869,6 +1894,7 @@ export function useAnalyticsPage(
     const cached = cacheGet<AnalyticsPageData>(cacheKey);
     if (cached && !isEmptyAnalyticsPage(cached)) {
       setData(cached);
+      setDataCacheKey(cacheKey);
       setLoading(false);
       setChartLoading(false);
       const freshComplete =
@@ -2007,10 +2033,14 @@ export function useTransactions(params: {
     [params.period, params.page, params.page_size, params.branch, params.category, params.search],
     key,
   );
+  // dataPeriod lets the UI detect when cached data belongs to a *different* period
+  // (e.g. MTD rows still showing after switching to Today). Show skeletons in that case.
+  const dataPeriod: string | undefined = (data as any)?.period;
   return {
     transactions: data?.transactions ?? [],
     totalCount:   data?.total_count ?? 0,
     totalPages:   data?.total_pages ?? 1,
+    dataPeriod,
     loading, error, refetch, fromApi: !!data,
   };
 }

@@ -104,7 +104,9 @@ def extract_intent_fast(query: str) -> ExtractedIntent:
     intent: QueryIntent
     chart_type: ChartType
 
-    if re.search(r"\btrend\b|\bover time\b|\bdaily\b|\bmonthly\b|\bweekly\b|\bby day\b|\bby month\b", q):
+    if re.search(r"\blast\s+\d+\s+years?\b|\b5\s+year.*analysis|\byear.*analysis.*department", q):
+        intent, chart_type = "trend", "area"
+    elif re.search(r"\btrend\b|\bover time\b|\bdaily\b|\bmonthly\b|\bweekly\b|\bby day\b|\bby month\b", q):
         intent, chart_type = "trend", "area"
     elif re.search(r"\bcompare\b|\bvs\b|\bversus\b|\bcomparison\b|\bprevious\b|\bprior\b", q):
         intent, chart_type = "comparison", "bar"

@@ -206,7 +206,7 @@ ORDER BY MonthStart ASC
 
     def _sql_five_year_dept_category(_q: str) -> Dict[str, Any]:
         sql = f"""
-SELECT TOP (500)
+SELECT
     DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
     s.[DepartmentShortName] AS Department,
     s.[CategoryShortName] AS Category,
@@ -223,8 +223,8 @@ ORDER BY MonthStart ASC, TotalSales DESC
         return _blob(
             "five_year_sales_dept_category",
             sql,
-            "Monthly sales for the last 5 years by department and category (TOP 500 rows).",
-            ["One pass monthly aggregation; may truncate — narrow filters in follow-up if needed."],
+            "Monthly sales for the last 5 years by department and category.",
+            ["Full 5-year monthly grain; chart aggregates to monthly totals."],
         )
 
     def _sql_average_sales_mtd(_q: str) -> Dict[str, Any]:

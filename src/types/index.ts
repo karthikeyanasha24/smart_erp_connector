@@ -10,7 +10,6 @@ export type Page =
   | 'product'
   | 'data'
   | 'erp-views'
-  | 'insights'
   | 'settings';
 
 export interface KPIMetric {

@@ -128,6 +128,8 @@ export default function Product() {
       }
     }
 
+    // Clear stale rows immediately so we show skeletons rather than old-period products
+    setTopProducts([]);
     setTopLoading(true);
     setTopError(null);
     setTopSlowQuery(false);
@@ -283,9 +285,9 @@ export default function Product() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Top products</h2>
-              <p className="text-xs flex items-center gap-1" style={{ color: topLoading && topProducts.length > 0 ? '#5882ff' : 'var(--text-muted)' }}>
-                {topLoading && topProducts.length > 0 && <RefreshCw size={9} className="animate-spin" />}
-                {topLoading && topProducts.length > 0 ? `Refreshing for ${timeRange}…` : `By revenue · ${period.toUpperCase()}`}
+              <p className="text-xs flex items-center gap-1" style={{ color: topLoading ? '#5882ff' : 'var(--text-muted)' }}>
+                {topLoading && <RefreshCw size={9} className="animate-spin" />}
+                {topLoading ? `Loading ${timeRange} data…` : `By revenue · ${period.toUpperCase()}`}
               </p>
             </div>
             {topError && (

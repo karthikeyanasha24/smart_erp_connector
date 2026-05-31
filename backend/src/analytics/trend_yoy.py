@@ -1,10 +1,12 @@
 """
-YoY revenue trend — single SQL scan for current + prior year daily/monthly buckets.
+YoY revenue trend — two parallel SQL scans (current + LY), each covering only its
+own date window. Faster than one combined 18-month scan on unindexed views.
 Used by charts.get_revenue_trend.
 """
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date as date_type, datetime as datetime_type
 from typing import Any, Dict, List
 
@@ -44,12 +46,17 @@ def _prior_year_day_key(day_key: str) -> str:
 
 
 YOY_TREND_PERIODS = frozenset({
-    "mtd", "qtd", "ytd", "last_6m", "last_30d", "last_7d", "last_14d", "last_90d",
+    "today", "mtd", "qtd", "ytd", "last_6m", "last_30d", "last_7d", "last_14d", "last_90d",
 })
 
 
 async def fetch_revenue_trend_yoy(period: str) -> List[Dict[str, Any]]:
-    """Chart rows: date, label, revenue, prior, transactions, quantity."""
+    """Chart rows: date, label, revenue, prior, transactions, quantity.
+
+    Uses two separate SQL scans (current + LY) run in parallel, each scaning only
+    its own date window. This is faster than the old single 18-month combined scan
+    because SQL Server can build a tighter range seek per query.
+    """
     dr = resolve_date_range(period)
     ly_dr = get_prior_year_range(period)
     gran = trend_granularity(period)
@@ -59,16 +66,6 @@ async def fetch_revenue_trend_yoy(period: str) -> List[Dict[str, Any]]:
     date_col = c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN
     amt_col = c.SALES_ANALYTICS_AMOUNT_COLUMN
     qty_col = quantity_column()
-    end_curr = "DATEADD(day,1,CAST(@endDate AS DATE))"
-    end_ly = "DATEADD(day,1,CAST(@lyEnd AS DATE))"
-    curr_win = f"[{date_col}] >= @startDate AND [{date_col}] < {end_curr}"
-    ly_win = f"[{date_col}] >= @lyStart AND [{date_col}] < {end_ly}"
-
-    if c.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
-        bills_expr = f"SUM(CASE WHEN {curr_win} THEN 1 ELSE 0 END)"
-    else:
-        bc = c.SALES_ANALYTICS_BILL_COUNT_COLUMN
-        bills_expr = f"SUM(CASE WHEN {curr_win} THEN [{bc}] ELSE 0 END)"
 
     if gran == "month":
         period_expr = f"FORMAT([{date_col}], 'yyyy-MM')"
@@ -77,44 +74,70 @@ async def fetch_revenue_trend_yoy(period: str) -> List[Dict[str, Any]]:
         period_expr = f"CAST([{date_col}] AS DATE)"
         label_expr = f"FORMAT(CAST([{date_col}] AS DATE), 'dd-MMM')"
 
-    sql = f"""
+    if c.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
+        bills_agg = "COUNT(*)"
+    else:
+        bc = c.SALES_ANALYTICS_BILL_COUNT_COLUMN
+        bills_agg = f"SUM([{bc}])"
+
+    # Current period query — only scans the current window
+    sql_curr = f"""
         SELECT
             {period_expr} AS PeriodKey,
             MIN({label_expr}) AS Label,
-            SUM(CASE WHEN {curr_win} THEN [{amt_col}] ELSE 0 END) AS Revenue,
-            SUM(CASE WHEN {ly_win} THEN [{amt_col}] ELSE 0 END) AS PriorRevenue,
-            {bills_expr} AS Bills,
-            SUM(CASE WHEN {curr_win} THEN [{qty_col}] ELSE 0 END) AS Quantity
+            SUM([{amt_col}]) AS Revenue,
+            {bills_agg} AS Bills,
+            SUM([{qty_col}]) AS Quantity
         FROM {table} WITH (NOLOCK)
-        WHERE [{date_col}] >= @lyStart
-          AND [{date_col}] < {end_curr}
+        WHERE [{date_col}] >= @startDate
+          AND [{date_col}] < DATEADD(day,1,CAST(@endDate AS DATE))
         GROUP BY {period_expr}
         ORDER BY PeriodKey ASC
+        OPTION (RECOMPILE)
     """
-    result = await execute_query(
-        sql,
-        params={
-            "startDate": dr.start,
-            "endDate": dr.end,
-            "lyStart": ly_dr.start,
-            "lyEnd": ly_dr.end,
-        },
-        nolock=True,
-        recompile=False,
+
+    # Prior year query — only scans the LY window (same length, 1 year earlier)
+    sql_ly = f"""
+        SELECT
+            {period_expr} AS PeriodKey,
+            SUM([{amt_col}]) AS Revenue
+        FROM {table} WITH (NOLOCK)
+        WHERE [{date_col}] >= @lyStart
+          AND [{date_col}] < DATEADD(day,1,CAST(@lyEnd AS DATE))
+        GROUP BY {period_expr}
+        ORDER BY PeriodKey ASC
+        OPTION (RECOMPILE)
+    """
+
+    # Run both in parallel — each scans only its own date window
+    curr_result, ly_result = await asyncio.gather(
+        execute_query(
+            sql_curr,
+            params={"startDate": dr.start, "endDate": dr.end},
+            nolock=True,
+            recompile=False,  # Already in SQL
+        ),
+        execute_query(
+            sql_ly,
+            params={"lyStart": ly_dr.start, "lyEnd": ly_dr.end},
+            nolock=True,
+            recompile=False,
+        ),
     )
 
+    # Build LY lookup: month-number (for monthly gran) or shifted date (for daily gran)
     ly_map: Dict[str, float] = {}
-    for r in result["records"]:
+    for r in ly_result["records"]:
         key = _period_key(r.get("PeriodKey"))
-        ly_val = _safe_float(r.get("PriorRevenue"))
+        ly_val = _safe_float(r.get("Revenue"))
         if ly_val > 0:
             if gran == "month" and len(key) >= 7:
-                ly_map[key[5:7]] = ly_val
+                ly_map[key[5:7]] = ly_val   # month number "01".."12"
             else:
-                ly_map[key] = ly_val
+                ly_map[key] = ly_val        # ISO date of LY day
 
     rows: List[Dict[str, Any]] = []
-    for r in result["records"]:
+    for r in curr_result["records"]:
         curr = _safe_float(r.get("Revenue"))
         bills = int(_safe_float(r.get("Bills")))
         if curr == 0 and bills == 0:

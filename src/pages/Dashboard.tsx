@@ -18,8 +18,8 @@ import {
   BarChart, Bar, CartesianGrid,
 } from 'recharts';
 import {
-  TrendingUp, TrendingDown, RefreshCw, FlaskConical, X,
-  ChevronRight, WifiOff, AlertTriangle, Lightbulb,
+  TrendingUp, RefreshCw, FlaskConical, X,
+  ChevronRight, WifiOff,
   Zap, ArrowUpRight, ArrowDownRight, Activity,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -260,39 +260,6 @@ function ChartTip({ active, payload, label }: any) {
   );
 }
 
-// ─── AI Insight Card ──────────────────────────────────────────────────────────
-
-interface InsightProps {
-  type: 'trend' | 'anomaly' | 'recommendation';
-  impact: 'high' | 'medium' | 'low';
-  title: string;
-  desc: string;
-}
-
-const TYPE_COLOR   = { trend:'#5882ff', anomaly:'#FFA726', recommendation:'#26C6DA' } as const;
-const IMPACT_COLOR = { high:'#EC407A',  medium:'#FFA726',  low:'#66BB6A' }             as const;
-const TYPE_ICON    = { trend: TrendingUp, anomaly: AlertTriangle, recommendation: Lightbulb };
-
-function InsightCard({ type, impact, title, desc }: InsightProps) {
-  const Icon = TYPE_ICON[type];
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
-      className="p-3 rounded-xl mb-2"
-      style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(88,130,255,0.07)' }}>
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <Icon size={10} style={{ color: TYPE_COLOR[type] }} />
-        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
-          style={{ background:`${TYPE_COLOR[type]}18`, color: TYPE_COLOR[type] }}>{type}</span>
-        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
-          style={{ background:`${IMPACT_COLOR[impact]}18`, color: IMPACT_COLOR[impact] }}>{impact} impact</span>
-      </div>
-      <p className="text-xs font-semibold mb-0.5" style={{ color:'var(--text-primary)' }}>{title}</p>
-      <p className="text-[10px] leading-relaxed" style={{ color:'var(--text-muted)' }}>{desc}</p>
-    </motion.div>
-  );
-}
-
 // ─── Section heading ──────────────────────────────────────────────────────────
 
 function SectionHead({ title, date }: { title: string; date: string }) {
@@ -403,18 +370,6 @@ export default function Dashboard() {
   const revSpark    = effectiveTrend.slice(-15).map(p => p.current);
   const billsSpark  = effectiveTrend.slice(-15).map(p => p.bills);
   const qtySpark    = effectiveTrend.slice(-15).map(p => p.quantity);
-
-  // ── AI Insights ────────────────────────────────────────────────────────────
-  const insights: InsightProps[] = [];
-  if (mS) {
-    const g = mS.sales_growth_pct ?? 0;
-    if (g > 5) insights.push({ type:'trend', impact:'high', title:`Revenue +${g.toFixed(1)}% above last year`, desc:`MTD gross ${fmtLakhs(mS.mtd_sales)} outperforming same period. Momentum is strong across branches.` });
-    else if (g < 0) insights.push({ type:'anomaly', impact:'high', title:`Revenue down ${Math.abs(g).toFixed(1)}% vs LY`, desc:`MTD below last year's ${fmtLakhs(mS.ly_sales)}. Review branch and category performance immediately.` });
-    else insights.push({ type:'trend', impact:'medium', title:`Revenue tracking in line with last year`, desc:`MTD sales of ${fmtLakhs(mS.mtd_sales)} are close to last year's pace.` });
-  }
-  if (branches.length > 0) { const top = branches[0]; insights.push({ type:'recommendation', impact:'medium', title:`${top.name} leads at ${top.percentage.toFixed(1)}% share`, desc:`${top.name} contributes ${fmtLakhs(top.revenue)}. Maintain supply chain and staffing lead.` }); }
-  if (categories.length > 0) { const topCat = categories[0]; insights.push({ type:'trend', impact:'medium', title:`${topCat.name} drives ${topCat.percentage.toFixed(1)}% of mix`, desc:`${topCat.name} at ${fmtLakhs(topCat.revenue)} dominates category mix. Cross-sell adjacent categories.` }); }
-  if (mS && mS.bills > 0) insights.push({ type:'recommendation', impact:'low', title:`Avg bill ₹${(mS.mtd_sales/mS.bills/1000).toFixed(1)}K across ${fmtCount(mS.bills)} bills`, desc:`Bundle promotions or loyalty incentives could lift average transaction size.` });
 
   // ── Date/time helpers ──────────────────────────────────────────────────────
   const hour = now.getHours();
@@ -835,46 +790,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── 6. Intelligence Row ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        {/* AI Insights */}
-        <div className="rounded-2xl p-4 flex flex-col" style={CARD_SURFACE}>
-          <div className="flex items-center justify-between mb-3 flex-shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-                style={{ background:'linear-gradient(135deg,#4158D0,#8B5CF6)' }}>
-                <Zap size={12} className="text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>AI Insights</p>
-                <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Auto-generated from your data</p>
-              </div>
-            </div>
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full"
-              style={{ background:'rgba(88,130,255,0.1)', color:'#5882ff', border:'1px solid rgba(88,130,255,0.2)' }}>LIVE</span>
-          </div>
-          <div className="flex-1 overflow-y-auto scrollbar-none">
-            {insights.length > 0
-              ? insights.map((ins, i) => <InsightCard key={i} {...ins} />)
-              : (
-                <div className="flex flex-col items-center justify-center py-8 gap-2">
-                  {isSkeletonMode || (mLoading && !mS)
-                    ? <><div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'rgba(88,130,255,0.3)', borderTopColor: '#5882ff' }} /><p className="text-xs" style={{ color:'var(--text-muted)' }}>Fetching live data…</p></>
-                    : <p className="text-xs" style={{ color:'var(--text-muted)' }}>No data available</p>
-                  }
-                </div>
-              )}
-          </div>
-          <Link to="/insights"
-            className="mt-3 block text-center text-xs font-semibold py-2 rounded-xl flex-shrink-0"
-            style={{ color:'#5882ff', background:'rgba(88,130,255,0.06)', border:'1px solid rgba(88,130,255,0.15)' }}>
-            View all AI Insights →
-          </Link>
-        </div>
+      {/* ── 6. Recent Transactions ────────────────────────────────────────── */}
+      <div>
 
         {/* Recent Transactions */}
-        <div className="lg:col-span-2 rounded-2xl p-4" style={CARD_SURFACE}>
+        <div className="rounded-2xl p-4" style={CARD_SURFACE}>
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Recent Transactions</p>
@@ -934,8 +854,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* unused import guard */}
-      {false && <><TrendingUp size={0} /><TrendingDown size={0} /><Activity size={0} /></>}
     </div>
   );
 }

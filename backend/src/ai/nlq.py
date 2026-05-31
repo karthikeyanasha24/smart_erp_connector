@@ -8,6 +8,7 @@ Entry point: process_query(query, user_id, conv_id)
 from __future__ import annotations
 
 import time
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -75,8 +76,11 @@ def _infer_columns(records: List[Dict[str, Any]], intent: ExtractedIntent) -> Di
     value_col = "Revenue"
     label_col = ""
 
-    # Find numeric column
-    for name in ["Revenue", "NetSalesAmount", "TotalRevenue", "Amount", "Value"]:
+    # Find numeric column (prefer sales/revenue metrics)
+    for name in [
+        "TotalSales", "MTDSales", "Revenue", "NetSalesAmount", "TotalRevenue",
+        "Amount", "Value", "TodaySales", "MTDTotalSales",
+    ]:
         if name in cols:
             value_col = name
             break
@@ -92,22 +96,32 @@ def _infer_columns(records: List[Dict[str, Any]], intent: ExtractedIntent) -> Di
             except (TypeError, ValueError):
                 continue
 
-    # Find string/label column
+    date_cols = {
+        c for c in cols
+        if any(h in c.lower() for h in ("month", "date", "day", "period"))
+    }
+
     dim_hints = {
-        "branch": ["Branch", "BranchAlias", "BranchName"],
+        "branch": ["Store", "Branch", "BranchAlias", "BranchName"],
         "category": ["Category", "CategoryShortName"],
         "department": ["Department", "DepartmentShortName"],
         "salesperson": ["SalesPersonName", "Salesperson"],
     }
     if intent.dimension and intent.dimension in dim_hints:
         for col in dim_hints[intent.dimension]:
-            if col in cols:
+            if col in cols and col not in date_cols:
                 label_col = col
                 break
 
-    if not label_col:
+    # Dept + category breakdown — use composite for ranking insights
+    if "Department" in cols and "Category" in cols:
+        label_col = "_composite_dept_cat"
+    elif not label_col:
         for col in cols:
-            if col != value_col and isinstance(records[0].get(col), str):
+            if col in date_cols or col == value_col:
+                continue
+            sample = records[0].get(col)
+            if sample is not None and not isinstance(sample, (int, float)):
                 label_col = col
                 break
 
@@ -176,6 +190,12 @@ async def process_query(
 
         if validation.warnings:
             warnings.extend(validation.warnings)
+
+        assumptions = faq_blob.get("assumptions") or []
+        if any("truncat" in str(a).lower() for a in assumptions):
+            warnings.append(
+                "Result set may be truncated — narrow filters in a follow-up query if needed."
+            )
     else:
         # ── Step 2+: Intent extraction (may call AI depending on cfg) ───────────
         intent = await extract_intent(query, context_str)
@@ -229,6 +249,12 @@ async def process_query(
     if len(records) > cfg.DATASET_HARD_CAP:
         records = records[:cfg.DATASET_HARD_CAP]
         warnings.append(f"Results capped at {cfg.DATASET_HARD_CAP:,} rows.")
+
+    top_match = re.search(r"SELECT\s+TOP\s*\(\s*(\d+)\s*\)", final_sql, re.I)
+    if top_match and len(records) >= int(top_match.group(1)):
+        warnings.append(
+            f"SQL uses TOP ({top_match.group(1)}) — results may not include all matching rows."
+        )
 
     col_info = _infer_columns(records, intent)
     insight_data = await generate_insights(

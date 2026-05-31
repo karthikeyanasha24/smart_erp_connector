@@ -154,6 +154,15 @@ export default function Analytics() {
     endDate,
   );
 
+  // Local spinning state so the Refresh button always shows feedback even when
+  // data is already cached (SWR silent-revalidate keeps `loading` false in that case).
+  const [refreshSpinning, setRefreshSpinning] = useState(false);
+  const handleRefresh = useCallback(() => {
+    refetch();
+    setRefreshSpinning(true);
+    setTimeout(() => setRefreshSpinning(false), 1200);
+  }, [refetch]);
+
   const uiLoading = loading && !data && !waitingForCustomDates;
   // For custom range, show a descriptive "fetching..." message while loading.
   const customFetching = period === 'custom' && canFetchCustom && loading && !data;
@@ -245,7 +254,7 @@ export default function Analytics() {
     !hasLyData
     && !chartLoading
     && chartData.length > 0
-    && (period === 'qtd' || period === 'ytd' || period === 'last_6m' || period === 'mtd')
+    && (period === 'today' || period === 'qtd' || period === 'ytd' || period === 'last_6m' || period === 'mtd')
     && !data?.checksum;
 
   // ── Breakdown chart data ───────────────────────────────────────────────────
@@ -451,14 +460,14 @@ export default function Analytics() {
             </p>
           ) : null}
         </div>
-        <button type="button" onClick={() => refetch()}
+        <button type="button" onClick={handleRefresh}
           className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all"
           style={{
             background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
             border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
             color: 'var(--text-secondary)',
           }}>
-          <RefreshCw size={12} className={uiLoading ? 'animate-spin' : ''} /> Refresh
+          <RefreshCw size={12} className={uiLoading || refreshSpinning ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
 

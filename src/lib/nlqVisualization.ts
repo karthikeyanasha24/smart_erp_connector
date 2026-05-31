@@ -39,6 +39,8 @@ const LABEL_HINTS = [
   'city', 'period', 'date', 'day', 'hour', 'season', 'group', 'segment',
 ];
 
+const DATE_COL_HINTS = ['monthstart', 'monthlabel', 'transactiondate', 'invoicedt', 'xndt', 'date', 'day', 'periodlabel', 'latestmonth'];
+
 const SKIP_COLS = new Set(['id', 'rownum', 'rn']);
 
 function toNum(v: unknown): number | null {
@@ -79,24 +81,158 @@ function scoreLabel(col: string): number {
   return s;
 }
 
-function pickColumns(records: Record<string, unknown>[]): { valueKey: string; labelKey: string } {
+function isDateLikeLabel(label: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}/.test(label) || /jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(label);
+}
+
+function isDateColumn(col: string, records: Record<string, unknown>[]): boolean {
+  const l = col.toLowerCase();
+  if (DATE_COL_HINTS.some(h => l.includes(h))) return true;
+  const samples = records.slice(0, 8).map(r => String(r[col] ?? ''));
+  return samples.filter(Boolean).length > 0 && samples.every(s => isDateLikeLabel(s) || /^\d{4}-\d{2}-\d{2}/.test(s));
+}
+
+function pickColumns(records: Record<string, unknown>[]): { valueKey: string; labelKey: string; dateKey: string | null; dimKeys: string[] } {
   const cols = Object.keys(records[0] ?? {});
   const numericCols = cols.filter(c => isNumericColumn(records, c));
-  const labelCandidates = cols.filter(c => !numericCols.includes(c) || scoreLabel(c) > scoreNumeric(c));
+  const dateKey = cols.find(c => isDateColumn(c, records)) ?? null;
 
   const valueKey =
     [...numericCols].sort((a, b) => scoreNumeric(b) - scoreNumeric(a))[0] ??
     cols.find(c => isNumericColumn(records, c)) ??
-  cols[0] ??
+    cols[0] ??
     'value';
 
-  const labelKey =
-    [...labelCandidates].sort((a, b) => scoreLabel(b) - scoreLabel(a))[0] ??
-    cols.find(c => c !== valueKey) ??
-    cols[0] ??
-    valueKey;
+  const dimKeys = cols.filter(c =>
+    c !== valueKey &&
+    c !== dateKey &&
+    !numericCols.includes(c) &&
+    !SKIP_COLS.has(c.toLowerCase()),
+  );
 
-  return { valueKey, labelKey };
+  // Prefer MonthLabel over MonthStart for display when both exist
+  let labelKey = dateKey ?? '';
+  if (!labelKey) {
+    const preferred = cols.find(c => c.toLowerCase() === 'monthlabel');
+    if (preferred) labelKey = preferred;
+  }
+  if (!labelKey) {
+    labelKey =
+      [...dimKeys].sort((a, b) => scoreLabel(b) - scoreLabel(a))[0] ??
+      cols.find(c => c !== valueKey && !numericCols.includes(c)) ??
+      cols.find(c => c !== valueKey) ??
+      valueKey;
+  }
+
+  return { valueKey, labelKey, dateKey, dimKeys };
+}
+
+function aggregateSum(records: Record<string, unknown>[], groupKey: string, valueKey: string): ChartPoint[] {
+  const map = new Map<string, number>();
+  for (const r of records) {
+    const k = String(r[groupKey] ?? '');
+    if (!k) continue;
+    map.set(k, (map.get(k) ?? 0) + (toNum(r[valueKey]) ?? 0));
+  }
+  return [...map.entries()].map(([label, value]) => ({
+    label: label.slice(0, 28),
+    value,
+  }));
+}
+
+function compositeLabel(row: Record<string, unknown>, dimKeys: string[]): string {
+  return dimKeys
+    .map(k => String(row[k] ?? '').trim())
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function aggregateComposite(records: Record<string, unknown>[], dimKeys: string[], valueKey: string): ChartPoint[] {
+  const map = new Map<string, number>();
+  for (const r of records) {
+    const k = compositeLabel(r, dimKeys);
+    if (!k) continue;
+    map.set(k, (map.get(k) ?? 0) + (toNum(r[valueKey]) ?? 0));
+  }
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, value]) => ({ label: label.slice(0, 28), value }));
+}
+
+function sortChartByDate(points: ChartPoint[]): ChartPoint[] {
+  return [...points].sort((a, b) => {
+    const da = Date.parse(a.label);
+    const db = Date.parse(b.label);
+    if (!Number.isNaN(da) && !Number.isNaN(db)) return da - db;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+function buildChartData(
+  records: Record<string, unknown>[],
+  valueKey: string,
+  labelKey: string,
+  dateKey: string | null,
+  dimKeys: string[],
+): { chartData: ChartPoint[]; labelKey: string; valueKey: string } {
+  const displayDateKey = dateKey ?? (records[0] && 'MonthLabel' in records[0] ? 'MonthLabel' : null);
+
+  // Time series with extra dimensions → aggregate to monthly (or daily) totals
+  if (dateKey && dimKeys.length > 0) {
+    const aggregated = aggregateSum(records, dateKey, valueKey);
+    const sorted = sortChartByDate(aggregated).slice(-60);
+    const chartLabel = displayDateKey && displayDateKey !== dateKey
+      ? aggregateSum(records, displayDateKey, valueKey)
+      : sorted;
+    const finalData = displayDateKey && displayDateKey !== dateKey
+      ? sortChartByDate(chartLabel).slice(-60)
+      : sorted;
+    return {
+      chartData: finalData,
+      labelKey: displayDateKey ?? dateKey,
+      valueKey: `Total ${valueKey.replace(/([A-Z])/g, ' $1').trim()}`,
+    };
+  }
+
+  // Pure time series (one row per period)
+  if (dateKey) {
+    const key = displayDateKey ?? dateKey;
+    const aggregated = aggregateSum(records, key, valueKey);
+    return {
+      chartData: sortChartByDate(aggregated).slice(-60),
+      labelKey: key,
+      valueKey,
+    };
+  }
+
+  // Ranking / breakdown — aggregate when labels repeat (e.g. same category across months)
+  const rawLabels = records.map(r => String(r[labelKey] ?? ''));
+  const uniqueLabels = new Set(rawLabels.filter(Boolean));
+  if (uniqueLabels.size < records.length) {
+    const aggregated = aggregateSum(records, labelKey, valueKey)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 40);
+    return { chartData: aggregated, labelKey, valueKey };
+  }
+
+  // Multi-dimension ranking without date — composite label, top 40
+  if (dimKeys.length >= 2) {
+    const aggregated = aggregateComposite(records, dimKeys, valueKey).slice(0, 40);
+    return {
+      chartData: aggregated,
+      labelKey: dimKeys.join(' · '),
+      valueKey,
+    };
+  }
+
+  return {
+    chartData: records.slice(0, 40).map((r, i) => ({
+      label: String(r[labelKey] ?? `#${i + 1}`).slice(0, 28),
+      value: toNum(r[valueKey]) ?? 0,
+    })),
+    labelKey,
+    valueKey,
+  };
 }
 
 function formatCompact(n: number): string {
@@ -116,10 +252,6 @@ function formatCell(v: unknown): string {
   return s.length > 28 ? `${s.slice(0, 26)}…` : s;
 }
 
-function isDateLikeLabel(label: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}/.test(label) || /jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(label);
-}
-
 export function buildNLQVisualization(
   records: Record<string, unknown>[],
   chartTypeHint?: string,
@@ -128,7 +260,7 @@ export function buildNLQVisualization(
     return { chartType: 'none', chartData: [], valueKey: '', labelKey: '', kpiCards: [] };
   }
 
-  const { valueKey, labelKey } = pickColumns(records);
+  const { valueKey, labelKey, dateKey, dimKeys } = pickColumns(records);
   const rowCount = records.length;
 
   // Single scalar row → KPI cards from all numeric columns
@@ -152,13 +284,9 @@ export function buildNLQVisualization(
     };
   }
 
-  const chartData: ChartPoint[] = records.slice(0, 40).map((r, i) => {
-    const labelRaw = r[labelKey] ?? r[Object.keys(r).find(k => k !== valueKey) ?? ''] ?? `#${i + 1}`;
-    return {
-      label: String(labelRaw).slice(0, 24),
-      value: toNum(r[valueKey]) ?? 0,
-    };
-  });
+  const { chartData, labelKey: chartLabelKey, valueKey: chartValueKey } = buildChartData(
+    records, valueKey, labelKey, dateKey, dimKeys,
+  );
 
   const firstLabel = chartData[0]?.label ?? '';
   const hint = (chartTypeHint ?? '').toLowerCase();
@@ -168,12 +296,12 @@ export function buildNLQVisualization(
     chartType = hint === 'line' ? 'line' : 'area';
   } else if (hint === 'pie' || hint === 'donut') {
     chartType = 'pie';
-  } else if (isDateLikeLabel(firstLabel) || /trend|daily|month/i.test(labelKey)) {
-    chartType = rowCount > 14 ? 'area' : 'line';
-  } else if (rowCount <= 6) {
+  } else if (dateKey || isDateLikeLabel(firstLabel) || /trend|daily|month/i.test(chartLabelKey)) {
+    chartType = chartData.length > 14 ? 'area' : 'line';
+  } else if (chartData.length <= 6) {
     chartType = 'pie';
-  } else if (rowCount > 20) {
-    chartType = 'area';
+  } else if (chartData.length > 20) {
+    chartType = 'bar';
   }
 
   const table: ResultTable = {
@@ -188,8 +316,8 @@ export function buildNLQVisualization(
   return {
     chartType,
     chartData,
-    valueKey,
-    labelKey,
+    valueKey: chartValueKey,
+    labelKey: chartLabelKey,
     kpiCards: [],
     table: rowCount > 1 ? table : undefined,
   };

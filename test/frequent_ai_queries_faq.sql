@@ -1,6 +1,6 @@
 /*
   Frequent AI queries — FAQ-generated T-SQL bundle
-  Generated: 2026-05-26T21:18:57.338132+00:00
+  Generated: 2026-05-31T11:29:08.137184+00:00
   Source: nlq_faq_kpi.FREQUENT_AI_QUERIES + nlq_faq_sql.try_faq_template
   Execute per block as needed (read-only analytical queries).
 */
@@ -105,10 +105,10 @@ ORDER BY MonthStart ASC
 -- ============================================================================
 -- 5/50 • Last 5 Years Sales Analysis at Department and Category Level
 -- template_id: five_year_sales_dept_category
--- explanation: Monthly sales for the last 5 years by department and category (TOP 500 rows).
--- assumption: One pass monthly aggregation; may truncate — narrow filters in follow-up if needed.
+-- explanation: Monthly sales for the last 5 years by department and category.
+-- assumption: Full 5-year monthly grain; chart aggregates to monthly totals.
 -- ============================================================================
-SELECT TOP (500)
+SELECT
     DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
     s.[DepartmentShortName] AS Department,
     s.[CategoryShortName] AS Category,

@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, BarChart3, MessageSquareCode, ArrowLeftRight,
-  FileBarChart, GitBranch, Package, Database, Lightbulb, Settings,
+  FileBarChart, GitBranch, Package, Database, Settings,
   ChevronLeft, ChevronRight, Zap, Activity, Table2,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
@@ -20,7 +20,6 @@ const ALL_NAV_GROUPS = [
       { id: 'dashboard' as Page, label: 'AI Dashboard', icon: LayoutDashboard, badge: null, roles: undefined },
       { id: 'analytics' as Page, label: 'Analytics', icon: BarChart3, badge: null, roles: undefined },
       { id: 'ai-query' as Page, label: 'AI Query', icon: MessageSquareCode, badge: 'AI', roles: ['admin', 'manager', 'analyst'] },
-      { id: 'insights' as Page, label: 'AI Insights', icon: Lightbulb, badge: '4', roles: ['admin', 'manager', 'analyst'] },
     ],
   },
   {
