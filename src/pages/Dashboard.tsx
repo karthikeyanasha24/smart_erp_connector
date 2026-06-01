@@ -387,6 +387,20 @@ export default function Dashboard() {
   const todayDate = now.toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
   const mtdPeriodHint = `Month-to-date: 1st through today (${mtdLabel}).`;
 
+  // ── Data freshness indicator ─────────────────────────────────────────────
+  // fetched_at is the Unix timestamp when data was actually pulled from SQL Server.
+  // If it differs from "now" by more than 5 min, show it as "Data as of [time]" with a cache badge.
+  const fetchedAtTs = !demo ? (mtdRaw?.fetched_at ?? todayRaw?.fetched_at ?? null) : null;
+  const fetchedAtDate = fetchedAtTs ? new Date(fetchedAtTs * 1000) : null;
+  const fetchedAtAge = fetchedAtDate ? (now.getTime() - fetchedAtDate.getTime()) / 1000 : 0;
+  const isFromCache = fetchedAtAge > 300; // more than 5 minutes old → cached data
+  const fetchedAtFmt = fetchedAtDate
+    ? fetchedAtDate.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }).toLowerCase()
+    : timeFmt;
+  // If data is from cache, show actual fetch time; otherwise show live clock
+  const displayTime = isFromCache ? fetchedAtFmt : timeFmt;
+  const displayTimeLabel = isFromCache ? 'Data as of' : 'Last Refreshed';
+
   void isDark; // used via CSS vars
 
   return (
@@ -430,10 +444,22 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Right: last refreshed + action buttons */}
+          {/* Right: data freshness + action buttons */}
           <div style={{ textAlign:'right', flexShrink:0 }}>
-            <p style={{ fontSize:10, color:'rgba(255,255,255,0.35)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:2 }}>Last Refreshed</p>
-            <p style={{ fontSize:28, fontWeight:800, color:'#fff', letterSpacing:'-0.02em', lineHeight:1 }}>{timeFmt}</p>
+            <div style={{ display:'flex', alignItems:'center', gap:6, justifyContent:'flex-end', marginBottom:2 }}>
+              <p style={{ fontSize:10, color:'rgba(255,255,255,0.35)', textTransform:'uppercase', letterSpacing:'0.1em' }}>{displayTimeLabel}</p>
+              {isFromCache && (
+                <span style={{ fontSize:9, fontWeight:700, background:'rgba(255,170,0,0.18)', color:'#ffaa00', border:'1px solid rgba(255,170,0,0.3)', borderRadius:5, padding:'2px 6px', letterSpacing:'0.05em' }}>
+                  CACHED
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize:28, fontWeight:800, color: isFromCache ? '#ffaa00' : '#fff', letterSpacing:'-0.02em', lineHeight:1 }}>{displayTime}</p>
+            {isFromCache && fetchedAtDate && (
+              <p style={{ fontSize:10, color:'rgba(255,170,0,0.6)', marginTop:2 }}>
+                Live clock: {timeFmt}
+              </p>
+            )}
             <div style={{ display:'flex', gap:6, marginTop:10, justifyContent:'flex-end' }}>
               <button type="button" onClick={doRefresh}
                 style={{ border:'1px solid rgba(88,130,255,0.25)', color:'rgba(255,255,255,0.6)', background:'rgba(88,130,255,0.08)', borderRadius:10, padding:'5px 12px', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>

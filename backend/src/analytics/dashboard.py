@@ -5,6 +5,7 @@ Sales analytics dashboard — summary KPIs, YoY trend, contribution breakdown, c
 from __future__ import annotations
 
 import asyncio
+import time as _time
 from datetime import date as date_type, datetime as datetime_type
 from typing import Any, Dict, List, Optional
 
@@ -354,6 +355,7 @@ async def get_dashboard(
             "granularity": gran,
             "date_range": {"start": dr.start, "end": dr.end},
             "ly_range": {"start": ly_dr.start, "end": ly_dr.end},
+            "fetched_at": _time.time(),   # Unix timestamp of actual SQL Server fetch
             "summary": {
                 **summary,
                 "customers": customers,
