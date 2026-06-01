@@ -18,13 +18,24 @@ from src.utils.logger import logger
 from src.utils.date_utils import cache_key_is_stale
 
 # Keys whose data changes every minute or are date-specific -- do not persist to PG.
-# Legacy v2/v3 prefixes plus date-suffixed rolling-period keys (see cache_key_is_stale).
+# Covers versioned (kpi:v3:today) AND plain warmup keys (kpi:today, bundle:mtd, ...).
 _INTRADAY_PREFIXES = (
+    # versioned prefixes
     "kpi:v3:today", "kpi:v3:yesterday", "kpi:v3:mtd",
     "kpi:v4:today", "kpi:v4:yesterday",
     "dashboard:v3:today", "dashboard:v3:yesterday", "dashboard:v3:mtd",
     "dashboard:v7:today", "dashboard:v7:yesterday",
     "dashboard:v2:today", "dashboard:v2:mtd",
+    # plain warmup keys written by warmup.py
+    "kpi:today", "kpi:yesterday", "kpi:mtd", "kpi:qtd", "kpi:ytd",
+    "kpi:last_7d", "kpi:last_30d", "kpi:last_6m", "kpi:last_180d",
+    "bundle:today", "bundle:yesterday", "bundle:mtd", "bundle:qtd", "bundle:ytd",
+    "bundle:last_7d", "bundle:last_30d", "bundle:last_6m", "bundle:last_180d",
+    "dashboard:today", "dashboard:yesterday", "dashboard:mtd", "dashboard:qtd",
+    "dashboard:ytd", "dashboard:last_7d", "dashboard:last_30d",
+    "dashboard:last_6m", "dashboard:last_180d",
+    "department:today", "department:yesterday", "department:mtd",
+    "txns:today", "txns:mtd",
 )
 
 _DATE_SUFFIX = re.compile(r":\d{4}-\d{2}-\d{2}$")
@@ -33,8 +44,14 @@ _DATE_SUFFIX = re.compile(r":\d{4}-\d{2}-\d{2}$")
 def _is_intraday(key: str) -> bool:
     if any(key.startswith(p) for p in _INTRADAY_PREFIXES):
         return True
-    # Rolling-period keys include an as-of date — never persist across days.
-    return bool(_DATE_SUFFIX.search(key))
+    if _DATE_SUFFIX.search(key):
+        return True
+    # Catch versioned rolling keys like bundle:v2:today:100:d0:k0
+    _rolling = re.compile(
+        r":(today|yesterday|mtd|qtd|ytd|last_7d|last_14d|last_30d"
+        r"|last_90d|last_180d|last_6m|last_365d)(:|$)"
+    )
+    return bool(_rolling.search(key))
 
 
 def _is_department_chart_key(key: str) -> bool:
@@ -287,12 +304,24 @@ class AnalyticsCache:
         """
         On startup: load all valid cache entries from PostgreSQL into memory.
 
-        First-ever start: cache is empty, warmup runs, data writes to PG.
-        Every subsequent restart: PG loads in <200ms, warmup refreshes stale in background.
-        With ANALYTICS_STALE_TTL_MULTIPLIER=96, data up to 48 hours old is served
-        immediately -- covering overnight/weekend restarts with no cold-start delay.
+        Rolling-period keys (today/mtd/qtd etc.) are deleted from PG before loading
+        so stale data from the previous calendar day is never served after midnight.
+        Historical period keys (last_month, last_quarter, last_year) are preserved.
         """
-        from src.db.postgres import pg_query
+        from src.db.postgres import pg_query, pg_execute
+        # Purge all rolling-period keys so stale today/mtd data is not served
+        try:
+            status = await pg_execute(
+                "DELETE FROM analytics_cache WHERE "
+                "cache_key ~ "
+                "E':(today|yesterday|mtd|qtd|ytd|last_7d|last_14d|last_30d"
+                "|last_90d|last_180d|last_6m|last_365d)(:|$)'"
+                " OR cache_key ~ E':\\d{4}-\\d{2}-\\d{2}$'"
+            )
+            logger.info("PG cache: purged rolling-period entries on startup", status=status)
+        except Exception as exc:
+            logger.warning("PG cache: rolling-period purge failed (non-fatal)", error=str(exc))
+
         try:
             rows = await pg_query(
                 "SELECT cache_key, value_json, created_at, ttl_s FROM analytics_cache"
