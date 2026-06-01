@@ -835,7 +835,7 @@ export default function AIQuery() {
   }, [activeTopic]);
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-108px)]">
+    <div className="flex flex-col md:flex-row gap-4 h-auto md:h-[calc(100vh-108px)]">
 
       <Toast message={toast?.message ?? ''} type={toast?.type ?? 'success'} visible={!!toast} />
 
@@ -844,7 +844,7 @@ export default function AIQuery() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-72 flex-shrink-0 flex flex-col gap-3 min-h-0"
+        className="w-full md:w-72 flex-shrink-0 flex flex-col gap-3 min-h-0 md:max-h-full max-h-80 overflow-hidden"
       >
         {/* Stats card */}
         <div className="rounded-2xl p-4 flex-shrink-0"
@@ -1049,7 +1049,7 @@ export default function AIQuery() {
         style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 md:px-5 py-3 md:py-3.5 flex-shrink-0"
           style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center"

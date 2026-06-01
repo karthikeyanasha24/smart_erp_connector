@@ -405,7 +405,7 @@ export default function Dashboard() {
         {/* subtle grid overlay */}
         <div style={{ position:'absolute', inset:0, backgroundImage:'radial-gradient(rgba(88,130,255,0.07) 1px, transparent 1px)', backgroundSize:'28px 28px', pointerEvents:'none', borderRadius:24 }} />
 
-        <div className="flex items-start justify-between gap-4" style={{ position:'relative' }}>
+        <div className="flex flex-col sm:flex-row items-start justify-between gap-4" style={{ position:'relative' }}>
           {/* Left: greeting + name + badge */}
           <div>
             <p style={{ fontSize:12, color:'rgba(255,255,255,0.45)', marginBottom:4, letterSpacing:'0.03em' }}>
@@ -575,7 +575,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── PowerBI KPI row: Distinct Clients / Suppliers / Unique Invoices ─── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard
           icon={<Activity size={16} style={{ color:'#0EA5E9' }} />}
           value={distinctClients}

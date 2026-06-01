@@ -14,13 +14,14 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, pageKey }: LayoutProps) {
-  const { sidebarExpanded } = useNavigation();
+  const { sidebarExpanded, isMobile } = useNavigation();
   const { isDark } = useTheme();
-  const sidebarW = sidebarExpanded ? 240 : 72;
+
+  // On mobile: no sidebar margin. On desktop: sidebar width.
+  const sidebarW = isMobile ? 0 : (sidebarExpanded ? 240 : 72);
 
   useEffect(() => {
     prefetchTransactionsSnapshots();
-    // Analytics tabs prefetch on sidebar hover only — not on every page mount.
   }, []);
 
   return (
@@ -48,7 +49,7 @@ export default function Layout({ children, pageKey }: LayoutProps) {
             initial="initial"
             animate="animate"
             exit="exit"
-            className="p-6"
+            className="p-3 sm:p-4 md:p-6"
             style={{ minHeight: 'calc(100vh - 64px)' }}
           >
             {children}

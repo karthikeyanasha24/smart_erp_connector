@@ -205,7 +205,7 @@ export default function Branch() {
           initial={{ opacity: 0, x: -12 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.3 }}
-          className="col-span-12 md:col-span-3 flex flex-col gap-0 rounded-2xl overflow-hidden"
+          className="col-span-12 md:col-span-3 flex flex-col gap-0 rounded-2xl overflow-hidden md:sticky md:top-6"
           style={{ background: card.bg, border: card.border, height: 'fit-content', position: 'sticky', top: 24 }}
         >
           {/* Sidebar header */}
@@ -378,7 +378,7 @@ export default function Branch() {
                 </div>
 
                 {/* ── KPI cards row ── */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <StatCard icon={Activity} label="Transactions"
                     value={fmtCount(detail?.total_transactions ?? selectedBranch.transactions)}
                     color={T.cyan} loading={detailLoading} />

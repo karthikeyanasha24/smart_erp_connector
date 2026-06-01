@@ -449,7 +449,7 @@ export default function Transactions() {
         }}
       >
         <div
-          className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-3 p-4 md:p-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
           style={{ borderBottom: surface.borderSoft }}
         >
           <div>

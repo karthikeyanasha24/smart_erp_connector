@@ -434,7 +434,7 @@ export default function Product() {
 
       {/* Full product master — VW_MB_POWERBI_PRODUCT_MASTER columns */}
       <motion.div variants={item} className="rounded-2xl p-5" style={cardStyle}>
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between mb-4">
           <div>
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Product master</h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>

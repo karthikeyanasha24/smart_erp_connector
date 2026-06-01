@@ -233,7 +233,7 @@ export default function Settings() {
       <div className="space-y-5">
         <div>
           <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Color Theme</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
               { label: 'Dark Mode', desc: 'Cinematic dark experience', icon: Moon, active: isDark },
               { label: 'Light Mode', desc: 'Premium minimal design', icon: Sun, active: !isDark },
@@ -442,7 +442,7 @@ export default function Settings() {
                   <X size={13} style={{ color: 'var(--text-muted)' }} />
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-2xs font-medium" style={{ color: 'var(--text-muted)' }}>Full Name</label>
                   <input
@@ -757,9 +757,9 @@ export default function Settings() {
     <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-5">
 
       {/* Header */}
-      <motion.div variants={item} className="flex items-center justify-between">
+      <motion.div variants={item} className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold" style={{
+          <h1 className="text-xl sm:text-2xl font-bold" style={{
             background: isDark ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)' : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
           }}>Settings</h1>
@@ -772,10 +772,10 @@ export default function Settings() {
         </motion.button>
       </motion.div>
 
-      <div className="grid grid-cols-12 gap-4">
+      <div className="grid grid-cols-12 gap-4 items-start">
         {/* Sidebar nav */}
-        <motion.div variants={item} className="col-span-3">
-          <div className="rounded-2xl overflow-hidden"
+        <motion.div variants={item} className="col-span-12 md:col-span-3">
+          <div className="rounded-2xl overflow-x-auto md:overflow-hidden flex flex-row md:flex-col scrollbar-none"
             style={{
               background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.85)',
               backdropFilter: 'blur(20px)',
@@ -786,7 +786,7 @@ export default function Settings() {
               const isActive = activeSection === sec.id;
               return (
                 <motion.button key={sec.id} onClick={() => setActiveSection(sec.id)}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 relative"
+                  className="flex-shrink-0 md:w-full flex items-center gap-3 px-3 md:px-4 py-3 md:py-3.5 relative"
                   style={{
                     background: isActive ? isDark ? 'rgba(0,184,230,0.08)' : 'rgba(0,184,230,0.06)' : 'transparent',
                     borderBottom: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.04)',
@@ -804,7 +804,7 @@ export default function Settings() {
                   </div>
                   <div className="text-left">
                     <p className="text-xs font-semibold" style={{ color: isActive ? '#00b8e6' : 'var(--text-primary)' }}>{sec.label}</p>
-                    <p className="text-2xs" style={{ color: 'var(--text-muted)' }}>{sec.desc}</p>
+                    <p className="text-2xs hidden md:block" style={{ color: 'var(--text-muted)' }}>{sec.desc}</p>
                   </div>
                 </motion.button>
               );
@@ -813,8 +813,8 @@ export default function Settings() {
         </motion.div>
 
         {/* Content panel */}
-        <motion.div variants={item} className="col-span-9">
-          <div className="rounded-2xl p-6"
+        <motion.div variants={item} className="col-span-12 md:col-span-9">
+          <div className="rounded-2xl p-4 md:p-6"
             style={{
               background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.85)',
               backdropFilter: 'blur(20px)',

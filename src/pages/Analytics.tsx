@@ -449,7 +449,7 @@ export default function Analytics() {
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold" style={{
+          <h1 className="text-xl sm:text-2xl font-bold" style={{
             background: isDark
               ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)'
               : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
@@ -477,7 +477,7 @@ export default function Analytics() {
 
       {/* ── Period tabs ── */}
       <div className="flex flex-wrap gap-2 items-center">
-        <div className="flex items-center gap-1 p-1 rounded-xl"
+        <div className="flex items-center gap-1 p-1 rounded-xl overflow-x-auto scrollbar-none"
           style={{
             background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
             border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
@@ -652,7 +652,7 @@ export default function Analytics() {
 
       {/* ── Checksum strip ── */}
       {data?.checksum && !chartLoading && (
-        <Card className="px-4 py-2.5 flex items-center gap-2.5">
+        <Card className="px-4 py-2.5 flex flex-wrap items-center gap-2.5">
           {data.checksum.match
             ? <CheckCircle2 size={14} style={{ color: '#00e67a', flexShrink: 0 }} />
             : <AlertTriangle size={14} style={{ color: '#f87171', flexShrink: 0 }} />}

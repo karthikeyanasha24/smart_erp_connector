@@ -342,7 +342,7 @@ export default function DataViews() {
       )}
 
       {/* ── two-pane body ── */}
-      <div className="flex gap-4 flex-1 min-h-0">
+      <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0">
 
         {/* LEFT: view selector panel */}
         <div
@@ -513,7 +513,7 @@ export default function DataViews() {
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                className="grid grid-cols-3 gap-3 flex-shrink-0"
+                className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-shrink-0"
               >
                 {[
                   {

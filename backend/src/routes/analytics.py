@@ -135,12 +135,31 @@ async def _fetch_analytics_bundle(
     )
     if cached is not None:
         payload: Dict[str, Any] = {"success": True, "period": period, **cached, "from_cache": True}
-        # Chart caches omit customer_count — always fetch when the client asked for it.
+        # Chart caches never include customer_count or extras (distinct_clients etc).
+        # Fetch them in parallel when the caller needs them.
+        extra_coros = []
+        extra_keys: list = []
         if include_customer_count:
-            try:
-                payload["customer_count"] = await get_customer_count(period)
-            except Exception as exc:
-                logger.warning("Bundle cache hit: customer count failed", period=period, error=str(exc))
+            extra_coros.append(get_customer_count(period))
+            extra_keys.append("customer_count")
+        if include_extras and include_kpis:
+            extra_coros.append(get_home_kpis(period, include_customers=False, include_extras=True))
+            extra_keys.append("_extras")
+        if extra_coros:
+            import asyncio as _asyncio
+            results = await _asyncio.gather(*extra_coros, return_exceptions=True)
+            for key, result in zip(extra_keys, results):
+                if isinstance(result, Exception):
+                    logger.warning("Bundle cache: extra failed", key=key, period=period, error=str(result))
+                    continue
+                if key == "customer_count":
+                    payload["customer_count"] = result
+                elif key == "_extras" and isinstance(result, dict):
+                    existing_kpis = dict(payload.get("kpis") or {})
+                    existing_kpis["distinct_clients"]   = result.get("distinct_clients")
+                    existing_kpis["distinct_suppliers"] = result.get("distinct_suppliers")
+                    existing_kpis["unique_invoices"]    = result.get("unique_invoices")
+                    payload["kpis"] = existing_kpis
         return payload
 
     specs: List[Tuple[str, Any]] = [

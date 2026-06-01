@@ -11,7 +11,7 @@ import {
   exportFilename,
   type TableRow,
 } from '../../lib/tableExport';
-import { isGoogleDriveConfigured, uploadToGoogleDrive } from '../../lib/googleDrive';
+import { isGoogleDriveConfigured, uploadToGoogleDrive, getCachedDriveEmail } from '../../lib/googleDrive';
 
 export interface ExportNotify {
   message: string;
@@ -86,7 +86,8 @@ export default function TableExportButtons({
           filename,
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
-        const who = user?.email ? ` (${user.email})` : '';
+        const driveEmail = getCachedDriveEmail();
+        const who = driveEmail ? ` → ${driveEmail}` : '';
         notify({
           message: `Excel saved to Google Drive${who}`,
           type: 'success',
@@ -99,7 +100,8 @@ export default function TableExportButtons({
         const filename = exportFilename(fileBaseName, 'pdf');
         const blob = buildPdfBlob(cols, dataRows);
         const result = await uploadToGoogleDrive(blob, filename, 'application/pdf');
-        const who = user?.email ? ` (${user.email})` : '';
+        const driveEmail = getCachedDriveEmail();
+        const who = driveEmail ? ` → ${driveEmail}` : '';
         notify({
           message: `PDF saved to Google Drive${who}`,
           type: 'success',

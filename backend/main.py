@@ -22,6 +22,54 @@ from src.middleware.error import register_error_handlers
 from src.spa_static import register_spa_static
 from src.analytics.warmup import start_background_warmer, stop_background_warmer
 
+# --- Legal page content -------------------------------------------------------
+
+_LEGAL_CSS = """
+  body{font-family:system-ui,sans-serif;max-width:720px;margin:60px auto;padding:0 24px;color:#1e293b;line-height:1.7}
+  h1{color:#4f46e5;font-size:1.8rem;margin-bottom:4px}
+  h2{color:#334155;font-size:1.1rem;margin-top:32px}
+  p,li{color:#475569}
+  a{color:#4f46e5}
+  .badge{display:inline-block;background:#eef2ff;color:#4f46e5;padding:2px 10px;border-radius:20px;font-size:.8rem;margin-bottom:24px}
+"""
+
+_PRIVACY_HTML = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Privacy Policy — SmarterP ERP for Sheets</title>
+<style>{_LEGAL_CSS}</style></head><body>
+<h1>Privacy Policy</h1>
+<span class="badge">SmarterP ERP for Sheets</span>
+<p>Last updated: June 2026</p>
+<h2>1. Data We Access</h2>
+<p>SmarterP ERP for Sheets accesses only the Google Sheet you are actively working in (<code>spreadsheets.currentonly</code> scope). We do not access any other files in your Google Drive.</p>
+<h2>2. Data We Collect</h2>
+<p>The add-on connects to your own SmarterP ERP server using credentials you provide. We do not store, transmit, or share your ERP data with any third party. All data flows directly between your browser and your own server.</p>
+<h2>3. Authentication</h2>
+<p>Your SmarterP username and password are stored securely in Google Apps Script's PropertiesService, scoped to your account only. They are never sent to our servers.</p>
+<h2>4. External Requests</h2>
+<p>The add-on makes HTTP requests exclusively to the SmarterP server URL you configure. No data is sent to any other endpoint.</p>
+<h2>5. Contact</h2>
+<p>For privacy questions: <a href="mailto:officialwork24ak@gmail.com">officialwork24ak@gmail.com</a></p>
+</body></html>"""
+
+_TERMS_HTML = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Terms of Service — SmarterP ERP for Sheets</title>
+<style>{_LEGAL_CSS}</style></head><body>
+<h1>Terms of Service</h1>
+<span class="badge">SmarterP ERP for Sheets</span>
+<p>Last updated: June 2026</p>
+<h2>1. Acceptance</h2>
+<p>By installing SmarterP ERP for Sheets, you agree to these terms. If you do not agree, do not install the add-on.</p>
+<h2>2. Use of the Add-on</h2>
+<p>This add-on is designed for use with a valid SmarterP ERP account. You are responsible for maintaining the security of your credentials.</p>
+<h2>3. No Warranty</h2>
+<p>The add-on is provided "as is" without warranty of any kind. We are not liable for any data loss or business disruption arising from use of this add-on.</p>
+<h2>4. Modifications</h2>
+<p>We reserve the right to modify or discontinue the add-on at any time. Continued use after changes constitutes acceptance of the updated terms.</p>
+<h2>5. Contact</h2>
+<p>For support: <a href="https://smarterpconnector.in">smarterpconnector.in</a> · <a href="mailto:officialwork24ak@gmail.com">officialwork24ak@gmail.com</a></p>
+</body></html>"""
+
+
 # --- Routes -------------------------------------------------------------------
 from src.routes.auth import router as auth_router
 from src.routes.ai import router as ai_router
@@ -131,6 +179,17 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(ai_router)
     app.include_router(analytics_router)
+
+    # ── Legal pages for Google Workspace Marketplace listing ──────────────────
+    from fastapi.responses import HTMLResponse
+
+    @app.get("/privacy", include_in_schema=False)
+    async def privacy_policy() -> HTMLResponse:
+        return HTMLResponse(_PRIVACY_HTML)
+
+    @app.get("/terms", include_in_schema=False)
+    async def terms_of_service() -> HTMLResponse:
+        return HTMLResponse(_TERMS_HTML)
 
     @app.get("/health", include_in_schema=False)
     async def health() -> Dict[str, Any]:

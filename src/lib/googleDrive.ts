@@ -4,9 +4,10 @@
  * Enable "Google Drive API" and add your app origin to Authorized JavaScript origins.
  */
 
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email';
 const TOKEN_KEY = 'smarterp_google_drive_token';
 const TOKEN_EXP_KEY = 'smarterp_google_drive_token_exp';
+const TOKEN_EMAIL_KEY = 'smarterp_google_drive_email';
 
 declare global {
   interface Window {
@@ -70,6 +71,25 @@ function cacheToken(token: string, expiresInSec = 3500) {
   } catch { /* ignore */ }
 }
 
+/** Returns the Google account email that was used for OAuth, or null if not yet signed in. */
+export function getCachedDriveEmail(): string | null {
+  try {
+    return sessionStorage.getItem(TOKEN_EMAIL_KEY);
+  } catch { return null; }
+}
+
+async function fetchAndCacheGoogleEmail(token: string): Promise<void> {
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const info = await res.json() as { email?: string };
+      if (info.email) sessionStorage.setItem(TOKEN_EMAIL_KEY, info.email);
+    }
+  } catch { /* non-fatal */ }
+}
+
 export async function getGoogleAccessToken(forcePrompt = false): Promise<string> {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
   if (!clientId) {
@@ -93,6 +113,8 @@ export async function getGoogleAccessToken(forcePrompt = false): Promise<string>
           return;
         }
         cacheToken(resp.access_token);
+        // Fetch real Google account email and cache it (non-blocking)
+        fetchAndCacheGoogleEmail(resp.access_token);
         resolve(resp.access_token);
       },
     });
@@ -131,6 +153,7 @@ export async function uploadToGoogleDrive(
   if (res.status === 401 && !retried) {
     sessionStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_EXP_KEY);
+    sessionStorage.removeItem(TOKEN_EMAIL_KEY);
     return uploadToGoogleDrive(blob, filename, mimeType, true);
   }
 

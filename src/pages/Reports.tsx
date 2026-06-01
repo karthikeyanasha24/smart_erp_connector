@@ -222,10 +222,10 @@ export default function Reports() {
     <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-5">
 
       {/* ── Header ── */}
-      <motion.div variants={fadeUp} className="flex items-center justify-between">
+      <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1
-            className="text-2xl font-bold"
+            className="text-xl sm:text-2xl font-bold"
             style={{
               background: isDark
                 ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)'
@@ -270,7 +270,7 @@ export default function Reports() {
 
       {/* ── Period selector + stats ── */}
       <motion.div variants={fadeUp}>
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           <div
             className="flex items-center gap-1 p-1 rounded-xl"
             style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}
