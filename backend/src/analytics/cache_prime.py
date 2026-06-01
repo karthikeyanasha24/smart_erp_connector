@@ -12,17 +12,26 @@ from src.analytics.cache import cache
 from src.utils.date_utils import trend_granularity, period_cache_key
 
 
+# Rolling periods where a stale cache hit is treated as a miss so we re-query SQL.
+_STALE_MISS_PERIODS = frozenset({"today", "yesterday", "mtd", "last_7d", "last_30d"})
+
+
 def assemble_bundle_from_chart_caches(
     period: str,
     top_n: int,
     *,
     include_kpis: bool = False,
     include_departments: bool = False,
+    force_refresh: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     If branches/trend/categories (+ optional kpis/depts) are already cached, build a bundle
     without hitting SQL — same speed as a warm bundle:v2 cache hit.
+    Returns None when force_refresh=True or when any required key is stale for a
+    rolling period (so the caller re-queries SQL for up-to-date data).
     """
+    if force_refresh:
+        return None
     n = min(top_n, cfg.ANALYTICS_TOP_N_MAX)
     gran = trend_granularity(period)
     specs: list[tuple[str, str, bool]] = [
@@ -36,8 +45,11 @@ def assemble_bundle_from_chart_caches(
     for name, key, required in specs:
         if not required:
             continue
-        val, _ = cache.get(key)
+        val, is_fresh = cache.get(key)
         if val is None:
+            return None
+        # For rolling/intraday periods treat a stale entry as a miss → caller re-queries SQL.
+        if not is_fresh and period in _STALE_MISS_PERIODS:
             return None
         payload[name] = val
     return payload

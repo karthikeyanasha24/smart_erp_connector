@@ -441,9 +441,30 @@ export const analytics = {
     return apiFetchDeduped<AnalyticsBundleResponse>(`/analytics/bundle?${qs}`, { timeoutMs: 600_000 });
   },
 
-  /** One HTTP call: MTD + Today bundles with KPIs (home dashboard). */
-  dashboardPage: () =>
-    apiFetchDeduped<DashboardPageResponse>('/analytics/dashboard-page', { timeoutMs: 600_000 }),
+  /**
+   * One HTTP call for the Analytics tab: bundle+departments+dashboard in parallel.
+   * For custom range pass period='custom', startDate, endDate.
+   */
+  analyticsPage: (period = 'mtd', startDate?: string, endDate?: string) => {
+    const qs = new URLSearchParams({ period, top_n: '100' });
+    if (startDate) qs.set('start_date', startDate);
+    if (endDate) qs.set('end_date', endDate);
+    return apiFetchDeduped<{
+      success: boolean;
+      period: string;
+      bundle: Record<string, unknown> | null;
+      departments: unknown[];
+      dashboard: Record<string, unknown> | null;
+      bundle_error?: string;
+    }>(`/analytics/analytics-page?${qs}`, { timeoutMs: 600_000 });
+  },
+
+  /** One HTTP call: MTD + Today bundles with KPIs (home dashboard). Pass force=true to bypass server cache (Refresh button). */
+  dashboardPage: (force = false) =>
+    apiFetchDeduped<DashboardPageResponse>(
+      force ? '/analytics/dashboard-page?force=true' : '/analytics/dashboard-page',
+      { timeoutMs: 600_000 }
+    ),
 
   departments: (period = 'mtd', topN = 10) =>
     apiFetchDeduped<{ success: boolean; period: string; departments: DeptPoint[] }>(

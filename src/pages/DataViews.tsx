@@ -289,6 +289,7 @@ export default function DataViews() {
   const handleLoad = () => void runQuery(1);
 
   return (
+    <>
     <div className="flex flex-col gap-4 h-[calc(100vh-108px)]">
 
       {/* ── header ── */}
@@ -794,5 +795,7 @@ export default function DataViews() {
         </div>
       </div>
     </div>
+    <ExportToast notify={exportNotify} onClose={() => setExportNotify(null)} />
+    </>
   );
 }

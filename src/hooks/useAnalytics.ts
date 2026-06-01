@@ -730,12 +730,14 @@ function seedAnalyticsPagePeriod(
   dash: DashboardResponse | null | undefined,
   kpi: KPIsResponse | null | undefined,
   departments: DeptPoint[] | null | undefined,
+  force = false,
 ): void {
   if (!dash) return;
   const apKey = analyticsPageCacheKey(period);
   const existing = cacheGet<AnalyticsPageData>(apKey);
   if (
-    existing
+    !force
+    && existing
     && !isEmptyAnalyticsPage(existing)
     && isFresh(apKey)
     && isCompleteAnalyticsPage(existing, period)
@@ -938,6 +940,26 @@ function applyDashboardPagePayload(
     cacheSet(KEY_DASH_TODAY, todayDash);
     handlers.setToday(todayDash);
     handlers.setTodayLoading(false);
+  }
+
+  // ── Seed Analytics page cache so Dashboard & Analytics always show identical numbers ──
+  // force=true bypasses the "already fresh" guard so this dashboard-page response always
+  // wins over any stale PostgreSQL-restored bundle that may have been cached server-side.
+  const mtdDash = dashboardFromBundle(mtdCore, mtdCore.kpis);
+  if (mtdDash) {
+    seedAnalyticsPagePeriod('mtd', mtdDash, mtdCore.kpis, mtdCore.departments ?? [], true);
+  }
+  if (todayDash) {
+    seedAnalyticsPagePeriod('today', todayDash, todayCore.kpis, todayCore.departments ?? [], true);
+  }
+
+  // ── MTD = Today when it's the 1st of the month — keep both caches in sync ──
+  const dom = new Date().getDate();
+  if (dom === 1 && todayDash?.summary) {
+    const todayPage = cacheGet<AnalyticsPageData>(analyticsPageCacheKey('today'));
+    if (todayPage && !isEmptyAnalyticsPage(todayPage)) {
+      cacheSet(analyticsPageCacheKey('mtd'), todayPage);
+    }
   }
 
   notifyDashboardHydrate();

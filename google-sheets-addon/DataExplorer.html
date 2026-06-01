@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Google Sans', Arial, sans-serif;
+    font-size: 13px;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 18px;
+  }
+  h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 4px;
+  }
+  .sub {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 16px;
+  }
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: #94a3b8;
+    margin-bottom: 4px;
+    margin-top: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  select {
+    width: 100%;
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
+  select:focus { border-color: #6366f1; }
+
+  .hint { font-size: 10px; color: #64748b; margin-top: 3px; }
+
+  button {
+    width: 100%;
+    margin-top: 18px;
+    padding: 10px;
+    background: #6366f1;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #4f46e5; }
+  button:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
+
+  .status {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    display: none;
+  }
+  .status.ok   { background: #064e3b; border: 1px solid #065f46; color: #6ee7b7; display: block; }
+  .status.err  { background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; display: block; }
+  .status.info { background: #1e293b; border: 1px solid #334155; color: #94a3b8; display: block; }
+
+  .view-desc {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 4px;
+    min-height: 14px;
+  }
+</style>
+</head>
+<body>
+
+<h2>🗄️ Data Explorer</h2>
+<div class="sub">Pull any ERP view raw into a sheet tab.</div>
+
+<label>View / Dataset</label>
+<select id="view" onchange="updateDesc()">
+  <option value="sales">Sales Transactions</option>
+  <option value="branches">Branch Performance</option>
+  <option value="categories">Product Categories</option>
+  <option value="salespersons">Salesperson Leaderboard</option>
+  <option value="customers">Customers</option>
+  <option value="stock">Stock / Inventory</option>
+  <option value="invoices">Invoices / Bills</option>
+  <option value="suppliers">Suppliers</option>
+</select>
+<div class="view-desc" id="viewDesc">All sales transaction records with amounts, branch, category.</div>
+
+<label>Period</label>
+<select id="period">
+  <option value="today">Today</option>
+  <option value="mtd" selected>MTD (This Month)</option>
+  <option value="ytd">YTD (This Year)</option>
+  <option value="qtd">QTD (This Quarter)</option>
+  <option value="last_30d">Last 30 Days</option>
+  <option value="last_7d">Last 7 Days</option>
+</select>
+<div class="hint">Up to 500 rows will be loaded.</div>
+
+<button id="pullBtn" onclick="pullData()">📥 Pull to Sheet</button>
+
+<div class="status" id="status"></div>
+
+<script>
+var VIEW_DESCS = {
+  sales:        'All sales transaction records with amounts, branch, category.',
+  branches:     'Branch-level revenue, growth, bills, and quantity.',
+  categories:   'Product / category revenue breakdown and share %.',
+  salespersons: 'Salesperson performance: revenue, bills, growth.',
+  customers:    'Customer list with purchase history.',
+  stock:        'Current stock / inventory levels by product.',
+  invoices:     'Invoice / bill headers with totals and dates.',
+  suppliers:    'Supplier list with purchase totals.',
+};
+
+function updateDesc() {
+  var v = document.getElementById('view').value;
+  document.getElementById('viewDesc').textContent = VIEW_DESCS[v] || '';
+}
+
+function setStatus(msg, type) {
+  var el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + type;
+}
+
+function pullData() {
+  var view   = document.getElementById('view').value;
+  var period = document.getElementById('period').value;
+  var btn    = document.getElementById('pullBtn');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Pulling data…';
+  setStatus('Fetching ' + view + ' (' + period.toUpperCase() + ')…', 'info');
+
+  google.script.run
+    .withSuccessHandler(function(r) {
+      btn.disabled = false;
+      btn.textContent = '📥 Pull to Sheet';
+      if (r.ok) {
+        setStatus('✓ Done! Check the "DE: ' + view + '" sheet tab.', 'ok');
+      } else {
+        setStatus('✗ ' + (r.error || 'Unknown error'), 'err');
+      }
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.textContent = '📥 Pull to Sheet';
+      setStatus('✗ ' + e.message, 'err');
+    })
+    .runDataExplorer(view, period);
+}
+</script>
+</body>
+</html>

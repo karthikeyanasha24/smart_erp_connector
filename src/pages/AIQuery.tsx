@@ -21,6 +21,7 @@ import {
 } from '../lib/nlqVisualization';
 import verifiedQueriesFallback from '../data/verified_nlq_queries.json';
 import verifiedAiTemplates from '../data/ai_query_templates.json';
+import TableExportButtons, { type ExportNotify } from '../components/export/TableExportButtons';
 
 const PIE_COLORS = ['#00b8e6', '#00e67a', '#ffb800', '#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#4ade80'];
 
@@ -316,25 +317,52 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
   );
 });
 
-const ResultTable = memo(function ResultTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
+const ResultTable = memo(function ResultTable({
+  columns,
+  rows,
+  exportName,
+  onExportNotify,
+}: {
+  columns: string[];
+  rows: string[][];
+  exportName?: string;
+  onExportNotify?: (n: ExportNotify) => void;
+}) {
   const { isDark } = useTheme();
   return (
-    <div className="mt-3 rounded-xl overflow-x-auto"
+    <div className="mt-3 rounded-xl overflow-hidden"
       style={{ border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}>
-      <table className="w-full text-xs min-w-[280px]">
-        <thead>
-          <tr style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}>
-            {columns.map(col => <th key={col} className="px-3 py-2 text-left font-semibold whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{col}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.04)' }}>
-              {row.map((cell, j) => <td key={j} className="px-3 py-2 whitespace-nowrap" style={{ color: j === 0 ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{cell}</td>)}
+      {exportName && onExportNotify && (
+        <div className="flex items-center justify-between px-3 py-2"
+          style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
+          <span className="text-2xs font-medium" style={{ color: 'var(--text-muted)' }}>
+            {rows.length} row(s)
+          </span>
+          <TableExportButtons
+            columns={columns}
+            rows={rows}
+            fileBaseName={exportName}
+            compact
+            onNotify={onExportNotify}
+          />
+        </div>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs min-w-[280px]">
+          <thead>
+            <tr style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}>
+              {columns.map(col => <th key={col} className="px-3 py-2 text-left font-semibold whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{col}</th>)}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.04)' }}>
+                {row.map((cell, j) => <td key={j} className="px-3 py-2 whitespace-nowrap" style={{ color: j === 0 ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{cell}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 });
@@ -547,6 +575,17 @@ export default function AIQuery() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
+  const handleExportNotify = useCallback((n: ExportNotify) => {
+    if (n.type === 'error') {
+      showToast(n.message, 'error');
+      return;
+    }
+    if (n.link) {
+      window.open(n.link, '_blank', 'noopener,noreferrer');
+    }
+    showToast(n.message, 'success');
+  }, [showToast]);
+
   // ── Semantic match ─────────────────────────────────────────────────────────
   const SIMILARITY_THRESHOLD = 0.65;
 
@@ -703,7 +742,14 @@ export default function AIQuery() {
       {msg.chart && msg.chartType && msg.chartType !== 'none' && (
         <ResultChart type={msg.chartType as 'bar' | 'area' | 'line' | 'pie'} data={msg.chart.data} valueKey={msg.chart.valueKey} />
       )}
-      {msg.table && <ResultTable columns={msg.table.columns} rows={msg.table.rows} />}
+      {msg.table && (
+        <ResultTable
+          columns={msg.table.columns}
+          rows={msg.table.rows}
+          exportName={`ai_query_${msg.id.slice(0, 8)}`}
+          onExportNotify={handleExportNotify}
+        />
+      )}
       {msg.insights && msg.insights.length > 0 && (
         <div className="mt-2 space-y-1">
           {msg.insights.slice(0, 3).map((ins, i) => (
@@ -768,7 +814,7 @@ export default function AIQuery() {
         </motion.button>
       </div>
     </div>
-  ), [isDark, showSQL, loading, sendMessage, handleFeedback]);
+  ), [isDark, showSQL, loading, sendMessage, handleFeedback, handleExportNotify]);
 
   // ── Category color ─────────────────────────────────────────────────────────
   const categoryColor: Record<string, string> = {

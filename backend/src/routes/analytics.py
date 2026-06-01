@@ -76,6 +76,7 @@ async def sales_dashboard(
     period: str = Query(default="mtd"),
     start_date: Optional[str] = Query(default=None),
     end_date: Optional[str] = Query(default=None),
+    force: bool = Query(default=False),
     user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
     if period == "custom":
@@ -84,7 +85,7 @@ async def sales_dashboard(
     else:
         _validate_period(period)
     try:
-        data = await get_dashboard(period, start_date, end_date)
+        data = await get_dashboard(period, start_date, end_date, force_refresh=force)
         return {"success": True, **data}
     except Exception as exc:
         logger.error("Dashboard fetch failed", period=period, error=str(exc))
@@ -120,6 +121,7 @@ async def _fetch_analytics_bundle(
     include_kpis: bool = False,
     include_extras: bool = False,
     include_customer_count: bool = True,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
     """Run branches + trend + categories (+ optional kpis/depts/customers) in parallel."""
     n = top_n
@@ -129,6 +131,7 @@ async def _fetch_analytics_bundle(
         n,
         include_kpis=include_kpis,
         include_departments=include_departments,
+        force_refresh=force_refresh,
     )
     if cached is not None:
         payload: Dict[str, Any] = {"success": True, "period": period, **cached, "from_cache": True}
@@ -230,22 +233,89 @@ async def analytics_bundle(
 
 @router.get("/dashboard-page")
 async def dashboard_page(
+    force: bool = Query(default=False),
     user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     One HTTP call for the home dashboard: MTD + Today bundles (with KPIs) in parallel.
-    Replaces separate /bundle, /kpis, and /dashboard calls from the frontend.
+    Pass ?force=true to bypass server cache — used by the Refresh button.
     """
     try:
         mtd, today = await asyncio.gather(
-            _fetch_analytics_bundle("mtd", 100, include_kpis=True, include_extras=True),
-            _fetch_analytics_bundle("today", 10, include_kpis=True, include_extras=False),
+            _fetch_analytics_bundle("mtd", 100, include_kpis=True, include_extras=True, force_refresh=force),
+            _fetch_analytics_bundle("today", 10, include_kpis=True, include_extras=False, force_refresh=force),
         )
         return {"success": True, "mtd": mtd, "today": today}
     except HTTPException:
         raise
     except Exception as exc:
         logger.error("Dashboard page fetch failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+
+
+# ─── Analytics page (one-shot for the Analytics tab) ─────────────────────────
+
+@router.get("/analytics-page")
+async def analytics_page_endpoint(
+    period: str = Query(default="mtd"),
+    top_n: int = Query(default=100, ge=1, le=100),
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    user: TokenPayload = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    One HTTP call for the Analytics page: bundle+departments+dashboard in parallel.
+    All three are cache-warm on startup, so this typically resolves in under 100 ms.
+    For custom range: period=custom&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD.
+    """
+    if period == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="custom period requires start_date and end_date")
+    else:
+        _validate_period(period)
+
+    try:
+        if period == "custom":
+            dash = await get_dashboard(period, start_date, end_date)
+            return {
+                "success": True,
+                "period": period,
+                "bundle": None,
+                "departments": [],
+                "dashboard": dash,
+            }
+
+        bundle_res, dept_res, dash_res = await asyncio.gather(
+            _fetch_analytics_bundle(period, top_n, include_kpis=True, include_customer_count=True),
+            run_analytics_sql(get_department_chart(period, top_n)),
+            run_analytics_sql(get_dashboard(period)),
+            return_exceptions=True,
+        )
+
+        payload: Dict[str, Any] = {"success": True, "period": period}
+
+        if isinstance(bundle_res, Exception):
+            logger.warning("analytics-page bundle failed", period=period, error=str(bundle_res))
+            payload["bundle"] = None
+        else:
+            payload["bundle"] = bundle_res
+
+        payload["departments"] = dept_res if isinstance(dept_res, list) else []
+        if isinstance(dept_res, Exception):
+            logger.warning("analytics-page depts failed", period=period, error=str(dept_res))
+
+        payload["dashboard"] = dash_res if not isinstance(dash_res, Exception) else None
+        if isinstance(dash_res, Exception):
+            logger.warning("analytics-page dashboard failed", period=period, error=str(dash_res))
+
+        return payload
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Analytics page fetch failed", period=period, error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

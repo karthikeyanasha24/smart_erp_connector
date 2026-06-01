@@ -214,11 +214,11 @@ async def get_home_kpis(
     include_customers: bool = False,
     include_extras: bool = False,
 ) -> Dict[str, Any]:
-    """Returns home-screen KPIs for the given period — live from SQL Server.
+    """Returns home-screen KPIs for the given period.
 
-    include_extras=True adds distinct_clients / distinct_suppliers / unique_invoices
-    (mirrors PowerBI KPIs). These run COUNT(DISTINCT ...) and are expensive on long
-    periods — only enable for today/mtd or explicit KPI card requests.
+    include_extras=True adds distinct_clients / distinct_suppliers / unique_invoices.
+    These run COUNT(DISTINCT ...) and are slower on long periods — only enable for
+    today/mtd requests.
     """
     try:
         revenue_task = asyncio.create_task(_fetch_revenue_kpi(period))
@@ -235,9 +235,10 @@ async def get_home_kpis(
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         rev_data    = results[0]
-        extras_data = results[1] if include_extras else None
-        cust_idx    = 2 if include_extras else 1
-        cust_data   = results[cust_idx] if customer_task else None
+        extras_idx  = 1 if include_extras else None
+        cust_idx    = (2 if include_extras else 1) if customer_task else None
+        extras_data = results[extras_idx] if extras_idx is not None else None
+        cust_data   = results[cust_idx]   if cust_idx   is not None else None
 
         result: Dict[str, Any] = {}
 
@@ -254,17 +255,21 @@ async def get_home_kpis(
             if isinstance(extras_data, dict):
                 result.update(extras_data)
             else:
-                logger.error("Extras KPI fetch failed", error=str(extras_data))
-                result.update({"distinct_clients": None, "distinct_suppliers": None, "unique_invoices": None})
+                logger.warning("Extras KPI fetch failed", error=str(extras_data))
+                result.update({
+                    "distinct_clients": None,
+                    "distinct_suppliers": None,
+                    "unique_invoices": None,
+                })
 
         if isinstance(cust_data, dict):
             result.update(cust_data)
         elif include_customers:
             result["customers"] = None
 
+        logger.info("get_home_kpis", period=period, extras=include_extras, customers=include_customers)
         return result
 
     except Exception as exc:
         logger.error("get_home_kpis failed", error=str(exc))
         raise
-

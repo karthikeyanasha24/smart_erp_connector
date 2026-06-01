@@ -284,16 +284,23 @@ async def get_dashboard(
     period: str = "mtd",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
-    # Custom-range dashboards are not cached (date params vary).
-    cache_key = period_cache_key("dashboard:v3", period) if period != "custom" else None
-    if cache_key:
-        cached, is_fresh = cache.get(cache_key)
-        if cached is not None:
-            logger.debug("🔍 dashboard cache hit", period=period, fresh=is_fresh)
-            return cached
-    logger.info("🔍 dashboard requested", period=period)
+    from datetime import date as _date
 
+    # When MTD and Today cover the same date (1st of month), share a single cache key
+    # so both periods always return identical data and can't diverge.
+    effective_period = period
+    if period == "mtd" and period != "custom":
+        _today_str = _date.today().isoformat()
+        _som = _date.today().replace(day=1).isoformat()
+        if _som == _today_str:
+            effective_period = "today"   # alias: mtd == today on the 1st
+
+    # Custom-range dashboards are not cached (date params vary).
+    cache_key = period_cache_key("dashboard:v3", effective_period) if effective_period != "custom" else None
+
+    # ── _fetch is defined first so the _bg closure can always access it ──
     async def _fetch() -> Dict[str, Any]:
         logger.info("querying SQL Server", period=period)
         dr = _period_range(period, start_date, end_date)
@@ -361,7 +368,35 @@ async def get_dashboard(
             },
         }
 
+    # ── Cache read (after _fetch is defined so _bg closure works) ──
+    if cache_key and not force_refresh:
+        cached, is_fresh = cache.get(cache_key)
+        if cached is not None:
+            logger.debug("🔍 dashboard cache hit", period=period, fresh=is_fresh)
+            if not is_fresh:
+                async def _bg() -> None:
+                    try:
+                        fresh = await _fetch()
+                        cache.set(cache_key, fresh)
+                        # Also write alias key when effective_period differs (day-1 mtd/today sync)
+                        if effective_period != period:
+                            cache.set(period_cache_key("dashboard:v3", period), fresh)
+                        logger.info("🔄 dashboard bg-refresh done", period=period)
+                    except Exception as exc:
+                        logger.warning("🔄 dashboard bg-refresh failed", period=period, error=str(exc))
+                asyncio.create_task(_bg())
+            return cached
+    elif cache_key and force_refresh:
+        cache.delete(cache_key)
+        if effective_period != period:
+            cache.delete(period_cache_key("dashboard:v3", period))
+        logger.info("🔄 dashboard force-refresh", period=period)
+
+    logger.info("🔍 dashboard requested", period=period)
     result = await _fetch()
     if cache_key:
         cache.set(cache_key, result)
+        # Also populate the original period key when aliased (mtd on day 1 → also writes today)
+        if effective_period != period:
+            cache.set(period_cache_key("dashboard:v3", period), result)
     return result

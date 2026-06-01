@@ -304,7 +304,14 @@ export default function Dashboard() {
 
   // ── Resolve data ──────────────────────────────────────────────────────────
   const tS         = demo ? DEMO.today : resolveTodaySummary(todayRaw, todayKpis);
-  const mS         = demo ? DEMO.mtd        : (mtdRaw?.summary ?? (kpis ? summaryFromKpis(kpis) : null));
+  // On the 1st of the month MTD === Today (identical date range). If today's data is fresher
+  // than the cached MTD (warmup ran earlier in the day), prefer today's figures for MTD
+  // so Today and MTD never diverge on the same date.
+  const _mSRaw = demo ? DEMO.mtd : (mtdRaw?.summary ?? (kpis ? summaryFromKpis(kpis) : null));
+  const _todayIsFirstOfMonth = new Date().getDate() === 1;
+  const mS = (_todayIsFirstOfMonth && tS && _mSRaw && tS.mtd_sales > (_mSRaw.mtd_sales ?? 0))
+    ? { ..._mSRaw, mtd_sales: tS.mtd_sales, bills: tS.bills ?? _mSRaw.bills, quantity: tS.quantity ?? _mSRaw.quantity }
+    : _mSRaw;
   const trend      = (demo ? DEMO.trend      : mtdRaw?.trend      ?? []) as TrendPt[];
   const dataPending = !demo && !mS && mLoading && !kpis;
   const dash = (formatted: string) => (dataPending ? '…' : formatted);

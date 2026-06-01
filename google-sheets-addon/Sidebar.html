@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Google Sans', Arial, sans-serif;
+    font-size: 13px;
+    background: #0f172a;
+    color: #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .header {
+    background: #1e293b;
+    padding: 8px 10px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .header-icon { font-size: 16px; }
+  .header-title { font-weight: 600; font-size: 13px; color: #f8fafc; }
+
+  /* Main page tabs */
+  .main-tabs {
+    display: flex;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    flex-shrink: 0;
+  }
+  .main-tab {
+    flex: 1;
+    padding: 8px 4px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+  }
+  .main-tab:hover { color: #e2e8f0; background: #0f172a; }
+  .main-tab.active {
+    color: #a5b4fc;
+    border-bottom-color: #6366f1;
+    background: #0f172a;
+  }
+
+  /* Period pill tabs (shared) */
+  .period-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    background: #0f172a;
+    border-bottom: 1px solid #334155;
+    overflow-x: auto;
+    flex-shrink: 0;
+    scrollbar-width: none;
+  }
+  .period-tabs::-webkit-scrollbar { display: none; }
+  .period-tab {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    cursor: pointer;
+  }
+  .period-tab:hover { border-color: #6366f1; color: #e2e8f0; }
+  .period-tab.active {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: #fff;
+  }
+
+  .panel-wrap {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .panel {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .panel.active { display: flex; }
+
+  /* ─── AI panel ─── */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .msg { display: flex; flex-direction: column; gap: 4px; }
+  .msg.user .bubble {
+    background: #6366f1; color: #fff;
+    border-radius: 12px 12px 4px 12px; align-self: flex-end;
+  }
+  .msg.ai .bubble {
+    background: #1e293b; color: #e2e8f0;
+    border-radius: 12px 12px 12px 4px;
+    border: 1px solid #334155; align-self: flex-start;
+  }
+  .bubble {
+    padding: 8px 10px; line-height: 1.45; font-size: 12px;
+    max-width: 95%; word-wrap: break-word; white-space: pre-wrap;
+  }
+  .msg-meta { font-size: 10px; color: #64748b; padding: 0 4px; }
+  .msg.user .msg-meta { text-align: right; }
+  .sql-block {
+    background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+    padding: 6px; font-family: monospace; font-size: 10px; color: #7dd3fc;
+    max-width: 95%; overflow-x: auto; white-space: pre;
+  }
+  .dump-btn {
+    background: #059669; color: #fff; border: none; border-radius: 6px;
+    padding: 5px 10px; font-size: 11px; cursor: pointer; align-self: flex-start;
+  }
+  .dump-btn:hover { background: #047857; }
+  .dump-btn:disabled { background: #374151; color: #6b7280; }
+  .typing {
+    display: none; margin: 0 10px 6px; padding: 6px 10px;
+    background: #1e293b; border-radius: 8px; border: 1px solid #334155;
+    color: #94a3b8; font-size: 11px; flex-shrink: 0;
+  }
+  .typing.visible { display: block; }
+  .input-area {
+    background: #1e293b; border-top: 1px solid #334155;
+    padding: 8px 10px; flex-shrink: 0;
+  }
+  .suggestions { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .chip {
+    background: #0f172a; border: 1px solid #334155; border-radius: 12px;
+    padding: 3px 8px; font-size: 10px; color: #94a3b8; cursor: pointer;
+  }
+  .chip:hover { background: #334155; color: #e2e8f0; }
+  .input-row { display: flex; gap: 6px; align-items: flex-end; }
+  textarea {
+    flex: 1; background: #0f172a; color: #e2e8f0;
+    border: 1px solid #475569; border-radius: 8px;
+    padding: 6px 8px; font-size: 12px; resize: none; height: 52px;
+    font-family: inherit; outline: none;
+  }
+  textarea:focus { border-color: #6366f1; }
+  button.send {
+    background: #6366f1; color: #fff; border: none; border-radius: 8px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer; height: 52px;
+    font-weight: 600; flex-shrink: 0;
+  }
+  button.send:hover { background: #4f46e5; }
+  button.send:disabled { background: #374151; color: #6b7280; }
+  .error-bubble {
+    background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5;
+    border-radius: 8px; padding: 8px 10px; font-size: 11px;
+  }
+
+  /* ─── Pull panel ─── */
+  .panel-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+  }
+  .section-label {
+    font-size: 10px; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 8px;
+  }
+  .pull-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .pull-btn {
+    background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+    padding: 10px 8px; text-align: left; cursor: pointer;
+    color: #e2e8f0; font-size: 11px; line-height: 1.3;
+  }
+  .pull-btn:hover { border-color: #6366f1; background: #334155; }
+  .pull-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pull-btn .icon { font-size: 16px; display: block; margin-bottom: 4px; }
+  .pull-btn.wide { grid-column: 1 / -1; text-align: center; }
+
+  /* ─── Explorer panel ─── */
+  .view-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+  .view-tab {
+    padding: 5px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #94a3b8;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .view-tab.active {
+    background: #4f46e5;
+    border-color: #6366f1;
+    color: #fff;
+  }
+  .view-desc {
+    font-size: 11px; color: #64748b; line-height: 1.4;
+    margin-bottom: 12px; min-height: 32px;
+  }
+  .action-btn {
+    width: 100%;
+    padding: 10px;
+    background: #6366f1;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .action-btn:hover { background: #4f46e5; }
+  .action-btn:disabled { background: #374151; color: #6b7280; }
+
+  /* ─── More panel ─── */
+  .more-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+  .more-card h3 { font-size: 12px; color: #f8fafc; margin-bottom: 6px; }
+  .more-card p { font-size: 11px; color: #94a3b8; line-height: 1.45; }
+  .link-btn {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px;
+    background: #0f172a;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    color: #a5b4fc;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+  }
+  .link-btn:hover { border-color: #6366f1; }
+  .conn-status { font-size: 11px; color: #6ee7b7; word-break: break-all; }
+  .conn-status.warn { color: #fcd34d; }
+
+  .status-toast {
+    margin: 0 10px 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    display: none;
+    flex-shrink: 0;
+  }
+  .status-toast.ok  { display: block; background: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
+  .status-toast.err { display: block; background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
+  .status-toast.info { display: block; background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="header-icon">🔗</span>
+  <span class="header-title">SmarterP</span>
+</div>
+
+<nav class="main-tabs" role="tablist">
+  <button type="button" class="main-tab active" data-panel="ai" onclick="switchMainTab('ai')">🤖 AI</button>
+  <button type="button" class="main-tab" data-panel="pull" onclick="switchMainTab('pull')">📥 Pull</button>
+  <button type="button" class="main-tab" data-panel="explorer" onclick="switchMainTab('explorer')">🗄️ Explorer</button>
+  <button type="button" class="main-tab" data-panel="more" onclick="switchMainTab('more')">⚙️ More</button>
+</nav>
+
+<div class="period-tabs" id="periodTabs" role="tablist">
+  <button type="button" class="period-tab" data-period="today">Today</button>
+  <button type="button" class="period-tab active" data-period="mtd">MTD</button>
+  <button type="button" class="period-tab" data-period="ytd">YTD</button>
+  <button type="button" class="period-tab" data-period="qtd">QTD</button>
+  <button type="button" class="period-tab" data-period="last_7d">7d</button>
+  <button type="button" class="period-tab" data-period="last_30d">30d</button>
+</div>
+
+<div class="status-toast" id="statusToast"></div>
+
+<div class="panel-wrap">
+  <!-- AI -->
+  <section class="panel active" id="panel-ai">
+    <div class="messages" id="messages">
+      <div class="msg ai">
+        <div class="bubble">👋 Ask anything about your ERP data.
+
+Examples:
+• Top 5 branches by revenue
+• Revenue by category
+• Today's sales</div>
+      </div>
+    </div>
+    <div class="typing" id="typing">⏳ Thinking…</div>
+    <div class="input-area">
+      <div class="suggestions">
+        <span class="chip" onclick="useChip(this)">Top branches</span>
+        <span class="chip" onclick="useChip(this)">Revenue by category</span>
+        <span class="chip" onclick="useChip(this)">Today's sales</span>
+        <span class="chip" onclick="useChip(this)">Top salesperson</span>
+      </div>
+      <div class="input-row">
+        <textarea id="question" placeholder="Ask a business question…" onkeydown="handleKey(event)"></textarea>
+        <button class="send" id="sendBtn" onclick="sendQuestion()">Ask</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pull -->
+  <section class="panel" id="panel-pull">
+    <div class="panel-scroll">
+      <div class="section-label">Pull into sheet tabs · <span id="pullPeriodLabel">MTD</span></div>
+      <div class="pull-grid">
+        <button type="button" class="pull-btn" onclick="pullData('dashboard')"><span class="icon">📊</span>Dashboard KPIs</button>
+        <button type="button" class="pull-btn" onclick="pullData('branches')"><span class="icon">🏪</span>Branch Intel</button>
+        <button type="button" class="pull-btn" onclick="pullData('products')"><span class="icon">📦</span>Categories</button>
+        <button type="button" class="pull-btn" onclick="pullData('transactions')"><span class="icon">🧾</span>Transactions</button>
+        <button type="button" class="pull-btn" onclick="pullData('salespersons')"><span class="icon">👤</span>Salespersons</button>
+        <button type="button" class="pull-btn wide" onclick="pullData('refresh_all')"><span class="icon">🔄</span>Refresh ALL sheets</button>
+      </div>
+      <p style="font-size:10px;color:#64748b;">Check the sheet tabs and toast notifications when each pull completes.</p>
+    </div>
+  </section>
+
+  <!-- Explorer -->
+  <section class="panel" id="panel-explorer">
+    <div class="panel-scroll">
+      <div class="section-label">ERP view · tap to select</div>
+      <div class="view-tabs" id="viewTabs"></div>
+      <div class="view-desc" id="viewDesc"></div>
+      <button type="button" class="action-btn" id="explorerPullBtn" onclick="explorerPull()">📥 Pull to Sheet</button>
+      <p style="font-size:10px;color:#64748b;margin-top:10px;">Up to 500 rows. Sheet tab: DE: [view name]</p>
+    </div>
+  </section>
+
+  <!-- More -->
+  <section class="panel" id="panel-more">
+    <div class="panel-scroll">
+      <div class="more-card">
+        <h3>Connection</h3>
+        <p id="connText" class="conn-status warn">Loading…</p>
+        <button type="button" class="link-btn" onclick="openSettings()">⚙️ Settings / Connect</button>
+      </div>
+      <div class="more-card">
+        <h3>Help</h3>
+        <p>1. Configure backend URL + login in Settings.<br>
+        2. Use <strong>Pull</strong> for standard reports.<br>
+        3. Use <strong>AI</strong> for natural-language questions.<br>
+        4. Use <strong>Explorer</strong> for raw ERP views.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+var lastRows = null;
+var lastQuestion = '';
+var currentPeriod = 'mtd';
+var currentView = 'sales';
+var pullBusy = false;
+
+var VIEW_META = {
+  sales:        { label: 'Sales', desc: 'Sales transaction lines (SLSXNS).' },
+  branches:     { label: 'Branches', desc: 'Branch-level sales (APP report).' },
+  categories:   { label: 'Categories', desc: 'Product category master.' },
+  salespersons: { label: 'Sales team', desc: 'Salesperson line performance.' },
+  customers:    { label: 'Customers', desc: 'Customer master / AI customer view.' },
+  stock:        { label: 'Stock', desc: 'Current inventory levels.' },
+  invoices:     { label: 'Invoices', desc: 'Bill / footfall counts.' },
+  suppliers:    { label: 'Suppliers', desc: 'Vendor master.' },
+};
+
+var PERIOD_LABELS = {
+  today: 'Today', mtd: 'MTD', ytd: 'YTD', qtd: 'QTD',
+  last_7d: 'Last 7d', last_30d: 'Last 30d',
+};
+
+// ─── Period tabs ───
+document.getElementById('periodTabs').addEventListener('click', function(e) {
+  var btn = e.target.closest('.period-tab');
+  if (!btn) return;
+  currentPeriod = btn.getAttribute('data-period');
+  document.querySelectorAll('.period-tab').forEach(function(b) {
+    b.classList.toggle('active', b === btn);
+  });
+  document.getElementById('pullPeriodLabel').textContent =
+    PERIOD_LABELS[currentPeriod] || currentPeriod.toUpperCase();
+});
+
+function getPeriod() { return currentPeriod; }
+
+// ─── Main tabs ───
+function switchMainTab(name) {
+  document.querySelectorAll('.main-tab').forEach(function(t) {
+    t.classList.toggle('active', t.getAttribute('data-panel') === name);
+  });
+  document.querySelectorAll('.panel').forEach(function(p) {
+    p.classList.toggle('active', p.id === 'panel-' + name);
+  });
+  clearStatusToast();
+}
+
+function showStatusToast(msg, type) {
+  var el = document.getElementById('statusToast');
+  el.textContent = msg;
+  el.className = 'status-toast ' + (type || 'info');
+}
+
+function clearStatusToast() {
+  var el = document.getElementById('statusToast');
+  el.className = 'status-toast';
+  el.textContent = '';
+}
+
+// ─── Explorer view tabs ───
+function initViewTabs() {
+  var wrap = document.getElementById('viewTabs');
+  Object.keys(VIEW_META).forEach(function(key) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'view-tab' + (key === currentView ? ' active' : '');
+    b.textContent = VIEW_META[key].label;
+    b.setAttribute('data-view', key);
+    b.onclick = function() { selectView(key); };
+    wrap.appendChild(b);
+  });
+  updateViewDesc();
+}
+
+function selectView(key) {
+  currentView = key;
+  document.querySelectorAll('.view-tab').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-view') === key);
+  });
+  updateViewDesc();
+}
+
+function updateViewDesc() {
+  var m = VIEW_META[currentView];
+  document.getElementById('viewDesc').textContent = m ? m.desc : '';
+}
+
+function explorerPull() {
+  if (pullBusy) return;
+  var btn = document.getElementById('explorerPullBtn');
+  pullBusy = true;
+  btn.disabled = true;
+  showStatusToast('Pulling ' + VIEW_META[currentView].label + '…', 'info');
+  google.script.run
+    .withSuccessHandler(function(r) {
+      pullBusy = false;
+      btn.disabled = false;
+      if (r.ok) showStatusToast('✓ Check sheet "DE: ' + currentView + '"', 'ok');
+      else showStatusToast('✗ ' + (r.error || 'Failed'), 'err');
+    })
+    .withFailureHandler(function(e) {
+      pullBusy = false;
+      btn.disabled = false;
+      showStatusToast('✗ ' + e.message, 'err');
+    })
+    .sidebarDataExplorer(currentView, getPeriod());
+}
+
+// ─── Pull panel ───
+function pullData(action) {
+  if (pullBusy) return;
+  pullBusy = true;
+  document.querySelectorAll('.pull-btn').forEach(function(b) { b.disabled = true; });
+  showStatusToast('Pulling…', 'info');
+  google.script.run
+    .withSuccessHandler(function(r) {
+      pullBusy = false;
+      document.querySelectorAll('.pull-btn').forEach(function(b) { b.disabled = false; });
+      if (r.ok) showStatusToast('✓ Done — check sheet tabs', 'ok');
+      else showStatusToast('✗ ' + (r.error || 'Failed'), 'err');
+    })
+    .withFailureHandler(function(e) {
+      pullBusy = false;
+      document.querySelectorAll('.pull-btn').forEach(function(b) { b.disabled = false; });
+      showStatusToast('✗ ' + e.message, 'err');
+    })
+    .sidebarPullData(action, getPeriod());
+}
+
+// ─── More / settings ───
+function openSettings() {
+  google.script.run
+    .withSuccessHandler(function() { loadConnection(); })
+    .withFailureHandler(function(e) { showStatusToast('✗ ' + e.message, 'err'); })
+    .showSetupDialog();
+}
+
+function loadConnection() {
+  google.script.run
+    .withSuccessHandler(function(cfg) {
+      var el = document.getElementById('connText');
+      if (cfg.url) {
+        el.textContent = '✓ ' + cfg.url + (cfg.email ? '\n' + cfg.email : '');
+        el.className = 'conn-status';
+      } else {
+        el.textContent = 'Not configured — open Settings';
+        el.className = 'conn-status warn';
+      }
+    })
+    .getConfig_exposed();
+}
+
+// ─── AI chat ───
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendQuestion();
+  }
+}
+
+function useChip(el) {
+  document.getElementById('question').value = el.textContent;
+  switchMainTab('ai');
+  sendQuestion();
+}
+
+function sendQuestion() {
+  var q = document.getElementById('question').value.trim();
+  if (!q) return;
+  switchMainTab('ai');
+  addMessage('user', q);
+  document.getElementById('question').value = '';
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('typing').classList.add('visible');
+  lastQuestion = q;
+  lastRows = null;
+
+  google.script.run
+    .withSuccessHandler(onAIResult)
+    .withFailureHandler(onAIError)
+    .askAI(q, getPeriod());
+}
+
+function onAIResult(result) {
+  document.getElementById('typing').classList.remove('visible');
+  document.getElementById('sendBtn').disabled = false;
+  if (!result.ok) {
+    addError(result.error || 'Unknown error');
+    return;
+  }
+  var msgs = document.getElementById('messages');
+  var container = document.createElement('div');
+  container.className = 'msg ai';
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = result.answer || '(no answer)';
+  container.appendChild(bubble);
+  if (result.sql) {
+    var sqlEl = document.createElement('div');
+    sqlEl.className = 'sql-block';
+    sqlEl.textContent = result.sql;
+    container.appendChild(sqlEl);
+  }
+  if (result.rows && result.rows.length > 0) {
+    lastRows = result.rows;
+    var btn = document.createElement('button');
+    btn.className = 'dump-btn';
+    btn.textContent = '📊 Add to Sheet (' + result.rows.length + ' rows)';
+    btn.onclick = dumpToSheet;
+    container.appendChild(btn);
+  }
+  var meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.textContent = (result.period || getPeriod()).toString().toUpperCase() + ' · ' + new Date().toLocaleTimeString();
+  container.appendChild(meta);
+  msgs.appendChild(container);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function dumpToSheet() {
+  if (!lastRows) return;
+  showStatusToast('Adding to sheet…', 'info');
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r.ok) showStatusToast('✓ Sheet "' + r.sheet + '" (' + r.count + ' rows)', 'ok');
+      else showStatusToast('✗ ' + r.error, 'err');
+    })
+    .withFailureHandler(function(e) { showStatusToast('✗ ' + e.message, 'err'); })
+    .dumpResultsToSheet(lastRows, lastQuestion);
+}
+
+function onAIError(err) {
+  document.getElementById('typing').classList.remove('visible');
+  document.getElementById('sendBtn').disabled = false;
+  addError(err.message || String(err));
+}
+
+function addMessage(role, text) {
+  var msgs = document.getElementById('messages');
+  var container = document.createElement('div');
+  container.className = 'msg ' + role;
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  container.appendChild(bubble);
+  var meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.textContent = new Date().toLocaleTimeString();
+  container.appendChild(meta);
+  msgs.appendChild(container);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addError(msg) {
+  var msgs = document.getElementById('messages');
+  var el = document.createElement('div');
+  el.className = 'error-bubble';
+  el.textContent = '⚠ ' + msg;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+initViewTabs();
+loadConnection();
+document.getElementById('pullPeriodLabel').textContent = PERIOD_LABELS.mtd;
+</script>
+</body>
+</html>

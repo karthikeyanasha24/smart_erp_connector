@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Google Sans', Arial, sans-serif;
+    font-size: 13px;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 20px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .logo-icon { font-size: 28px; }
+  .logo-text { font-size: 18px; font-weight: 700; color: #f8fafc; }
+  .logo-sub { font-size: 11px; color: #94a3b8; }
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: #94a3b8;
+    margin-bottom: 4px;
+    margin-top: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  input[type="text"], input[type="email"], input[type="password"] {
+    width: 100%;
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    outline: none;
+  }
+  input:focus { border-color: #6366f1; }
+
+  .hint {
+    font-size: 10px;
+    color: #64748b;
+    margin-top: 3px;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  button {
+    flex: 1;
+    padding: 9px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-save {
+    background: #6366f1;
+    color: #fff;
+  }
+  .btn-save:hover { background: #4f46e5; }
+  .btn-save:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
+  .btn-test {
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+  }
+  .btn-test:hover { background: #334155; color: #e2e8f0; }
+
+  .status {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    display: none;
+  }
+  .status.ok  { background: #064e3b; border: 1px solid #065f46; color: #6ee7b7; display: block; }
+  .status.err { background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; display: block; }
+  .status.info { background: #1e293b; border: 1px solid #334155; color: #94a3b8; display: block; }
+</style>
+</head>
+<body>
+
+<div class="logo">
+  <span class="logo-icon">🔗</span>
+  <div>
+    <div class="logo-text">SmarterP Connector</div>
+    <div class="logo-sub">Connect your ERP to Google Sheets</div>
+  </div>
+</div>
+
+<label>Backend URL</label>
+<input type="text" id="url" placeholder="https://your-app.onrender.com">
+<div class="hint">No trailing slash. Example: https://smarterp.onrender.com</div>
+
+<label>Email</label>
+<input type="email" id="email" placeholder="you@company.com">
+
+<label>Password</label>
+<input type="password" id="pass" placeholder="••••••••">
+
+<div class="btn-row">
+  <button class="btn-test" onclick="testConnection()">Test Connection</button>
+  <button class="btn-save" id="saveBtn" onclick="saveSettings()">Save &amp; Connect</button>
+</div>
+
+<div class="status" id="status"></div>
+
+<script>
+// Load existing config on open
+google.script.run
+  .withSuccessHandler(function(cfg) {
+    if (cfg.url)   document.getElementById('url').value   = cfg.url;
+    if (cfg.email) document.getElementById('email').value = cfg.email;
+  })
+  .getConfig_exposed();
+
+function setStatus(msg, type) {
+  var el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + type;
+}
+
+function getInputs() {
+  return {
+    url:   document.getElementById('url').value.trim().replace(/\/$/, ''),
+    email: document.getElementById('email').value.trim(),
+    pass:  document.getElementById('pass').value,
+  };
+}
+
+var _pendingTimer = null;
+
+function testConnection() {
+  var v = getInputs();
+  if (!v.url || !v.email || !v.pass) {
+    setStatus('Please fill in all fields first.', 'err');
+    return;
+  }
+  if (_pendingTimer) clearTimeout(_pendingTimer);
+  setStatus('Testing connection… (Render may take up to 60s on first wake)', 'info');
+  _pendingTimer = setTimeout(function() {
+    setStatus('Still waiting… If no Google authorization popup appeared behind this dialog, close it and check the sheet for "Authorization required".', 'info');
+  }, 45000);
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (_pendingTimer) clearTimeout(_pendingTimer);
+      if (r.ok) setStatus('✓ Connected successfully! Token received.', 'ok');
+      else       setStatus('✗ ' + r.error, 'err');
+    })
+    .withFailureHandler(function(e) {
+      if (_pendingTimer) clearTimeout(_pendingTimer);
+      setStatus('✗ ' + e.message, 'err');
+    })
+    .testConnection(v.url, v.email, v.pass);
+}
+
+function saveSettings() {
+  var v = getInputs();
+  if (!v.url || !v.email || !v.pass) {
+    setStatus('Please fill in all fields.', 'err');
+    return;
+  }
+  document.getElementById('saveBtn').disabled = true;
+  setStatus('Saving…', 'info');
+  google.script.run
+    .withSuccessHandler(function(r) {
+      document.getElementById('saveBtn').disabled = false;
+      if (r.ok) {
+        setStatus('✓ Settings saved! You can close this dialog.', 'ok');
+      } else {
+        setStatus('✗ ' + r.error, 'err');
+      }
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('saveBtn').disabled = false;
+      setStatus('✗ ' + e.message, 'err');
+    })
+    .saveAndVerify(v.url, v.email, v.pass);
+}
+</script>
+</body>
+</html>
