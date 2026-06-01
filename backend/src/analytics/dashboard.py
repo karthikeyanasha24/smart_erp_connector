@@ -21,6 +21,7 @@ from src.utils.date_utils import (
     get_prior_year_range,
     trend_granularity,
     period_cache_key,
+    today_ist,
     DateRange,
 )
 
@@ -287,14 +288,13 @@ async def get_dashboard(
     end_date: Optional[str] = None,
     force_refresh: bool = False,
 ) -> Dict[str, Any]:
-    from datetime import date as _date
-
     # When MTD and Today cover the same date (1st of month), share a single cache key
     # so both periods always return identical data and can't diverge.
     effective_period = period
     if period == "mtd" and period != "custom":
-        _today_str = _date.today().isoformat()
-        _som = _date.today().replace(day=1).isoformat()
+        _today_ist = today_ist()
+        _today_str = _today_ist.isoformat()
+        _som = _today_ist.replace(day=1).isoformat()
         if _som == _today_str:
             effective_period = "today"   # alias: mtd == today on the 1st
 

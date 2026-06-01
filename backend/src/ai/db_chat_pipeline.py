@@ -21,6 +21,7 @@ from typing import Any, Callable, Optional
 
 from src.config import cfg
 from src.utils.logger import logger
+from src.utils.date_utils import today_ist
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -155,7 +156,7 @@ def _col_detail(cols: list) -> list[str]:
 def compact_schema_for_view_selection(snap: dict) -> str:
     lines = [
         f"DATABASE: {snap.get('db', cfg.mssql_database)}",
-        f"TODAY: {date.today().isoformat()}",
+        f"TODAY: {today_ist().isoformat()}",
         "",
         "AVAILABLE VIEWS AND TABLES:",
         "(column names only — full details provided after you select views)",
@@ -190,7 +191,7 @@ def compact_schema_for_view_selection(snap: dict) -> str:
 def focused_schema_for_sql(snap: dict, selected_views: list[str]) -> str:
     lines = [
         f"DATABASE: {snap.get('db', cfg.mssql_database)}",
-        f"TODAY: {date.today().isoformat()}",
+        f"TODAY: {today_ist().isoformat()}",
         "",
         "SCHEMA FOR SELECTED VIEWS ONLY:",
         "(Use ONLY these views and ONLY the columns listed below)",

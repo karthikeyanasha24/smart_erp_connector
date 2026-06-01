@@ -9,8 +9,19 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+
+# ─── IST timezone ────────────────────────────────────────────────────────────
+# The ERP (SQL Server) records transactions in Indian Standard Time (UTC+5:30).
+# All "today / yesterday / MTD" date boundaries must be resolved in IST so that
+# midnight rolls over at the correct business time — not UTC midnight.
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def today_ist() -> date:
+    """Current calendar date in IST (UTC+5:30). Use instead of date.today()."""
+    return datetime.now(_IST).date()
 
 
 @dataclass
@@ -59,7 +70,7 @@ def _end_of_quarter(d: date) -> date:
 # ─── Resolver ─────────────────────────────────────────────────────────────────
 
 def resolve_date_range(period: str, ref_date: Optional[date] = None) -> DateRange:
-    today = ref_date or date.today()
+    today = ref_date or today_ist()
     today_str = _fmt(today)
 
     lower = re.sub(r"[\s_\-]+", "_", period.lower().strip())
@@ -208,7 +219,7 @@ def detect_period(query: str) -> str:
 # ─── Comparison Period ────────────────────────────────────────────────────────
 
 def get_comparison_range(period: str, ref_date: Optional[date] = None) -> DateRange:
-    ref = ref_date or date.today()
+    ref = ref_date or today_ist()
     canonical = period.lower()
 
     if canonical == "mtd":
@@ -248,7 +259,7 @@ _ROLLING_CACHE_PERIODS = frozenset({
 
 
 def cache_as_of_date(period: str, ref_date: Optional[date] = None) -> str:
-    """ISO end-date for a period — used as cache key suffix."""
+    """ISO end-date for a period — used as cache key suffix (resolved in IST)."""
     return resolve_date_range(period, ref_date).end
 
 
@@ -269,9 +280,29 @@ def cache_key_date_suffix(key: str) -> Optional[str]:
 
 
 def cache_key_is_stale(key: str, ref_date: Optional[date] = None) -> bool:
-    """True when a date-suffixed key belongs to a prior calendar day."""
+    """True when a date-suffixed key belongs to a prior calendar day (compared in IST)."""
     suffix = cache_key_date_suffix(key)
     if not suffix:
         return False
-    today = ref_date or date.today()
+    today = ref_date or today_ist()
+    return suffix != _fmt(today)
+ix.
+    """
+    if period in _ROLLING_CACHE_PERIODS:
+        return f"{prefix}:{period}:{cache_as_of_date(period, ref_date)}"
+    return f"{prefix}:{period}"
+
+
+def cache_key_date_suffix(key: str) -> Optional[str]:
+    """Extract trailing YYYY-MM-DD from a cache key, if present."""
+    m = re.search(r":(\d{4}-\d{2}-\d{2})$", key)
+    return m.group(1) if m else None
+
+
+def cache_key_is_stale(key: str, ref_date: Optional[date] = None) -> bool:
+    """True when a date-suffixed key belongs to a prior calendar day (compared in IST)."""
+    suffix = cache_key_date_suffix(key)
+    if not suffix:
+        return False
+    today = ref_date or today_ist()
     return suffix != _fmt(today)
