@@ -100,22 +100,16 @@ def register_kpi_faqs(register: Callable[..., None]) -> None:
     def _sql_store_mtd_kpi(_q: str) -> Dict[str, Any]:
         sql = f"""
 SELECT TOP (500)
-    s.[BranchAlias] AS Store,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
-    COUNT(DISTINCT s.[XnNo]) AS UniqueInvoices,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS ATS,
-    ISNULL(cust.UniqueCustomers, 0) AS UniqueCustomers
-FROM {_APP} s WITH (NOLOCK)
-LEFT JOIN (
-    SELECT sp.[BranchAlias], COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
-    FROM {_SALESPERSON} sp WITH (NOLOCK)
-    WHERE {_cashmemo_mtd_where("sp")}
-      AND sp.[CustomerId] IS NOT NULL
-    GROUP BY sp.[BranchAlias]
-) cust ON cust.[BranchAlias] = s.[BranchAlias]
-WHERE {_mtd_where("s")}
-  AND s.[BranchAlias] IS NOT NULL
-GROUP BY s.[BranchAlias], cust.UniqueCustomers
+    sp.[BranchAlias] AS Store,
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,
+    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,
+    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_mtd_where("sp")}
+  AND sp.[BranchAlias] IS NOT NULL
+GROUP BY sp.[BranchAlias]
+HAVING SUM(sp.[SalesNetAmount]) <> 0
 ORDER BY MTDSales DESC
 """
         return _blob(
@@ -123,85 +117,73 @@ ORDER BY MTDSales DESC
             sql,
             "Store-wise MTD sales, invoice count, ATS (sales per bill), and unique customers.",
             [
-                "Sales/ATS from APP_REPORT (NetAmount, XnNo).",
-                "Unique customers from salesperson view (CustomerId, CashmemoDt MTD).",
+                "Single source: SLS_DATA_WITHOUT_ITEMID (CashmemoDt) — aligned with dashboard analytics.",
+                "Returns no rows when the current month has no posted sales yet.",
             ],
         )
 
     def _sql_dept_mtd_kpi(_q: str) -> Dict[str, Any]:
         sql = f"""
 SELECT TOP (500)
-    s.[DepartmentShortName] AS Department,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
-    COUNT(DISTINCT s.[XnNo]) AS UniqueInvoices,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS ATS,
-    ISNULL(cust.UniqueCustomers, 0) AS UniqueCustomers
-FROM {_APP} s WITH (NOLOCK)
-LEFT JOIN (
-    SELECT sp.[DepartmentShortName], COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
-    FROM {_SALESPERSON} sp WITH (NOLOCK)
-    WHERE {_cashmemo_mtd_where("sp")}
-      AND sp.[CustomerId] IS NOT NULL
-    GROUP BY sp.[DepartmentShortName]
-) cust ON cust.[DepartmentShortName] = s.[DepartmentShortName]
-WHERE {_mtd_where("s")}
-  AND s.[DepartmentShortName] IS NOT NULL
-GROUP BY s.[DepartmentShortName], cust.UniqueCustomers
+    sp.[DepartmentShortName] AS Department,
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,
+    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,
+    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_mtd_where("sp")}
+  AND sp.[DepartmentShortName] IS NOT NULL
+GROUP BY sp.[DepartmentShortName]
+HAVING SUM(sp.[SalesNetAmount]) <> 0
 ORDER BY MTDSales DESC
 """
         return _blob(
             "department_mtd_sales_customers_ats",
             sql,
             "Department-wise MTD sales, invoices, ATS, and unique customers.",
-            ["Same KPI definitions as store-wise, grouped by DepartmentShortName."],
+            ["Single source: SLS_DATA_WITHOUT_ITEMID on CashmemoDt."],
         )
 
     def _sql_cat_mtd_kpi(_q: str) -> Dict[str, Any]:
         sql = f"""
 SELECT TOP (500)
-    s.[CategoryShortName] AS Category,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
-    COUNT(DISTINCT s.[XnNo]) AS UniqueInvoices,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS ATS,
-    ISNULL(cust.UniqueCustomers, 0) AS UniqueCustomers
-FROM {_APP} s WITH (NOLOCK)
-LEFT JOIN (
-    SELECT sp.[CategoryShortName], COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
-    FROM {_SALESPERSON} sp WITH (NOLOCK)
-    WHERE {_cashmemo_mtd_where("sp")}
-      AND sp.[CustomerId] IS NOT NULL
-    GROUP BY sp.[CategoryShortName]
-) cust ON cust.[CategoryShortName] = s.[CategoryShortName]
-WHERE {_mtd_where("s")}
-  AND s.[CategoryShortName] IS NOT NULL
-GROUP BY s.[CategoryShortName], cust.UniqueCustomers
+    sp.[CategoryShortName] AS Category,
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,
+    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,
+    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_mtd_where("sp")}
+  AND sp.[CategoryShortName] IS NOT NULL
+GROUP BY sp.[CategoryShortName]
+HAVING SUM(sp.[SalesNetAmount]) <> 0
 ORDER BY MTDSales DESC
 """
         return _blob(
             "category_mtd_sales_customers_ats",
             sql,
             "Category-wise MTD sales, invoices, ATS, and unique customers.",
-            ["Same KPI definitions as store-wise, grouped by CategoryShortName."],
+            ["Single source: SLS_DATA_WITHOUT_ITEMID on CashmemoDt."],
         )
 
     def _sql_monthly_since_apr_2024(_q: str) -> Dict[str, Any]:
         sql = f"""
 SELECT TOP (500)
-    DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
-    DATENAME(MONTH, DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1))
-        + N' ' + CAST(YEAR(DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1)) AS varchar(4)) AS MonthLabel,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales
-FROM {_APP} s WITH (NOLOCK)
-WHERE s.[XnDt] >= DATEFROMPARTS(2024, 4, 1)
-  AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
-GROUP BY DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1)
+    DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1) AS MonthStart,
+    DATENAME(MONTH, DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1))
+        + N' ' + CAST(YEAR(DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1)) AS varchar(4)) AS MonthLabel,
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE sp.[CashmemoDt] >= DATEFROMPARTS(2024, 4, 1)
+  AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
+GROUP BY DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1)
 ORDER BY MonthStart ASC
 """
         return _blob(
             "monthly_sales_since_apr_2024",
             sql,
             "Month-wise total net sales from April 2024 through today.",
-            ["Fixed start: 2024-04-01; end is exclusive tomorrow on XnDt."],
+            ["Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt) for fast monthly totals."],
         )
 
     def _sql_five_year_dept_category(_q: str) -> Dict[str, Any]:
@@ -244,66 +226,63 @@ WHERE {_mtd_where("s")}
         )
 
     def _sql_today_sales_customers_invoices(_q: str) -> Dict[str, Any]:
+        from nlq_faq_sql import _cashmemo_today_where
+
         sql = f"""
 SELECT
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TodaySales,
-    COUNT(DISTINCT s.[XnNo]) AS UniqueInvoices,
-    (
-        SELECT COUNT(DISTINCT x.[CustomerId])
-        FROM {_SALES_AI} x WITH (NOLOCK)
-        WHERE CAST(x.[InvoiceDt] AS DATE) = CAST(GETDATE() AS DATE)
-          AND x.[CustomerId] IS NOT NULL
-    ) AS UniqueCustomers
-FROM {_APP} s WITH (NOLOCK)
-WHERE {_today_where("s")}
+    CAST(ISNULL(SUM(sp.[SalesNetAmount]), 0) AS decimal(18, 2)) AS TodaySales,
+    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,
+    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_today_where("sp")}
 """
         return _blob(
             "today_sales_customers_invoices",
             sql,
-            "Today sales and invoice count from APP_REPORT; unique customers from VwAISalesData.",
-            ["Two views — customer count may not match invoice grain exactly."],
+            "Today sales, invoice count, and unique customers from cash memo lines.",
+            ["Single source: SLS_DATA_WITHOUT_ITEMID on CashmemoDt."],
         )
 
     def _period_growth_sql(period: str, label_cur: str, label_py: str) -> str:
         if period == "ytd":
             cur = (
-                "s.[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()), 1, 1) "
-                "AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
+                "sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), 1, 1) "
+                "AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
             )
             py = (
-                "s.[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()) - 1, 1, 1) "
-                "AND s.[XnDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))"
+                "sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()) - 1, 1, 1) "
+                "AND sp.[CashmemoDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))"
             )
         elif period == "qtd":
             cur = (
-                "s.[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()), ((MONTH(GETDATE()) - 1) / 3) * 3 + 1, 1) "
-                "AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
+                "sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), ((MONTH(GETDATE()) - 1) / 3) * 3 + 1, 1) "
+                "AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
             )
             py = (
-                "s.[XnDt] >= DATEADD(YEAR, -1, DATEFROMPARTS(YEAR(GETDATE()), ((MONTH(GETDATE()) - 1) / 3) * 3 + 1, 1)) "
-                "AND s.[XnDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))"
+                "sp.[CashmemoDt] >= DATEADD(YEAR, -1, DATEFROMPARTS(YEAR(GETDATE()), ((MONTH(GETDATE()) - 1) / 3) * 3 + 1, 1)) "
+                "AND sp.[CashmemoDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))"
             )
         else:  # mtd
             cur = (
-                "s.[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) "
-                "AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
+                "sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) "
+                "AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
             )
             py = (
-                "s.[XnDt] >= DATEADD(YEAR, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) "
-                "AND s.[XnDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))"
+                "sp.[CashmemoDt] >= DATEADD(YEAR, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) "
+                "AND sp.[CashmemoDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))"
             )
         return f"""
 SELECT
     N'{label_cur}' AS PeriodLabel,
-    CAST(SUM(CASE WHEN {cur} THEN s.[NetAmount] ELSE 0 END) AS decimal(18, 2)) AS TotalSales
-FROM {_APP} s WITH (NOLOCK)
-WHERE ({cur}) OR ({py})
+    CAST(ISNULL(SUM(sp.[SalesNetAmount]), 0) AS decimal(18, 2)) AS TotalSales
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {cur}
 UNION ALL
 SELECT
     N'{label_py}',
-    CAST(SUM(CASE WHEN {py} THEN s.[NetAmount] ELSE 0 END) AS decimal(18, 2))
-FROM {_APP} s WITH (NOLOCK)
-WHERE ({cur}) OR ({py})
+    CAST(ISNULL(SUM(sp.[SalesNetAmount]), 0) AS decimal(18, 2))
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {py}
 """
 
     def _sql_ytd_growth(_q: str) -> Dict[str, Any]:
@@ -371,13 +350,13 @@ ORDER BY MTDSales DESC
 SELECT TOP (20)
     s.[Itemcode],
     MAX(s.[ArticleNo]) AS ArticleNo,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
-    CAST(SUM(s.[AppQty]) AS decimal(18, 4)) AS MTDQty
-FROM {_APP} s WITH (NOLOCK)
+    CAST(SUM(s.[NetSlsNetAmount]) AS decimal(18, 2)) AS MTDSales,
+    CAST(SUM(s.[NetSlsQty]) AS decimal(18, 4)) AS MTDQty
+FROM {_SLSXNS} s WITH (NOLOCK)
 WHERE {_mtd_where("s")}
   AND s.[Itemcode] IS NOT NULL
 GROUP BY s.[Itemcode]
-HAVING SUM(s.[NetAmount]) > 0
+HAVING SUM(s.[NetSlsNetAmount]) > 0
 ORDER BY MTDSales ASC
 """
         return _blob(
@@ -412,34 +391,36 @@ ORDER BY MTDSales ASC
 WITH Bounds AS (
     SELECT
         DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AS CurrStart,
+        CAST(GETDATE() AS DATE) AS AsOf,
         DATEADD(MONTH, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AS PrevStart
 ),
 B AS (
     SELECT
-        s.[BranchAlias],
-        SUM(CASE WHEN s.[XnDt] >= b.CurrStart AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
-            THEN s.[NetAmount] ELSE 0 END) AS Curr,
-        SUM(CASE WHEN s.[XnDt] >= b.PrevStart AND s.[XnDt] < b.CurrStart
-            THEN s.[NetAmount] ELSE 0 END) AS Prev
-    FROM {_APP} s WITH (NOLOCK)
+        sp.[BranchAlias],
+        SUM(CASE WHEN sp.[CashmemoDt] >= b.CurrStart AND sp.[CashmemoDt] < DATEADD(DAY, 1, b.AsOf)
+            THEN sp.[SalesNetAmount] ELSE 0 END) AS Curr,
+        SUM(CASE WHEN sp.[CashmemoDt] >= b.PrevStart
+                 AND sp.[CashmemoDt] < DATEADD(MONTH, -1, DATEADD(DAY, 1, b.AsOf))
+            THEN sp.[SalesNetAmount] ELSE 0 END) AS Prev
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
     CROSS JOIN Bounds b
-    WHERE s.[BranchAlias] IS NOT NULL
-    GROUP BY s.[BranchAlias]
+    WHERE sp.[BranchAlias] IS NOT NULL
+    GROUP BY sp.[BranchAlias]
 )
 SELECT TOP ({n})
     [BranchAlias] AS Store,
     CAST(Curr AS decimal(18, 2)) AS MTDSales,
-    CAST(Prev AS decimal(18, 2)) AS PriorMonthSales,
+    CAST(Prev AS decimal(18, 2)) AS PriorPeriodSales,
     CAST(CASE WHEN Prev = 0 THEN NULL ELSE 100.0 * (Curr - Prev) / Prev END AS decimal(18, 4)) AS GrowthPct
 FROM B
-WHERE Curr > 0
+WHERE Curr > 0 AND Prev > 0
 ORDER BY GrowthPct DESC
 """
         return _blob(
             "top_stores_by_growth_pct",
             sql,
-            f"Top {n} stores by % growth: MTD vs previous full calendar month.",
-            ["GrowthPct = (MTD - prior month) / prior month."],
+            f"Top {n} stores by % growth: MTD vs same elapsed days last month.",
+            ["Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt)."],
         )
 
     def _sql_bottom_stores_decline(_q: str) -> Dict[str, Any]:
@@ -448,33 +429,40 @@ ORDER BY GrowthPct DESC
 WITH Bounds AS (
     SELECT
         DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AS CurrStart,
+        CAST(GETDATE() AS DATE) AS AsOf,
         DATEADD(MONTH, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AS PrevStart
 ),
 B AS (
     SELECT
-        s.[BranchAlias],
-        SUM(CASE WHEN s.[XnDt] >= b.CurrStart AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
-            THEN s.[NetAmount] ELSE 0 END) AS Curr,
-        SUM(CASE WHEN s.[XnDt] >= b.PrevStart AND s.[XnDt] < b.CurrStart
-            THEN s.[NetAmount] ELSE 0 END) AS Prev
-    FROM {_APP} s WITH (NOLOCK)
+        sp.[BranchAlias],
+        SUM(CASE WHEN sp.[CashmemoDt] >= b.CurrStart AND sp.[CashmemoDt] < DATEADD(DAY, 1, b.AsOf)
+            THEN sp.[SalesNetAmount] ELSE 0 END) AS Curr,
+        SUM(CASE WHEN sp.[CashmemoDt] >= b.PrevStart
+                 AND sp.[CashmemoDt] < DATEADD(MONTH, -1, DATEADD(DAY, 1, b.AsOf))
+            THEN sp.[SalesNetAmount] ELSE 0 END) AS Prev
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
     CROSS JOIN Bounds b
-    WHERE s.[BranchAlias] IS NOT NULL
-    GROUP BY s.[BranchAlias]
+    WHERE sp.[BranchAlias] IS NOT NULL
+    GROUP BY sp.[BranchAlias]
 )
 SELECT TOP ({n})
     [BranchAlias] AS Store,
     CAST(Curr AS decimal(18, 2)) AS MTDSales,
-    CAST(Prev AS decimal(18, 2)) AS PriorMonthSales,
-    CAST(Curr - Prev AS decimal(18, 2)) AS SalesDecline
+    CAST(Prev AS decimal(18, 2)) AS PriorPeriodSales,
+    CAST(Curr - Prev AS decimal(18, 2)) AS SalesDecline,
+    CAST(CASE WHEN Prev = 0 THEN NULL ELSE 100.0 * (Curr - Prev) / Prev END AS decimal(18, 4)) AS DeclinePct
 FROM B
+WHERE Prev > 0 AND Curr > 0 AND Curr < Prev
 ORDER BY SalesDecline ASC
 """
         return _blob(
             "bottom_stores_sales_decline",
             sql,
-            f"Bottom {n} stores by sales decline (MTD vs prior month).",
-            ["SalesDecline = Curr - Prev (most negative first)."],
+            f"Bottom {n} stores by sales decline: current MTD vs same elapsed days last month.",
+            [
+                "Only stores with sales in both periods where current MTD declined.",
+                "Prior period = same day-count in previous calendar month (not full month).",
+            ],
         )
 
     def _sql_products_mom_growth(_q: str) -> Dict[str, Any]:
@@ -709,23 +697,24 @@ FROM Bills WHERE InvoiceCount = 1
     def _sql_category_contribution(_q: str) -> Dict[str, Any]:
         sql = f"""
 WITH c AS (
-    SELECT s.[CategoryShortName] AS Category, SUM(s.[NetAmount]) AS Revenue
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE {_mtd_where("s")} AND s.[CategoryShortName] IS NOT NULL
-    GROUP BY s.[CategoryShortName]
+    SELECT sp.[CategoryShortName] AS Category, SUM(sp.[SalesNetAmount]) AS Revenue
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
+    WHERE {_cashmemo_mtd_where("sp")} AND sp.[CategoryShortName] IS NOT NULL
+    GROUP BY sp.[CategoryShortName]
 )
 SELECT TOP (500)
     Category,
     CAST(Revenue AS decimal(18, 2)) AS Revenue,
     CAST(100.0 * Revenue / NULLIF(SUM(Revenue) OVER (), 0) AS decimal(18, 4)) AS ContributionPct
 FROM c
+WHERE Revenue <> 0
 ORDER BY ContributionPct DESC
 """
         return _blob(
             "category_contribution_percentage",
             sql,
             "Each category's % of total MTD net sales.",
-            ["MTD on XnDt."],
+            ["Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt, SalesNetAmount)."],
         )
 
     def _sql_gross_margin_category(_q: str) -> Dict[str, Any]:

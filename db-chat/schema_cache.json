@@ -1,0 +1,4008 @@
+{
+  "db": "zRetailHQ0",
+  "server": "38.45.94.39:12866",
+  "snapshotted_at": "2026-06-01T08:23:43",
+  "curated": {
+    "primary_sales_view": {
+      "name": "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID",
+      "alias": "MAIN SALES VIEW (use this for revenue/sales questions)",
+      "date_column": "CashmemoDt",
+      "amount_column": "SalesNetAmount",
+      "branch_column": "BranchAlias",
+      "category_column": "CategoryShortName",
+      "department_column": "DepartmentShortName",
+      "salesperson_column": "SalesPersonName",
+      "customer_id_column": "CustomerId",
+      "transaction_id_column": "CashmemoNo",
+      "quantity_column": "SalesQuantity",
+      "cost_column": "SalesCost",
+      "sample_query": "SELECT TOP 5 BranchAlias, SUM(SalesNetAmount) AS Revenue FROM dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID WITH (NOLOCK) WHERE CashmemoDt >= DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1) AND CashmemoDt < DATEADD(month,1,DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)) GROUP BY BranchAlias ORDER BY Revenue DESC"
+    },
+    "transactions_view": {
+      "name": "dbo.VW_MB_POWERBI_SLSXNS_REPORT",
+      "alias": "TRANSACTION LINES VIEW (use for detailed transaction browsing)",
+      "date_column": "XnDt",
+      "amount_column": "NetSlsNetAmount",
+      "branch_column": "BranchAlias",
+      "category_column": "CategoryShortName",
+      "transaction_id_column": "CashmemoNo",
+      "note": "Use this view only for per-transaction detail, not revenue aggregation"
+    },
+    "customers_view": {
+      "name": "dbo.VwAICustomerDetails",
+      "alias": "CUSTOMER MASTER",
+      "key_columns": [
+        "CustomerId",
+        "CustomerFirstName",
+        "CustomerLastName",
+        "ContactMobile",
+        "ContactEmail",
+        "City",
+        "State",
+        "CreatedOn",
+        "ActiveStatus"
+      ]
+    },
+    "sales_view_simple": {
+      "name": "dbo.VwAISalesData",
+      "alias": "SIMPLE SALES FACT TABLE (for joins with customer/salesperson masters)",
+      "date_column": "InvoiceDt",
+      "amount_column": "SaleNetAmount",
+      "customer_column": "CustomerId",
+      "salesperson_column": "SalesPersonId",
+      "branch_column": "BranchId"
+    },
+    "product_master": {
+      "name": "dbo.VW_MB_POWERBI_PRODUCT_MASTER",
+      "alias": "PRODUCT / ITEM CATALOG",
+      "key_columns": [
+        "ItemId",
+        "Itemcode",
+        "ArticleNo",
+        "DepartmentShortName",
+        "CategoryShortName",
+        "SubCategoryName",
+        "SupplierName",
+        "SupplierAlias",
+        "ItemMRP",
+        "PurDate"
+      ]
+    },
+    "purchases_view": {
+      "name": "dbo.VW_MB_POWERBI_PURXNS_REPORT",
+      "alias": "PURCHASE TRANSACTIONS",
+      "date_column": "XnDt",
+      "branch_column": "BranchAlias",
+      "category_column": "CategoryShortName"
+    },
+    "stock_view": {
+      "name": "dbo.VwAIStockData",
+      "alias": "CURRENT STOCK LEVELS",
+      "key_columns": [
+        "ItemId",
+        "BranchId",
+        "StockQty"
+      ]
+    },
+    "branches_view": {
+      "name": "dbo.VW_MB_POWERBI_BRANCH_LIST",
+      "alias": "BRANCH MASTER",
+      "key_columns": [
+        "BranchId",
+        "BranchName",
+        "ShortName",
+        "City",
+        "State",
+        "ActiveStatus"
+      ]
+    },
+    "salespersons_view": {
+      "name": "dbo.VwAISalesPerson",
+      "alias": "SALESPERSON MASTER",
+      "key_columns": [
+        "SalesPersonId",
+        "SalesPersonName",
+        "SalesPersonShortName"
+      ]
+    }
+  },
+  "objects": {
+    "dbo.VW_MB_POWERBI_APP_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "CostPrice",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "XnDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "nvarchar",
+          "nullable": true,
+          "max_len": 30
+        },
+        {
+          "name": "AppQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "MrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "IGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_APR_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "CostPrice",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "XnDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "nvarchar",
+          "nullable": true,
+          "max_len": 30
+        },
+        {
+          "name": "AppQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "MrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_BRANCH_LIST": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "BranchName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 500
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 10
+        },
+        {
+          "name": "ActiveStatus",
+          "type": "bit",
+          "nullable": false
+        },
+        {
+          "name": "IsWarehouse",
+          "type": "bit",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_CATEGORY_MASTER": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "InvSubCategoryId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "InvSubCategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "InvSubCategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "InvCategoryId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "InvCategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "InvCategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "InvDepartmentId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "InvDepartmentName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "InvDepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_CBS_WITH_GIT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CostPrice",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "MRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "GitQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "GitCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "StockQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CbsCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CbsMrpValue",
+          "type": "numeric",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_MIS_SUPPLIER_SLS_DATA": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "XnMemoDate_MONTH",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "XnMemoDate",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "XnMemoDate_MONTHNAME",
+          "type": "nvarchar",
+          "nullable": true,
+          "max_len": 30
+        },
+        {
+          "name": "NetSlsQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetSlsCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetAmountBeforeTax",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "MrpValue",
+          "type": "numeric",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_PRODUCT_MASTER": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SubCategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubCategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Colour",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierUID",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "FabricShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SubFabricShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Collection",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubConceptShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Dupatta",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DupattaShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Silhoutte",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Bottom",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "NECKLINE",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SleeveType",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Look",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "INVENTORYTYPE",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PurDate",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "PurInvNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurInvDt",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "PurChallanNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurchasePrice",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ItemWSP",
+          "type": "numeric",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_PRT_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "PurReturnId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "PurReturnDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "PurInvoiceNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PrtQty",
+          "type": "numeric",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_PUR_QTY_WITH_COST": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "PurchaseDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PurCost",
+          "type": "numeric",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_PUR_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "PurchaseId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "PurchaseDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "PurInvoiceNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PurQty",
+          "type": "numeric",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_PURXNS_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "DepartmentName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "PurRefNo1",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurRefNo2",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "XnType",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "XnDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "PurInvDate",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "PurInvNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurChallanDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "PurChallanNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ItemCode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CostPrice",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PurQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PurCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PurNetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PurMrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PurCGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PurSGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PurIGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PrtQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PrtCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PrtNetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PrtMrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PrtCGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PrtSGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "PrtIGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetPurQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetPurCost",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetPurNetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetPurCGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetPurSGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetPurIGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_SLS_ARTICLE_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "XnMemoDate",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ArticleMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "NetSlsQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetSlsCostValue",
+          "type": "numeric",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_SLS_BILLCOUNT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "CashmemoDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "BranchName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "BranchCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "BranchState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "BranchRegion",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 20
+        },
+        {
+          "name": "CountryRegion",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "BranchAreaManager",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 30
+        },
+        {
+          "name": "CashmemoDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "CashmemoNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "CustomerMobileNumber",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CustomerName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 201
+        },
+        {
+          "name": "CustomerId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "CreatedOn",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "SalesPersonName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 30
+        },
+        {
+          "name": "SalespersonEmpId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 30
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ColourName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ContrastName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SizeName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PrintTypeWork",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SalesQuantity",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "SalesCost",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "NetAmountBeforeTax",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SalesNetAmount",
+          "type": "numeric",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_SLS_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "XnMemoDate",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PurDate",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "NetSlsQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetSlsCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SlsExtCostValue",
+          "type": "numeric",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_SLSXNS_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "CostPrice",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "XnDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "nvarchar",
+          "nullable": true,
+          "max_len": 30
+        },
+        {
+          "name": "SlsQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SlsMrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SlsCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SlsNetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SlrQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SlrMrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SlrCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SlrNetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetSlsQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetSlsMrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetSlsCostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetSlsNetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "IGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_STI_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "SourceBranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SourceBranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "TargetBranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "TargetBranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "CostPrice",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "XnDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "nvarchar",
+          "nullable": true,
+          "max_len": 30
+        },
+        {
+          "name": "StiQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "MrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "IGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_STO_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "SourceBranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SourceBranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "TargetBranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "TargetBranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "Department",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Category",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "SupplierState",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Color",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printtypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "CostPrice",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "XnId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "XnNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "XnDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "XnDtMonth",
+          "type": "nvarchar",
+          "nullable": true,
+          "max_len": 30
+        },
+        {
+          "name": "StoQty",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "MrpValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CostValue",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "NetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "CGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "IGSTAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "BillCount",
+          "type": "int",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_STOCK_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Fabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubFabric",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "StockQty",
+          "type": "numeric",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_SUPPLIER_PUR_REPORT": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "DepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SubCategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubCategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Colour",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "size",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2Index",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Contrast",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Printypework",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SupplierUID",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "BranchAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "FabricShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SubFabricShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Property",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Collection",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Concept",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SubConceptShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Dupatta",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "DupattaShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Silhoutte",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Bottom",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "NECKLINE",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SleeveType",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Look",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "INVENTORYTYPE",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PurDate",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "PurInvNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "PurInvDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "PurRefNo1",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurRefNo2",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurChallanNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "PurchasePrice",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ItemWSP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "PurQty",
+          "type": "numeric",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VW_MB_POWERBI_VENDOR_MASTER": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "PartyId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "PartyName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "ShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PartyAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 500
+        },
+        {
+          "name": "ExtAddress",
+          "type": "varchar",
+          "nullable": true,
+          "max_len": 1532
+        },
+        {
+          "name": "BusinessName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "LocalityCity",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 402
+        },
+        {
+          "name": "LocalityGroup",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 10
+        },
+        {
+          "name": "District",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "ContactEmail1",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ContactEmail2",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ContactPhone1",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ContactPhone2",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ContactWebsite",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "CreatedOn",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "CreditDays",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "CreditLimit",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "DiscountPercentage",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "FreightPercentage",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "GstClassification",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "GstClassificationStr",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 18
+        },
+        {
+          "name": "GstEffectiveDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "GstStateCode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 20
+        },
+        {
+          "name": "IntlGLNNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "LocalityId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "MarginPercentage",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "MarkupEXP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "MarkupMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "MarkupWSP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "MSMEBizType",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "MSMEBizTypeStr",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 16
+        },
+        {
+          "name": "MSMECategory",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "MSMECategoryStr",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 13
+        },
+        {
+          "name": "MSMERegDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "MSMERegNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PartyGroupName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "TaxGSTINNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "TaxPanNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "TdsFullName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 203
+        },
+        {
+          "name": "TdsId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "TdsName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "TdsPercentage",
+          "type": "numeric",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VwAIBranch": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "BranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "BranchName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "BranchShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 500
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 10
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        }
+      ]
+    },
+    "dbo.VwAICustomerDetails": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "CustomerId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 19
+        },
+        {
+          "name": "CustomerFirstName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "CustomerLastName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "CustomerTitle",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ContactMobile",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ContactEmail",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 500
+        },
+        {
+          "name": "Address2",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 500
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "nullable": true,
+          "max_len": 200
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "nullable": true,
+          "max_len": 200
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "nullable": true,
+          "max_len": 200
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "nullable": true,
+          "max_len": 200
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "nullable": true,
+          "max_len": 10
+        },
+        {
+          "name": "CustomerGroupName",
+          "type": "varchar",
+          "nullable": true,
+          "max_len": 100
+        },
+        {
+          "name": "BranchName",
+          "type": "varchar",
+          "nullable": true,
+          "max_len": 200
+        },
+        {
+          "name": "BirthdayDt",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "AnniversaryDt",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "CreditLimit",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ActiveStatus",
+          "type": "bit",
+          "nullable": false
+        },
+        {
+          "name": "CreatedOn",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "LastUpdate",
+          "type": "datetime",
+          "nullable": false
+        }
+      ]
+    },
+    "dbo.VwAISalesData": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "InvoiceDt",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "InvoiceId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "InvoiceNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        },
+        {
+          "name": "BranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "CustomerId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 19
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "SalesPrice",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "Quantity",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SaleAmountBeforeTax",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "TaxAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SaleNetAmount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "SalesPersonId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        }
+      ]
+    },
+    "dbo.VwAISalesPerson": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "SalesPersonId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "SalesPersonName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 30
+        },
+        {
+          "name": "SalesPersonShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 30
+        }
+      ]
+    },
+    "dbo.VwAIStockData": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "BranchId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 3
+        },
+        {
+          "name": "StockQty",
+          "type": "numeric",
+          "nullable": true
+        }
+      ]
+    },
+    "dbo.VwAISupplier": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "PurPartyId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "PartyName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "ShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PartyAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Address",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 500
+        },
+        {
+          "name": "Locality",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "PinCode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 10
+        },
+        {
+          "name": "City",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "State",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        },
+        {
+          "name": "Country",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 200
+        }
+      ]
+    },
+    "dbo.VwMstItems": {
+      "type": "VIEW",
+      "columns": [
+        {
+          "name": "Itemcode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ItemId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ItemMRP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ItemWSP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ItemEXP",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "PurchasePrice",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "SKU",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 500
+        },
+        {
+          "name": "ArticleId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "ArticleNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Description",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "ExtDescription",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 500
+        },
+        {
+          "name": "ArticleShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "UomId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "UomName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 20
+        },
+        {
+          "name": "GstUQC",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "UomType",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "CodingType",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "ArticleStockType",
+          "type": "numeric",
+          "nullable": false
+        },
+        {
+          "name": "InvDepartmentId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "InvDepartmentName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "InvDepartmentShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "InvCategoryId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "InvCategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "InvCategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "InvSubCategoryId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "InvSubCategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "InvSubCategoryShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Para1Id",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "Para1Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para1ShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Para2Id",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "Para2Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para2ShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Para3Id",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "Para3Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para3ShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "Para4Id",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "Para4Name",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "Para4ShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "ExtCategoryName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 306
+        },
+        {
+          "name": "PurPartyId",
+          "type": "char",
+          "nullable": false,
+          "max_len": 15
+        },
+        {
+          "name": "SupplierName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 150
+        },
+        {
+          "name": "SupplierShortName",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "SupplierAlias",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 100
+        },
+        {
+          "name": "GstClassification",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "HSNCode",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurInvoiceDt",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "PurInvoiceNo",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 50
+        },
+        {
+          "name": "PurchaseId",
+          "type": "varchar",
+          "nullable": false,
+          "max_len": 40
+        }
+      ]
+    }
+  }
+}

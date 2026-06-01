@@ -1,0 +1,137 @@
+[
+  {
+    "id": "vat_01",
+    "label": "Store MTD sales & customers",
+    "question": "Store Wise MTD Sales, Unique Customer Count, ATS",
+    "category": "Store",
+    "template_id": "store_mtd_sales_customers_ats",
+    "sql": "SELECT TOP (500)\n    sp.[BranchAlias] AS Store,\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,\n    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,\n    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,\n    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND sp.[BranchAlias] IS NOT NULL\nGROUP BY sp.[BranchAlias]\nHAVING SUM(sp.[SalesNetAmount]) <> 0\nORDER BY MTDSales DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_02",
+    "label": "Department MTD KPIs",
+    "question": "Department Wise MTD Sales, Unique Customer Count, ATS",
+    "category": "Department",
+    "template_id": "department_mtd_sales_customers_ats",
+    "sql": "SELECT TOP (500)\n    sp.[DepartmentShortName] AS Department,\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,\n    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,\n    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,\n    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND sp.[DepartmentShortName] IS NOT NULL\nGROUP BY sp.[DepartmentShortName]\nHAVING SUM(sp.[SalesNetAmount]) <> 0\nORDER BY MTDSales DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_03",
+    "label": "Today's sales snapshot",
+    "question": "Today's Sales with Unique Customer Count and Unique Invoices Billed",
+    "category": "Today",
+    "template_id": "today_sales_customers_invoices",
+    "sql": "SELECT\n    CAST(ISNULL(SUM(sp.[SalesNetAmount]), 0) AS decimal(18, 2)) AS TodaySales,\n    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,\n    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE CAST(sp.[CashmemoDt] AS DATE) = CAST(GETDATE() AS DATE)",
+    "builtin": true
+  },
+  {
+    "id": "vat_04",
+    "label": "MTD vs last year",
+    "question": "Current Year MTD Growth vs Last Year MTD Growth",
+    "category": "Growth",
+    "template_id": "mtd_growth_vs_last_year",
+    "sql": "SELECT\n    N'CurrentMTD' AS PeriodLabel,\n    CAST(ISNULL(SUM(sp.[SalesNetAmount]), 0) AS decimal(18, 2)) AS TotalSales\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\nUNION ALL\nSELECT\n    N'LastYearMTD',\n    CAST(ISNULL(SUM(sp.[SalesNetAmount]), 0) AS decimal(18, 2))\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEADD(YEAR, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AND sp.[CashmemoDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))",
+    "builtin": true
+  },
+  {
+    "id": "vat_05",
+    "label": "Top store this month",
+    "question": "Which Store has the Highest Sales in the Current Month?",
+    "category": "Store",
+    "template_id": "highest_store_current_month",
+    "sql": "SELECT TOP (1)\n    sp.[BranchAlias],\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND sp.[BranchAlias] IS NOT NULL\nGROUP BY sp.[BranchAlias]\nHAVING SUM(sp.[SalesNetAmount]) <> 0\nORDER BY TotalSales DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_06",
+    "label": "Top stores by growth %",
+    "question": "Top 10 Performing Stores based on Growth %",
+    "category": "Growth",
+    "template_id": "top_stores_by_growth_pct",
+    "sql": "WITH Bounds AS (\n    SELECT\n        DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AS CurrStart,\n        CAST(GETDATE() AS DATE) AS AsOf,\n        DATEADD(MONTH, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AS PrevStart\n),\nB AS (\n    SELECT\n        sp.[BranchAlias],\n        SUM(CASE WHEN sp.[CashmemoDt] >= b.CurrStart AND sp.[CashmemoDt] < DATEADD(DAY, 1, b.AsOf)\n            THEN sp.[SalesNetAmount] ELSE 0 END) AS Curr,\n        SUM(CASE WHEN sp.[CashmemoDt] >= b.PrevStart\n                 AND sp.[CashmemoDt] < DATEADD(MONTH, -1, DATEADD(DAY, 1, b.AsOf))\n            THEN sp.[SalesNetAmount] ELSE 0 END) AS Prev\n    FROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\n    CROSS JOIN Bounds b\n    WHERE sp.[BranchAlias] IS NOT NULL\n    GROUP BY sp.[BranchAlias]\n)\nSELECT TOP (10)\n    [BranchAlias] AS Store,\n    CAST(Curr AS decimal(18, 2)) AS MTDSales,\n    CAST(Prev AS decimal(18, 2)) AS PriorPeriodSales,\n    CAST(CASE WHEN Prev = 0 THEN NULL ELSE 100.0 * (Curr - Prev) / Prev END AS decimal(18, 4)) AS GrowthPct\nFROM B\nWHERE Curr > 0 AND Prev > 0\nORDER BY GrowthPct DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_07",
+    "label": "Category revenue share",
+    "question": "Category Contribution % in Total Revenue",
+    "category": "Category",
+    "template_id": "category_contribution_percentage",
+    "sql": "WITH c AS (\n    SELECT sp.[CategoryShortName] AS Category, SUM(sp.[SalesNetAmount]) AS Revenue\n    FROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\n    WHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE)) AND sp.[CategoryShortName] IS NOT NULL\n    GROUP BY sp.[CategoryShortName]\n)\nSELECT TOP (500)\n    Category,\n    CAST(Revenue AS decimal(18, 2)) AS Revenue,\n    CAST(100.0 * Revenue / NULLIF(SUM(Revenue) OVER (), 0) AS decimal(18, 4)) AS ContributionPct\nFROM c\nWHERE Revenue <> 0\nORDER BY ContributionPct DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_08",
+    "label": "Top customers by value",
+    "question": "Top Customers based on Purchase Value",
+    "category": "Customer",
+    "template_id": "top_customers_purchase_value",
+    "sql": "SELECT TOP (20)\n    c.[CustomerId],\n    c.[CustomerFirstName],\n    c.[CustomerLastName],\n    c.[ContactMobile],\n    c.[City],\n    c.[CustomerGroupName],\n    CAST(SUM(s.[SaleNetAmount]) AS decimal(18, 2)) AS TotalPurchaseValue,\n    COUNT(DISTINCT s.[InvoiceId]) AS InvoiceCount\nFROM dbo.[VwAISalesData] s WITH (NOLOCK)\nINNER JOIN dbo.[VwAICustomerDetails] c WITH (NOLOCK)\n    ON s.[CustomerId] = c.[CustomerId]\nWHERE s.[InvoiceDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND s.[InvoiceDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\nGROUP BY\n    c.[CustomerId],\n    c.[CustomerFirstName],\n    c.[CustomerLastName],\n    c.[ContactMobile],\n    c.[City],\n    c.[CustomerGroupName]\nORDER BY TotalPurchaseValue DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_09",
+    "label": "Average basket by store",
+    "question": "Average Basket Size by Store",
+    "category": "Revenue",
+    "template_id": "average_basket_size_by_store",
+    "sql": "SELECT TOP (500)\n    sp.[BranchAlias],\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales,\n    COUNT(DISTINCT sp.[CashmemoNo]) AS BillCount,\n    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS AvgBillValue\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND sp.[BranchAlias] IS NOT NULL\nGROUP BY sp.[BranchAlias]\nHAVING SUM(sp.[SalesNetAmount]) <> 0\nORDER BY AvgBillValue DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_10",
+    "label": "Monthly sales since Apr 2024",
+    "question": "Month-wise Sales Comparison since Apr'24",
+    "category": "Trend",
+    "template_id": "monthly_sales_since_apr_2024",
+    "sql": "SELECT TOP (500)\n    DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1) AS MonthStart,\n    DATENAME(MONTH, DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1))\n        + N' ' + CAST(YEAR(DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1)) AS varchar(4)) AS MonthLabel,\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(2024, 4, 1)\n  AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\nGROUP BY DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1)\nORDER BY MonthStart ASC",
+    "builtin": true
+  },
+  {
+    "id": "vat_11",
+    "label": "Top 10 customers by purchase",
+    "question": "Top 10 Customers by Purchase Value",
+    "category": "Customer",
+    "template_id": "top_customers_by_purchase_value",
+    "sql": "SELECT TOP (10)\n    c.[CustomerId],\n    c.[CustomerFirstName],\n    c.[CustomerLastName],\n    c.[ContactMobile],\n    c.[City],\n    c.[CustomerGroupName],\n    CAST(SUM(s.[SaleNetAmount]) AS decimal(18, 2)) AS TotalPurchaseValue,\n    COUNT(DISTINCT s.[InvoiceId]) AS InvoiceCount\nFROM dbo.[VwAISalesData] s WITH (NOLOCK)\nINNER JOIN dbo.[VwAICustomerDetails] c WITH (NOLOCK)\n    ON s.[CustomerId] = c.[CustomerId]\nWHERE s.[InvoiceDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND s.[InvoiceDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\nGROUP BY\n    c.[CustomerId],\n    c.[CustomerFirstName],\n    c.[CustomerLastName],\n    c.[ContactMobile],\n    c.[City],\n    c.[CustomerGroupName]\nORDER BY TotalPurchaseValue DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_12",
+    "label": "Top 10 supplier purchases MTD",
+    "question": "Top 10 purchases by supplier this month",
+    "category": "Purchase",
+    "template_id": "purchases_by_supplier_mtd",
+    "sql": "SELECT TOP (10)\n    p.[SupplierName],\n    p.[SupplierAlias],\n    CAST(SUM(p.[NetPurNetAmount]) AS decimal(18, 2)) AS NetPurchaseAmount,\n    CAST(SUM(p.[NetPurQty]) AS decimal(18, 4)) AS NetPurchaseQty\nFROM dbo.[VW_MB_POWERBI_PURXNS_REPORT] p WITH (NOLOCK)\nWHERE p.[PurInvDate] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND p.[PurInvDate] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND p.[SupplierName] IS NOT NULL\nGROUP BY p.[SupplierName], p.[SupplierAlias]\nORDER BY NetPurchaseAmount DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_13",
+    "label": "Top 20 selling products MTD",
+    "question": "Top 20 best selling products this month",
+    "category": "Product",
+    "template_id": "top_products_mtd",
+    "sql": "SELECT TOP (20)\n    s.[Itemcode],\n    MAX(s.[ArticleNo]) AS ArticleNo,\n    MAX(s.[CategoryShortName]) AS Category,\n    CAST(SUM(s.[NetSlsNetAmount]) AS decimal(18, 2)) AS Revenue,\n    CAST(SUM(s.[NetSlsQty]) AS decimal(18, 4)) AS QtySold\nFROM dbo.[VW_MB_POWERBI_SLSXNS_REPORT] s WITH (NOLOCK)\nWHERE s.[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND s.[Itemcode] IS NOT NULL\nGROUP BY s.[Itemcode]\nHAVING SUM(s.[NetSlsNetAmount]) <> 0\nORDER BY Revenue DESC",
+    "builtin": true
+  },
+  {
+    "id": "vat_14",
+    "label": "Bottom 10 stores by decline",
+    "question": "Bottom 10 Performing Stores based on Sales Decline",
+    "category": "Growth",
+    "template_id": "bottom_stores_sales_decline",
+    "sql": "WITH Bounds AS (\n    SELECT\n        DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AS CurrStart,\n        CAST(GETDATE() AS DATE) AS AsOf,\n        DATEADD(MONTH, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AS PrevStart\n),\nB AS (\n    SELECT\n        sp.[BranchAlias],\n        SUM(CASE WHEN sp.[CashmemoDt] >= b.CurrStart AND sp.[CashmemoDt] < DATEADD(DAY, 1, b.AsOf)\n            THEN sp.[SalesNetAmount] ELSE 0 END) AS Curr,\n        SUM(CASE WHEN sp.[CashmemoDt] >= b.PrevStart\n                 AND sp.[CashmemoDt] < DATEADD(MONTH, -1, DATEADD(DAY, 1, b.AsOf))\n            THEN sp.[SalesNetAmount] ELSE 0 END) AS Prev\n    FROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\n    CROSS JOIN Bounds b\n    WHERE sp.[BranchAlias] IS NOT NULL\n    GROUP BY sp.[BranchAlias]\n)\nSELECT TOP (10)\n    [BranchAlias] AS Store,\n    CAST(Curr AS decimal(18, 2)) AS MTDSales,\n    CAST(Prev AS decimal(18, 2)) AS PriorPeriodSales,\n    CAST(Curr - Prev AS decimal(18, 2)) AS SalesDecline,\n    CAST(CASE WHEN Prev = 0 THEN NULL ELSE 100.0 * (Curr - Prev) / Prev END AS decimal(18, 4)) AS DeclinePct\nFROM B\nWHERE Prev > 0 AND Curr > 0 AND Curr < Prev\nORDER BY SalesDecline ASC",
+    "builtin": true
+  },
+  {
+    "id": "vat_15",
+    "label": "Top 20 customers by purchase",
+    "question": "Top 20 Customers by Purchase Value",
+    "category": "Customer",
+    "template_id": "top_customers_by_purchase_value",
+    "sql": "SELECT TOP (20)\n    c.[CustomerId],\n    c.[CustomerFirstName],\n    c.[CustomerLastName],\n    c.[ContactMobile],\n    c.[City],\n    c.[CustomerGroupName],\n    CAST(SUM(s.[SaleNetAmount]) AS decimal(18, 2)) AS TotalPurchaseValue,\n    COUNT(DISTINCT s.[InvoiceId]) AS InvoiceCount\nFROM dbo.[VwAISalesData] s WITH (NOLOCK)\nINNER JOIN dbo.[VwAICustomerDetails] c WITH (NOLOCK)\n    ON s.[CustomerId] = c.[CustomerId]\nWHERE s.[InvoiceDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND s.[InvoiceDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\nGROUP BY\n    c.[CustomerId],\n    c.[CustomerFirstName],\n    c.[CustomerLastName],\n    c.[ContactMobile],\n    c.[City],\n    c.[CustomerGroupName]\nORDER BY TotalPurchaseValue DESC",
+    "builtin": true
+  }
+]

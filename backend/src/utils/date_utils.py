@@ -236,3 +236,42 @@ def get_comparison_range(period: str, ref_date: Optional[date] = None) -> DateRa
     prev = ref.replace(year=ref.year - 1)
     r = resolve_date_range(period, prev)
     return DateRange(r.start, r.end, f"Prior {r.label}", f"prior_{r.period}")
+
+
+# ─── Cache key helpers ────────────────────────────────────────────────────────
+
+# Periods whose cache must roll over at midnight (end date = today).
+_ROLLING_CACHE_PERIODS = frozenset({
+    "today", "yesterday", "mtd", "qtd", "ytd",
+    "last_7d", "last_30d", "last_90d", "last_180d", "last_6m", "last_365d",
+})
+
+
+def cache_as_of_date(period: str, ref_date: Optional[date] = None) -> str:
+    """ISO end-date for a period — used as cache key suffix."""
+    return resolve_date_range(period, ref_date).end
+
+
+def period_cache_key(prefix: str, period: str, ref_date: Optional[date] = None) -> str:
+    """
+    Build a cache key that invalidates when the calendar day rolls over.
+    Fixed historical periods (last_month, last_quarter) omit the date suffix.
+    """
+    if period in _ROLLING_CACHE_PERIODS:
+        return f"{prefix}:{period}:{cache_as_of_date(period, ref_date)}"
+    return f"{prefix}:{period}"
+
+
+def cache_key_date_suffix(key: str) -> Optional[str]:
+    """Extract trailing YYYY-MM-DD from a cache key, if present."""
+    m = re.search(r":(\d{4}-\d{2}-\d{2})$", key)
+    return m.group(1) if m else None
+
+
+def cache_key_is_stale(key: str, ref_date: Optional[date] = None) -> bool:
+    """True when a date-suffixed key belongs to a prior calendar day."""
+    suffix = cache_key_date_suffix(key)
+    if not suffix:
+        return False
+    today = ref_date or date.today()
+    return suffix != _fmt(today)

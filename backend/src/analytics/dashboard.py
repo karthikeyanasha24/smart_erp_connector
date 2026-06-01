@@ -19,6 +19,7 @@ from src.utils.date_utils import (
     resolve_custom_range,
     get_prior_year_range,
     trend_granularity,
+    period_cache_key,
     DateRange,
 )
 
@@ -123,11 +124,13 @@ async def _query_customers(dr: DateRange) -> Optional[int]:
     if cfg.ANALYTICS_SKIP_CUSTOMER_COUNT:
         return None
     c = cfg
+    table = sql_table(c.SALES_AI_TABLE)
+    date_col = c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN
     sql = f"""
-        SELECT COUNT(DISTINCT CustomerId) AS Cnt
-        FROM {sql_table(c.SALES_VIEW)} WITH (NOLOCK)
-        WHERE [{c.SALES_FILTER_DATE_COLUMN}] >= @startDate
-          AND [{c.SALES_FILTER_DATE_COLUMN}] < DATEADD(day,1,CAST(@endDate AS DATE))
+        SELECT COUNT(DISTINCT [CustomerId]) AS Cnt
+        FROM {table} WITH (NOLOCK)
+        WHERE [{date_col}] >= @startDate
+          AND [{date_col}] < DATEADD(day,1,CAST(@endDate AS DATE))
     """
     try:
         result = await execute_query(
@@ -283,7 +286,7 @@ async def get_dashboard(
     end_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     # Custom-range dashboards are not cached (date params vary).
-    cache_key = f"dashboard:v2:{period}" if period != "custom" else None
+    cache_key = period_cache_key("dashboard:v3", period) if period != "custom" else None
     if cache_key:
         cached, is_fresh = cache.get(cache_key)
         if cached is not None:

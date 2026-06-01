@@ -353,6 +353,7 @@ export interface DashboardResponse {
   trend: DashboardTrendPoint[];
   categories: { name: string; revenue: number; percentage: number }[];
   branches: { name: string; revenue: number; percentage: number }[];
+  date_range?: { start: string; end: string };
   checksum: { trend_total: number; summary_total: number; match: boolean };
 }
 

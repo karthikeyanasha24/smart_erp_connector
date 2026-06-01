@@ -8,23 +8,33 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from src.config import cfg
 from src.utils.logger import logger
+from src.utils.date_utils import cache_key_is_stale
 
 # Keys whose data changes every minute or are date-specific -- do not persist to PG.
-# Pattern: kpi:v3:today, kpi:v3:yesterday, dashboard:v7:today, dashboard:v7:yesterday
+# Legacy v2/v3 prefixes plus date-suffixed rolling-period keys (see cache_key_is_stale).
 _INTRADAY_PREFIXES = (
-    "kpi:v3:today", "kpi:v3:yesterday",
+    "kpi:v3:today", "kpi:v3:yesterday", "kpi:v3:mtd",
     "kpi:v4:today", "kpi:v4:yesterday",
+    "dashboard:v3:today", "dashboard:v3:yesterday", "dashboard:v3:mtd",
     "dashboard:v7:today", "dashboard:v7:yesterday",
+    "dashboard:v2:today", "dashboard:v2:mtd",
 )
 
+_DATE_SUFFIX = re.compile(r":\d{4}-\d{2}-\d{2}$")
+
+
 def _is_intraday(key: str) -> bool:
-    return any(key.startswith(p) for p in _INTRADAY_PREFIXES)
+    if any(key.startswith(p) for p in _INTRADAY_PREFIXES):
+        return True
+    # Rolling-period keys include an as-of date — never persist across days.
+    return bool(_DATE_SUFFIX.search(key))
 
 
 def _is_department_chart_key(key: str) -> bool:
@@ -78,6 +88,12 @@ class AnalyticsCache:
           (value, False)  stale hit (revalidation needed)
           (None,  False)  miss
         """
+        if cache_key_is_stale(key):
+            if key in self._store:
+                del self._store[key]
+            self._stats["misses"] += 1
+            return None, False
+
         entry = self._store.get(key)
         if entry is None:
             self._stats["misses"] += 1
@@ -291,6 +307,9 @@ class AnalyticsCache:
         for row in rows:
             key = str(row["cache_key"])
             if _is_intraday(key):
+                skipped += 1
+                continue
+            if cache_key_is_stale(key):
                 skipped += 1
                 continue
             try:

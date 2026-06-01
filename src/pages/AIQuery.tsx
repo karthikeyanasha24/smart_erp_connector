@@ -7,8 +7,8 @@ import {
 import {
   Send, Sparkles, Code2, BarChart2, Loader2,
   Zap, Brain, Terminal, Copy, Check, ArrowRight, Database, ShieldCheck,
-  ChevronDown, ThumbsUp, ThumbsDown, BookMarked, Star, Plus, Trash2,
-  Search, X, LayoutTemplate, CheckCircle2, AlertCircle, MessageSquarePlus,
+  ChevronDown, ThumbsUp, ThumbsDown, BookMarked,
+  Search, LayoutTemplate, CheckCircle2, AlertCircle, MessageSquarePlus,
   TrendingUp, Building2, Package, Users, Clock, Hash,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
@@ -20,20 +20,17 @@ import {
   type KPICard,
 } from '../lib/nlqVisualization';
 import verifiedQueriesFallback from '../data/verified_nlq_queries.json';
+import verifiedAiTemplates from '../data/ai_query_templates.json';
 
 const PIE_COLORS = ['#00b8e6', '#00e67a', '#ffb800', '#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#4ade80'];
 
-// ── Predefined templates ──────────────────────────────────────────────────────
-const PREDEFINED_TEMPLATES: QueryTemplate[] = [
-  { id: 'tpl_1', label: 'Top branches by revenue', question: 'Show top 10 branches by revenue this month', category: 'Revenue', builtin: true },
-  { id: 'tpl_2', label: 'Daily revenue trend', question: 'Show daily revenue trend for the last 30 days', category: 'Trends', builtin: true },
-  { id: 'tpl_3', label: 'Category breakdown', question: 'Break down sales by product category this quarter', category: 'Products', builtin: true },
-  { id: 'tpl_4', label: 'Top salespersons', question: 'Who are the top 10 salespersons by revenue MTD?', category: 'Sales', builtin: true },
-  { id: 'tpl_5', label: 'Customer count', question: 'How many unique customers made purchases this month?', category: 'Customers', builtin: true },
-  { id: 'tpl_6', label: 'Avg order value', question: 'What is the average order value by branch this quarter?', category: 'Revenue', builtin: true },
-  { id: 'tpl_7', label: 'Revenue vs last year', question: 'Compare this month\'s revenue to the same period last year', category: 'Trends', builtin: true },
-  { id: 'tpl_8', label: 'Department performance', question: 'Show revenue by department for the current month', category: 'Departments', builtin: true },
-];
+/** 10 verified FAQ templates — source: test/verified_ai_templates.py */
+const QUERY_TEMPLATES: QueryTemplate[] = verifiedAiTemplates as QueryTemplate[];
+
+function templateTopBadge(label: string): string | null {
+  const m = label.match(/\btop\s+(\d+)\b/i);
+  return m ? `Top ${m[1]}` : null;
+}
 
 // ── Context topic detection ───────────────────────────────────────────────────
 
@@ -140,8 +137,8 @@ interface QueryTemplate {
   question: string;
   category: string;
   builtin: boolean;
+  template_id?: string;
   sql?: string;
-  savedAt?: string;
 }
 
 interface ApprovedQuery {
@@ -207,7 +204,6 @@ function jaccardSimilarity(a: string, b: string): number {
 // ── LocalStorage helpers ──────────────────────────────────────────────────────
 
 const LS_APPROVED = 'smarterp_approved_queries';
-const LS_TEMPLATES = 'smarterp_user_templates';
 
 function loadApproved(): ApprovedQuery[] {
   try { return JSON.parse(localStorage.getItem(LS_APPROVED) ?? '[]'); } catch { return []; }
@@ -215,14 +211,6 @@ function loadApproved(): ApprovedQuery[] {
 
 function saveApproved(list: ApprovedQuery[]) {
   localStorage.setItem(LS_APPROVED, JSON.stringify(list.slice(0, 200)));
-}
-
-function loadUserTemplates(): QueryTemplate[] {
-  try { return JSON.parse(localStorage.getItem(LS_TEMPLATES) ?? '[]'); } catch { return []; }
-}
-
-function saveUserTemplates(list: QueryTemplate[]) {
-  localStorage.setItem(LS_TEMPLATES, JSON.stringify(list.slice(0, 100)));
 }
 
 // ── Sub-components (memoized) ─────────────────────────────────────────────────
@@ -531,13 +519,7 @@ export default function AIQuery() {
   // Left panel tabs
   const [leftTab, setLeftTab] = useState<LeftTab>('suggestions');
 
-  // Templates
-  const [userTemplates, setUserTemplates] = useState<QueryTemplate[]>(() => loadUserTemplates());
   const [templateFilter, setTemplateFilter] = useState('');
-  const [addingTemplate, setAddingTemplate] = useState(false);
-  const [newTplLabel, setNewTplLabel] = useState('');
-  const [newTplQuestion, setNewTplQuestion] = useState('');
-  const [newTplCategory, setNewTplCategory] = useState('Custom');
 
   // Approved queries
   const [approvedQueries, setApprovedQueries] = useState<ApprovedQuery[]>(() => loadApproved());
@@ -611,65 +593,15 @@ export default function AIQuery() {
     }));
   }, [showToast]);
 
-  // ── Template management ────────────────────────────────────────────────────
-  const allTemplates = useMemo(() => [...PREDEFINED_TEMPLATES, ...userTemplates], [userTemplates]);
-
   const filteredTemplates = useMemo(() => {
     const q = templateFilter.trim().toLowerCase();
-    if (!q) return allTemplates;
-    return allTemplates.filter(t =>
+    if (!q) return QUERY_TEMPLATES;
+    return QUERY_TEMPLATES.filter(t =>
       t.label.toLowerCase().includes(q) ||
       t.question.toLowerCase().includes(q) ||
       t.category.toLowerCase().includes(q),
     );
-  }, [allTemplates, templateFilter]);
-
-  const saveTemplate = useCallback(() => {
-    if (!newTplLabel.trim() || !newTplQuestion.trim()) return;
-    const tpl: QueryTemplate = {
-      id: `user_${Date.now()}`,
-      label: newTplLabel.trim(),
-      question: newTplQuestion.trim(),
-      category: newTplCategory.trim() || 'Custom',
-      builtin: false,
-      savedAt: new Date().toISOString(),
-    };
-    setUserTemplates(prev => {
-      const updated = [tpl, ...prev];
-      saveUserTemplates(updated);
-      return updated;
-    });
-    setNewTplLabel(''); setNewTplQuestion(''); setNewTplCategory('Custom');
-    setAddingTemplate(false);
-    showToast('Template saved');
-  }, [newTplLabel, newTplQuestion, newTplCategory, showToast]);
-
-  const deleteTemplate = useCallback((id: string) => {
-    setUserTemplates(prev => {
-      const updated = prev.filter(t => t.id !== id);
-      saveUserTemplates(updated);
-      return updated;
-    });
-  }, []);
-
-  const saveAsTemplate = useCallback((msg: Message) => {
-    if (!msg.userQuestion) return;
-    const tpl: QueryTemplate = {
-      id: `user_${Date.now()}`,
-      label: msg.userQuestion.slice(0, 40),
-      question: msg.userQuestion,
-      category: 'Saved',
-      builtin: false,
-      sql: msg.sql,
-      savedAt: new Date().toISOString(),
-    };
-    setUserTemplates(prev => {
-      const updated = [tpl, ...prev];
-      saveUserTemplates(updated);
-      return updated;
-    });
-    showToast('Query saved as template');
-  }, [showToast]);
+  }, [templateFilter]);
 
   // ── Send message ───────────────────────────────────────────────────────────
   const sendMessage = useCallback(async (text?: string) => {
@@ -834,28 +766,17 @@ export default function AIQuery() {
           <ThumbsDown size={10} />
           Not helpful
         </motion.button>
-        {msg.sql && msg.userQuestion && (
-          <motion.button type="button" onClick={() => saveAsTemplate(msg)}
-            className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
-            style={{
-              background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-              color: 'var(--text-muted)',
-              border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
-            }}
-            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-            <Star size={10} />
-            Save
-          </motion.button>
-        )}
       </div>
     </div>
-  ), [isDark, showSQL, loading, sendMessage, handleFeedback, saveAsTemplate]);
+  ), [isDark, showSQL, loading, sendMessage, handleFeedback]);
 
   // ── Category color ─────────────────────────────────────────────────────────
   const categoryColor: Record<string, string> = {
-    Revenue: '#00b8e6', Trends: '#00e67a', Products: '#ffb800',
-    Sales: '#a78bfa', Customers: '#f472b6', Departments: '#fb923c',
-    Saved: '#00b8e6', Custom: '#94a3b8',
+    Revenue: '#00b8e6', Trends: '#00e67a', Trend: '#00e67a', Products: '#ffb800',
+    Product: '#ffb800', Purchase: '#a78bfa',
+    Sales: '#a78bfa', Customers: '#f472b6', Customer: '#f472b6',
+    Departments: '#fb923c', Department: '#fb923c', Store: '#38bdf8',
+    Category: '#ffb800', Growth: '#4ade80', Today: '#f472b6',
   };
 
   // ── Placeholder adapts to context ──────────────────────────────────────────
@@ -1011,37 +932,11 @@ export default function AIQuery() {
           {leftTab === 'templates' && (
             <div className="flex flex-col flex-1 min-h-0 p-3">
               <div className="flex items-center justify-between mb-2 flex-shrink-0">
-                <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{allTemplates.length} templates</p>
-                <motion.button type="button" onClick={() => setAddingTemplate(v => !v)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold"
-                  style={{ background: 'rgba(0,184,230,0.1)', color: '#00b8e6', border: '1px solid rgba(0,184,230,0.2)' }}
-                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  {addingTemplate ? <X size={10} /> : <Plus size={10} />}
-                  {addingTemplate ? 'Cancel' : 'New'}
-                </motion.button>
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  {QUERY_TEMPLATES.length} verified templates
+                </p>
+                <ShieldCheck size={12} style={{ color: '#00e67a' }} />
               </div>
-
-              <AnimatePresence>
-                {addingTemplate && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className="flex-shrink-0 mb-2 space-y-1.5 overflow-hidden">
-                    <input type="text" placeholder="Template name…" value={newTplLabel} onChange={e => setNewTplLabel(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
-                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }} />
-                    <input type="text" placeholder="Category (e.g. Revenue)…" value={newTplCategory} onChange={e => setNewTplCategory(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
-                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }} />
-                    <textarea placeholder="Question / prompt…" value={newTplQuestion} onChange={e => setNewTplQuestion(e.target.value)} rows={2}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none resize-none"
-                      style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', color: 'var(--text-primary)' }} />
-                    <motion.button type="button" onClick={saveTemplate} disabled={!newTplLabel.trim() || !newTplQuestion.trim()}
-                      className="w-full py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
-                      style={{ background: 'linear-gradient(135deg, #00b8e6, #00e67a)' }} whileTap={{ scale: 0.97 }}>
-                      Save Template
-                    </motion.button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
               <div className="relative mb-2 flex-shrink-0">
                 <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
@@ -1051,17 +946,30 @@ export default function AIQuery() {
               </div>
 
               <div className="space-y-1.5 overflow-y-auto flex-1 scrollbar-none pr-0.5">
+                {filteredTemplates.length === 0 && (
+                  <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>No templates match your search.</p>
+                )}
                 {filteredTemplates.map(tpl => {
                   const color = categoryColor[tpl.category] ?? '#94a3b8';
+                  const topBadge = templateTopBadge(tpl.label);
                   return (
                     <motion.div key={tpl.id} className="group relative px-3 py-2 rounded-xl text-xs"
                       style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}
                       whileHover={{ borderColor: `${color}50` }}>
-                      <div className="flex items-start gap-2 pr-5">
+                      <div className="flex items-start gap-2">
                         <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1" style={{ background: color }} />
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{tpl.label}</p>
-                          <p className="text-2xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{tpl.category}</p>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className="font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{tpl.label}</p>
+                            {topBadge && (
+                              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-2xs font-bold"
+                                style={{ background: `${color}20`, color }}>
+                                {topBadge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-2xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{tpl.category}</p>
+                          <p className="text-2xs mt-1 line-clamp-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{tpl.question}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1 mt-1.5">
@@ -1076,13 +984,6 @@ export default function AIQuery() {
                           whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
                           Edit
                         </motion.button>
-                        {!tpl.builtin && (
-                          <motion.button type="button" onClick={() => deleteTemplate(tpl.id)}
-                            className="ml-auto flex items-center px-1.5 py-0.5 rounded-md text-2xs opacity-0 group-hover:opacity-100"
-                            style={{ color: '#f87171' }} whileHover={{ scale: 1.1 }}>
-                            <Trash2 size={9} />
-                          </motion.button>
-                        )}
                       </div>
                     </motion.div>
                   );

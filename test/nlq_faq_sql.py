@@ -98,6 +98,10 @@ def _cashmemo_mtd_where(alias: str = "sp") -> str:
     )
 
 
+def _cashmemo_today_where(alias: str = "sp") -> str:
+    return f"CAST({alias}.[CashmemoDt] AS DATE) = CAST(GETDATE() AS DATE)"
+
+
 def _top_n_from_question(q: str, default: int = 10) -> int:
     m = re.search(r"\btop\s+(\d+)\b", q, re.I)
     if m:
@@ -198,18 +202,20 @@ ORDER BY TotalSales DESC
 def _sql_highest_branch_this_month(_q: str) -> Dict[str, Any]:
     sql = f"""
 SELECT TOP (1)
-    s.[BranchAlias],
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales
-FROM {_APP} s WITH (NOLOCK)
-WHERE {_mtd_where("s")}
-GROUP BY s.[BranchAlias]
+    sp.[BranchAlias],
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_mtd_where("sp")}
+  AND sp.[BranchAlias] IS NOT NULL
+GROUP BY sp.[BranchAlias]
+HAVING SUM(sp.[SalesNetAmount]) <> 0
 ORDER BY TotalSales DESC
 """
     return _blob(
         "highest_branch_this_month",
         sql,
         "Single branch with highest MTD net sales.",
-        ["Current month = MTD on XnDt."],
+        ["Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt) — aligned with dashboard."],
     )
 
 
@@ -308,20 +314,22 @@ ORDER BY PeriodLabel
 def _sql_avg_bill_by_branch(_q: str) -> Dict[str, Any]:
     sql = f"""
 SELECT TOP (500)
-    s.[BranchAlias],
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales,
-    COUNT(DISTINCT s.[XnNo]) AS BillCount,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS AvgBillValue
-FROM {_APP} s WITH (NOLOCK)
-WHERE {_mtd_where("s")}
-GROUP BY s.[BranchAlias]
+    sp.[BranchAlias],
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales,
+    COUNT(DISTINCT sp.[CashmemoNo]) AS BillCount,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS AvgBillValue
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_mtd_where("sp")}
+  AND sp.[BranchAlias] IS NOT NULL
+GROUP BY sp.[BranchAlias]
+HAVING SUM(sp.[SalesNetAmount]) <> 0
 ORDER BY AvgBillValue DESC
 """
     return _blob(
         "average_bill_value_by_branch",
         sql,
-        "MTD average bill value per branch: total sales divided by distinct bill numbers (XnNo).",
-        ["MTD period; AvgBillValue = SUM(NetAmount) / COUNT(DISTINCT XnNo)."],
+        "MTD average bill value per branch: total sales divided by distinct cash memos.",
+        ["Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt, SalesNetAmount)."],
     )
 
 
@@ -349,19 +357,23 @@ SELECT TOP ({n})
     s.[Itemcode],
     MAX(s.[ArticleNo]) AS ArticleNo,
     MAX(s.[CategoryShortName]) AS Category,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue,
-    CAST(SUM(s.[AppQty]) AS decimal(18, 4)) AS QtySold
-FROM {_APP} s WITH (NOLOCK)
+    CAST(SUM(s.[NetSlsNetAmount]) AS decimal(18, 2)) AS Revenue,
+    CAST(SUM(s.[NetSlsQty]) AS decimal(18, 4)) AS QtySold
+FROM {_SLSXNS} s WITH (NOLOCK)
 WHERE {_mtd_where("s")}
   AND s.[Itemcode] IS NOT NULL
 GROUP BY s.[Itemcode]
+HAVING SUM(s.[NetSlsNetAmount]) <> 0
 ORDER BY Revenue DESC
 """
     return _blob(
         "top_products_mtd",
         sql,
         f"Top {n} products (Itemcode) by MTD net revenue.",
-        ["MTD on XnDt; product grain = Itemcode."],
+        [
+            "Uses SLSXNS_REPORT (NetSlsNetAmount, XnDt) — full sales lines, not sparse APP_REPORT.",
+            "Returns no rows when the current month has no posted sales yet.",
+        ],
     )
 
 
@@ -1585,9 +1597,10 @@ ORDER BY s.[SupplierName], Revenue DESC
     )
 
 
-def _sql_purchases_by_supplier_mtd(_q: str) -> Dict[str, Any]:
+def _sql_purchases_by_supplier_mtd(q: str) -> Dict[str, Any]:
+    n = _top_n_from_question(q, 500)
     sql = f"""
-SELECT TOP (500)
+SELECT TOP ({n})
     p.[SupplierName],
     p.[SupplierAlias],
     CAST(SUM(p.[NetPurNetAmount]) AS decimal(18, 2)) AS NetPurchaseAmount,
@@ -1601,7 +1614,7 @@ ORDER BY NetPurchaseAmount DESC
     return _blob(
         "purchases_by_supplier_mtd",
         sql,
-        "MTD net purchase amount and quantity by supplier (PURXNS).",
+        f"Top {n} suppliers by MTD net purchase amount and quantity (PURXNS).",
         ["PurInvDate MTD filter; metric SUM(NetPurNetAmount)."],
     )
 

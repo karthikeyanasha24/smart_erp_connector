@@ -50,7 +50,10 @@ async def get_customer_count(period: str) -> Optional[int]:
         if not rows:
             return None
         row = rows[0]
-        cnt = _safe_int(row.get("Cnt") or row.get("cnt"))
+        raw = row.get("Cnt")
+        if raw is None:
+            raw = row.get("cnt")
+        cnt = _safe_int(raw)
         if cnt is None:
             return None
         logger.info(

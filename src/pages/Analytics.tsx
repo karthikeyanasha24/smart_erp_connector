@@ -228,8 +228,12 @@ export default function Analytics() {
   const lyKpiDisplay = hasLyData
     ? fmtLakhs(s?.ly_sales ?? 0)
     : (uiLoading || chartLoading ? 'Loading…' : '—');
+  const customerPending =
+    (s?.mtd_sales ?? 0) > 0
+    && (s?.bills ?? 0) > 0
+    && s?.customers == null;
   const customerKpiDisplay = formatCustomerKpi(s?.customers, {
-    loading: (uiLoading || chartLoading) && s?.customers == null,
+    loading: (uiLoading || chartLoading || customerPending) && s?.customers == null,
     hasSalesActivity: (s?.mtd_sales ?? 0) > 0 && ((s?.bills ?? 0) > 0 || (s?.quantity ?? 0) > 0),
   });
 

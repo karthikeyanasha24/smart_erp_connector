@@ -20,6 +20,7 @@ from src.utils.logger import logger
 from src.db.mssql import init_mssql, close_mssql
 from src.middleware.error import register_error_handlers
 from src.spa_static import register_spa_static
+from src.analytics.warmup import start_background_warmer, stop_background_warmer
 
 # --- Routes -------------------------------------------------------------------
 from src.routes.auth import router as auth_router
@@ -38,6 +39,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("SQL Server connected")
     except Exception as exc:
         logger.error("SQL Server connection failed", error=str(exc))
+
+    # Preload NLQ schema (file cache or live INFORMATION_SCHEMA)
+    try:
+        from src.ai.db_chat_pipeline import load_snapshot
+
+        nlq_snap = await load_snapshot()
+        logger.info(
+            "NLQ schema ready",
+            views=len(nlq_snap.get("objects", {})),
+            source="cache" if nlq_snap.get("snapshotted_at") else "live",
+        )
+    except Exception as exc:
+        logger.warning("NLQ schema preload failed — AI Query may not work", error=str(exc))
 
     # Auto-configure analytics from schema index (built by build_schema_index.py)
     try:
@@ -64,9 +78,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:
         logger.error("Schema index load failed", error=str(exc))
 
-    logger.info("SmarterPConnector API ready — live SQL queries, no cache", port=cfg.PORT)
+    # Restore in-memory analytics cache from PostgreSQL (if available), then warm in background.
+    try:
+        from src.analytics.cache import cache
+        restored = await cache.restore_from_pg()
+        if restored:
+            logger.info("Analytics cache restored from PostgreSQL", entries=restored)
+    except Exception as exc:
+        logger.warning("Analytics cache restore skipped", error=str(exc))
+
+    await start_background_warmer()
+    logger.info("SmarterPConnector API ready", port=cfg.PORT, warmup=cfg.ANALYTICS_WARMUP)
 
     yield
+
+    await stop_background_warmer()
+    try:
+        from src.analytics.cache import cache
+        await cache.flush_to_pg()
+    except Exception:
+        pass
 
     await close_mssql()
     logger.info("Shutdown complete")

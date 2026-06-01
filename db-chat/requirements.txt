@@ -1,0 +1,8 @@
+# Required
+pyodbc>=4.0.39         # MSSQL connection
+anthropic>=0.28.0      # Claude API  (if using claude)
+openai>=1.0.0          # GPT-4 API   (if using gpt)
+python-dotenv>=1.0.0   # .env file loading
+
+# Optional but strongly recommended (pretty terminal output)
+rich>=13.0.0

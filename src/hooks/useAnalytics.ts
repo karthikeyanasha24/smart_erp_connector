@@ -80,6 +80,76 @@ const TODAY_CACHE_KEYS = new Set([
   'dashboard:v2:today::',
 ]);
 
+/** Client cache keys that must roll over at local midnight. */
+const ROLLING_CLIENT_KEYS = new Set([
+  'dashboard:v2:mtd::',
+  'dashboard:v2:today::',
+  'kpis:mtd',
+  'kpis:v2:today',
+]);
+
+const ROLLING_ANALYTICS_PERIODS = new Set(['today', 'yesterday', 'mtd', 'qtd', 'ytd', 'last_6m']);
+
+function localTodayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function cacheEntryIsFromToday(key: string): boolean {
+  const e = _store.get(key);
+  if (!e) return false;
+  const entryDay = new Date(e.ts).toLocaleDateString('en-CA');
+  return entryDay === localTodayIso();
+}
+
+function dashboardAsOfDate(d: DashboardResponse | null | undefined): string | null {
+  if (!d) return null;
+  const end = d.date_range?.end;
+  if (end) return end.slice(0, 10);
+  const trend = d.trend ?? [];
+  if (!trend.length) return null;
+  const dates = trend
+    .map((p) => p.date?.slice(0, 10))
+    .filter((x): x is string => !!x);
+  return dates.sort().pop() ?? null;
+}
+
+/** True when cached MTD/today dashboard belongs to a prior calendar day. */
+function isRollingDashboardStale(
+  d: DashboardResponse | null | undefined,
+  period?: string,
+): boolean {
+  if (!d) return false;
+  const p = period ?? d.period ?? 'mtd';
+  if (!ROLLING_ANALYTICS_PERIODS.has(p) && p !== 'today') return false;
+  const asOf = dashboardAsOfDate(d);
+  if (!asOf) return false;
+  if (p === 'today') return asOf !== localTodayIso();
+  // MTD/QTD/YTD rolling windows end on today
+  return asOf !== localTodayIso();
+}
+
+function isRollingClientCacheStale(key: string, entryTs?: number): boolean {
+  const rollingKey =
+    ROLLING_CLIENT_KEYS.has(key)
+    || (key.startsWith('analytics-page:')
+      && ROLLING_ANALYTICS_PERIODS.has(key.split(':')[2] ?? ''));
+  if (!rollingKey) return false;
+  const ts = entryTs ?? _store.get(key)?.ts;
+  if (ts == null) return false;
+  return new Date(ts).toLocaleDateString('en-CA') !== localTodayIso();
+}
+
+function purgeStaleClientCache(key: string): void {
+  _store.delete(key);
+  try {
+    localStorage.removeItem(LS_PREFIX + key);
+  } catch { /* ignore */ }
+}
+
 // ── Init: restore localStorage into _store on module load ──
 ;(function restoreFromLS() {
   try {
@@ -96,11 +166,11 @@ const TODAY_CACHE_KEYS = new Set([
       const item = localStorage.getItem(LS_PREFIX + k);
       if (!item) continue;
       const entry: CacheEntry<unknown> = JSON.parse(item);
-      if (now - entry.ts < LS_MAX_TTL) {
-        _store.set(k, entry);   // hydrate in-memory cache
-      } else {
-        localStorage.removeItem(LS_PREFIX + k);  // evict old
+      if (now - entry.ts >= LS_MAX_TTL || isRollingClientCacheStale(k, entry.ts)) {
+        localStorage.removeItem(LS_PREFIX + k);
+        continue;
       }
+      _store.set(k, entry);
     }
   } catch { /* localStorage unavailable */ }
 })();
@@ -170,8 +240,17 @@ function dashboardTrendMissingLy(d: DashboardResponse): boolean {
 }
 
 function getDashboardCache(key: string): DashboardResponse | null {
+  if (isRollingClientCacheStale(key)) {
+    purgeStaleClientCache(key);
+    return null;
+  }
   const d = cacheGet<DashboardResponse>(key);
   if (!d || isEmptyDashboard(d)) return null;
+  const period = key.includes('today') ? 'today' : 'mtd';
+  if (isRollingDashboardStale(d, period)) {
+    purgeStaleClientCache(key);
+    return null;
+  }
   return d;
 }
 
@@ -355,14 +434,6 @@ function notifyDashboardHydrate(): void {
       /* ignore listener errors */
     }
   });
-}
-
-function localTodayIso(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }
 
 function summaryFromTrendPoint(pt: TrendPoint): DashboardResponse['summary'] {
@@ -637,16 +708,16 @@ function enrichSummaryFromKpi(
   kpi: KPIsResponse | null | undefined,
 ): DashboardResponse['summary'] {
   if (!kpi) return summary;
-  const cust = kpi.customers?.value;
+  const cust = kpi.distinct_clients?.value ?? kpi.customers?.value;
   return {
     ...summary,
     ly_sales: kpi.revenue?.prior ?? summary.ly_sales,
     sales_growth_pct: kpi.revenue?.growth ?? summary.sales_growth_pct,
-    mtd_sales: summary.mtd_sales || kpi.revenue?.value || 0,
-    bills: summary.bills || kpi.transactions?.value || 0,
-    quantity: summary.quantity || kpi.quantity?.value || 0,
+    mtd_sales: summary.mtd_sales ?? kpi.revenue?.value ?? 0,
+    bills: summary.bills ?? kpi.transactions?.value ?? 0,
+    quantity: summary.quantity ?? kpi.quantity?.value ?? 0,
     customers:
-      summary.customers != null && summary.customers > 0
+      summary.customers != null
         ? summary.customers
         : cust != null && Number.isFinite(cust)
           ? Math.round(cust)
@@ -783,6 +854,7 @@ function dashboardFromBundle(
 
 function shouldKeepExistingMtd(prev: DashboardResponse | null, incoming: DashboardResponse): boolean {
   if (!prev || !dashboardHasCharts(prev)) return false;
+  if (isRollingDashboardStale(prev, 'mtd')) return false;
   // Full dashboard with YoY bars beats bundle-only partial.
   if (!dashboardTrendMissingLy(prev) && dashboardTrendMissingLy(incoming)) return true;
   return false;
@@ -915,6 +987,10 @@ function clearIntradayClientCache(): void {
 }
 
 function hasTodaySnapshot(todayRaw: DashboardResponse | null, todayKpis: KPIsResponse | null): boolean {
+  if (isRollingClientCacheStale(KEY_KPIS_TODAY) || isRollingClientCacheStale(KEY_DASH_TODAY)) {
+    return false;
+  }
+  if (todayRaw && isRollingDashboardStale(todayRaw, 'today')) return false;
   if (todayKpis?.revenue != null || todayKpis?.transactions != null) return true;
   if (todayRaw?.summary != null) return true;
   return false;
@@ -1179,7 +1255,7 @@ export function resolveTodaySummary(
 
 export function summaryFromKpis(kpis: KPIsResponse): DashboardResponse['summary'] {
   const rev = kpis.revenue;
-  const custRaw = kpis.customers?.value;
+  const custRaw = kpis.distinct_clients?.value ?? kpis.customers?.value;
   return {
     mtd_sales: rev?.value ?? 0,
     ly_sales: rev?.prior ?? 0,
@@ -1432,7 +1508,11 @@ export async function fetchAnalyticsBundle(period: string, topN = API_TOP_N_MAX)
 }
 
 function analyticsPageCacheKey(period: string, startDate?: string, endDate?: string): string {
-  return `analytics-page:${period}:${startDate ?? ''}:${endDate ?? ''}`;
+  const base = `analytics-page:${period}:${startDate ?? ''}:${endDate ?? ''}`;
+  if (period !== 'custom' && ROLLING_ANALYTICS_PERIODS.has(period)) {
+    return `${base}:${localTodayIso()}`;
+  }
+  return base;
 }
 
 function isEmptyAnalyticsPage(d: AnalyticsPageData | null | undefined): boolean {
@@ -1457,16 +1537,15 @@ function applyBundleCustomerCount(
   page: AnalyticsPageData,
   count: number | null | undefined,
 ): AnalyticsPageData {
-  if (count == null || !page.summary) return page;
-  return { ...page, summary: { ...page.summary, customers: count } };
+  if (count == null || !Number.isFinite(count) || !page.summary) return page;
+  return { ...page, summary: { ...page.summary, customers: Math.round(count) } };
 }
 
 function bundleNeedsDashboardMerge(period: string, core: AnalyticsBundleResponse): boolean {
-  if (PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period) && !bundleHasCustomerCount(core)) {
-    return true;
-  }
+  if (!bundleHasCustomerCount(core)) return true;
+  if (PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period)) return true;
   if (PERIODS_WITH_YOY_DASHBOARD.has(period)) {
-    return !bundleTrendHasLy(core) || !bundleHasCustomerCount(core);
+    return !bundleTrendHasLy(core);
   }
   return false;
 }
@@ -1549,15 +1628,26 @@ function emitPageUpdate(period: string, data: AnalyticsPageData): void {
  * Phase 1: bundle (fast when server cache warm) → paint immediately.
  * Phase 2: departments + dashboard YoY (dashboard HTTP starts in parallel with bundle).
  */
+/** True when analytics page has a distinct-customer count (0 is valid). */
+function pageHasCustomerCount(d: AnalyticsPageData | null | undefined): boolean {
+  return d?.summary?.customers != null && Number.isFinite(d.summary.customers);
+}
+
+/** Sales/bills loaded but customer count never arrived — stale partial cache. */
+function needsCustomerCountBackfill(d: AnalyticsPageData | null | undefined): boolean {
+  if (!d?.summary || pageHasCustomerCount(d)) return false;
+  return (d.summary.mtd_sales ?? 0) > 0 || (d.summary.bills ?? 0) > 0;
+}
+
 /** True when cached data is fully merged and no background dashboard fetch is needed. */
 function cachedIsFullyMerged(d: AnalyticsPageData, period: string): boolean {
-  if (d.checksum != null) return true;
+  if (needsCustomerCountBackfill(d)) return false;
+  if (d.checksum != null && pageHasCustomerCount(d)) return true;
   if (PERIODS_WITH_YOY_DASHBOARD.has(period) || PERIODS_FETCH_DASHBOARD_FOR_CUSTOMERS.has(period)) {
     const hasLy = (d.yoyTrend ?? []).some((p) => (p.prior ?? 0) > 0);
-    const hasCust = d.summary?.customers != null;
-    return hasLy && hasCust;
+    return hasLy && pageHasCustomerCount(d);
   }
-  return true;
+  return pageHasCustomerCount(d) || !needsCustomerCountBackfill(d);
 }
 
 export function prefetchAnalyticsPage(
@@ -1575,6 +1665,7 @@ export function prefetchAnalyticsPage(
     && isUsable(key)
     && isCompleteAnalyticsPage(cached, period)
     && !needsDepartmentBackfill(cached)
+    && !needsCustomerCountBackfill(cached)
     && cachedIsFullyMerged(cached, period)
   ) {
     onPartial?.(cached);
@@ -1737,7 +1828,7 @@ export function useAnalyticsPage(
   startDate?: string,
   endDate?: string,
 ): AnalyticsPageResult {
-  const cacheKey = `analytics-page:${period}:${startDate ?? ''}:${endDate ?? ''}`;
+  const cacheKey = analyticsPageCacheKey(period, startDate, endDate);
   const cached = cacheGet<AnalyticsPageData>(cacheKey);
 
   // ── Stale-data guard ────────────────────────────────────────────────────────
@@ -1900,6 +1991,7 @@ export function useAnalyticsPage(
       const freshComplete =
         isFresh(cacheKey)
         && isCompleteAnalyticsPage(cached, period)
+        && !needsCustomerCountBackfill(cached)
         && cachedIsFullyMerged(cached, period)
         && !needsDepartmentBackfill(cached);
       if (freshComplete) return;

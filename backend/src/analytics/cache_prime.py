@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 from src.config import cfg
 from src.analytics.cache import cache
-from src.utils.date_utils import trend_granularity
+from src.utils.date_utils import trend_granularity, period_cache_key
 
 
 def assemble_bundle_from_chart_caches(
@@ -26,11 +26,11 @@ def assemble_bundle_from_chart_caches(
     n = min(top_n, cfg.ANALYTICS_TOP_N_MAX)
     gran = trend_granularity(period)
     specs: list[tuple[str, str, bool]] = [
-        ("branches", f"chart:branch:v2:{period}", True),
-        ("trend", f"chart:trend:v4:{period}:{gran}", True),
-        ("categories", f"chart:category:v2:{period}:{n}", True),
-        ("kpis", f"kpi:v3:{period}", include_kpis),
-        ("departments", f"chart:department:v3:{period}:{n}", include_departments),
+        ("branches", period_cache_key("chart:branch:v2", period), True),
+        ("trend", f"{period_cache_key('chart:trend:v4', period)}:{gran}", True),
+        ("categories", f"{period_cache_key('chart:category:v2', period)}:{n}", True),
+        ("kpis", period_cache_key("kpi:v3", period), include_kpis),
+        ("departments", f"{period_cache_key('chart:department:v3', period)}:{n}", include_departments),
     ]
     payload: Dict[str, Any] = {}
     for name, key, required in specs:
@@ -54,12 +54,12 @@ def prime_chart_caches_from_bundle(
     gran = trend_granularity(period)
 
     if payload.get("branches") is not None:
-        cache.set(f"chart:branch:v2:{period}", payload["branches"])
+        cache.set(period_cache_key("chart:branch:v2", period), payload["branches"])
     if payload.get("trend") is not None:
-        cache.set(f"chart:trend:v4:{period}:{gran}", payload["trend"])
+        cache.set(f"{period_cache_key('chart:trend:v4', period)}:{gran}", payload["trend"])
     if payload.get("categories") is not None:
-        cache.set(f"chart:category:v2:{period}:{n}", payload["categories"])
+        cache.set(f"{period_cache_key('chart:category:v2', period)}:{n}", payload["categories"])
     if payload.get("departments") is not None:
-        cache.set(f"chart:department:v3:{period}:{n}", payload["departments"])
+        cache.set(f"{period_cache_key('chart:department:v3', period)}:{n}", payload["departments"])
     if payload.get("kpis") is not None:
-        cache.set(f"kpi:v3:{period}", payload["kpis"])
+        cache.set(period_cache_key("kpi:v3", period), payload["kpis"])

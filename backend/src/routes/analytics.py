@@ -40,7 +40,7 @@ from src.analytics.customers import get_customer_count
 from src.analytics.transactions import get_transactions, get_transaction_summary
 from src.analytics.view_explorer import fetch_view_page, list_catalog_views
 from src.analytics.concurrency import run_analytics_sql
-from src.analytics.cache_prime import prime_chart_caches_from_bundle
+from src.analytics.cache_prime import prime_chart_caches_from_bundle, assemble_bundle_from_chart_caches
 from src.analytics.dashboard import get_dashboard
 from src.db.mssql import check_mssql_health
 from src.middleware.auth import get_current_user, require_permission, require_roles
@@ -56,10 +56,10 @@ _VALID_PERIODS = {
     "last_month", "last_quarter", "last_year", "custom",
 }
 
-# Periods too long for COUNT(DISTINCT) customer queries — skip to avoid timeouts.
+# Periods where COUNT(DISTINCT CustomerId) routinely exceeds request timeout.
+# YTD / last_6m / qtd run in ~3–20s on SALES_AI_TABLE and are included in bundle.
 _LONG_PERIODS = {
-    "ytd", "qtd", "last_6m", "last_90d", "last_180d",
-    "last_365d", "last_year", "last_quarter",
+    "last_90d", "last_180d", "last_365d", "last_year", "last_quarter",
 }
 
 
@@ -123,6 +123,23 @@ async def _fetch_analytics_bundle(
 ) -> Dict[str, Any]:
     """Run branches + trend + categories (+ optional kpis/depts/customers) in parallel."""
     n = top_n
+
+    cached = assemble_bundle_from_chart_caches(
+        period,
+        n,
+        include_kpis=include_kpis,
+        include_departments=include_departments,
+    )
+    if cached is not None:
+        payload: Dict[str, Any] = {"success": True, "period": period, **cached, "from_cache": True}
+        # Chart caches omit customer_count — always fetch when the client asked for it.
+        if include_customer_count:
+            try:
+                payload["customer_count"] = await get_customer_count(period)
+            except Exception as exc:
+                logger.warning("Bundle cache hit: customer count failed", period=period, error=str(exc))
+        return payload
+
     specs: List[Tuple[str, Any]] = [
         ("branches", get_branch_chart(period)),
         ("trend", get_revenue_trend(period)),

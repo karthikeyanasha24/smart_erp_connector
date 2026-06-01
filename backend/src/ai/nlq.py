@@ -1,6 +1,6 @@
 """
 NLQ Orchestrator
-Full pipeline: natural language → intent → SQL → validate → execute → insights → response.
+Uses the db_chat 3-step pipeline: view selection → SQL gen → validate → execute → explain.
 
 Entry point: process_query(query, user_id, conv_id)
 """
@@ -8,22 +8,15 @@ Entry point: process_query(query, user_id, conv_id)
 from __future__ import annotations
 
 import time
-import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from src.config import cfg
 from src.utils.logger import logger
-from src.utils.date_utils import resolve_date_range
-from src.ai.intent import extract_intent, extract_intent_fast, ExtractedIntent
-from src.ai.sqlgen import generate_sql, generate_sql_template, GeneratedSQL
-from src.ai.test_faq_loader import try_verified_faq
-from src.ai.validator import validate_and_correct
+from src.ai.db_chat_pipeline import run_pipeline, load_snapshot, PipelineResult
 from src.ai.memory import (
-    create_conversation, get_conversation, add_turn, build_context_string,
+    create_conversation, get_conversation, add_turn,
 )
-from src.ai.insights import generate_insights
-from src.db.mssql import execute_query
 
 
 # ─── Response Types ───────────────────────────────────────────────────────────
@@ -51,81 +44,48 @@ class NLQResponse:
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def _intent_to_dict(intent: ExtractedIntent) -> Dict[str, Any]:
-    return {
-        "intent": intent.intent,
-        "period": intent.period,
-        "metric": intent.metric,
-        "dimension": intent.dimension,
-        "tables": intent.tables,
-        "chart_type": intent.chart_type,
-        "top_n": intent.top_n,
-        "filters": intent.filters,
-        "compare_with": intent.compare_with,
-        "confidence": intent.confidence,
-        "raw": intent.raw,
-    }
-
-
-def _infer_columns(records: List[Dict[str, Any]], intent: ExtractedIntent) -> Dict[str, str]:
-    """Guess value and label columns from result set structure."""
+def _infer_chart_type(records: List[Dict[str, Any]]) -> str:
     if not records:
-        return {"value": "Revenue", "label": ""}
-
+        return "none"
+    if len(records) == 1:
+        return "kpi"
     cols = list(records[0].keys())
-    value_col = "Revenue"
-    label_col = ""
+    date_hints = ("date", "month", "day", "period")
+    has_date = any(any(h in c.lower() for h in date_hints) for c in cols)
+    if has_date and len(records) > 1:
+        return "line"
+    if len(cols) == 2 or len(cols) <= 4:
+        return "bar"
+    return "table"
 
-    # Find numeric column (prefer sales/revenue metrics)
-    for name in [
-        "TotalSales", "MTDSales", "Revenue", "NetSalesAmount", "TotalRevenue",
-        "Amount", "Value", "TodaySales", "MTDTotalSales",
-    ]:
-        if name in cols:
-            value_col = name
-            break
-    else:
-        for col in cols:
-            try:
-                v = records[0].get(col)
-                if v is None:
-                    continue
-                float(str(v).replace(",", ""))
-                value_col = col
-                break
-            except (TypeError, ValueError):
-                continue
 
-    date_cols = {
-        c for c in cols
-        if any(h in c.lower() for h in ("month", "date", "day", "period"))
+def _pipeline_to_intent(result: PipelineResult) -> Dict[str, Any]:
+    return {
+        "intent": "query",
+        "period": "auto",
+        "metric": "",
+        "dimension": "",
+        "tables": result.selected_views,
+        "chart_type": _infer_chart_type(result.records),
+        "top_n": None,
+        "filters": {},
+        "compare_with": None,
+        "confidence": 1.0,
+        "raw": result.view_selection_reason,
+        "pipeline": "db_chat",
     }
 
-    dim_hints = {
-        "branch": ["Store", "Branch", "BranchAlias", "BranchName"],
-        "category": ["Category", "CategoryShortName"],
-        "department": ["Department", "DepartmentShortName"],
-        "salesperson": ["SalesPersonName", "Salesperson"],
-    }
-    if intent.dimension and intent.dimension in dim_hints:
-        for col in dim_hints[intent.dimension]:
-            if col in cols and col not in date_cols:
-                label_col = col
-                break
 
-    # Dept + category breakdown — use composite for ranking insights
-    if "Department" in cols and "Category" in cols:
-        label_col = "_composite_dept_cat"
-    elif not label_col:
-        for col in cols:
-            if col in date_cols or col == value_col:
-                continue
-            sample = records[0].get(col)
-            if sample is not None and not isinstance(sample, (int, float)):
-                label_col = col
-                break
-
-    return {"value": value_col, "label": label_col}
+def _summary_to_insights(summary: str) -> List[Dict[str, Any]]:
+    if not summary:
+        return []
+    return [
+        {
+            "title": "Analysis",
+            "description": summary,
+            "severity": "info",
+        }
+    ]
 
 
 # ─── Main Orchestrator ────────────────────────────────────────────────────────
@@ -138,178 +98,63 @@ async def process_query(
     provider: str = "claude",
 ) -> NLQResponse:
     start = time.perf_counter()
-    warnings: List[str] = []
-    from_template = False
 
-    # ── Step 1: Conversation context ───────────────────────────────────────────
     if conv_id:
         conv = get_conversation(conv_id)
         if conv is None:
-            conv_id = None  # orphaned ID — reset
+            conv_id = None
 
     if not conv_id:
         conv = create_conversation(user_id, title=query[:60])
         conv_id = conv.id
 
-    context_str = build_context_string(conv_id)
-
-    faq_template_id: Optional[str] = None
-    faq_blob = try_verified_faq(query)
-    faq_sql = ""
-    if faq_blob and isinstance(faq_blob.get("sql"), str):
-        faq_sql = faq_blob["sql"].strip()
-
-    if faq_sql:
-        # Same curated T-SQL path as CLI `terminal_openai_nlq_sql.py` / export scripts
-        intent = extract_intent_fast(query)
-        if top_n_override:
-            intent.top_n = top_n_override
-
-        date_range = resolve_date_range(intent.period)
-
-        gen_sql = GeneratedSQL(
-            sql=faq_sql,
-            params={},
-            description=(faq_blob.get("explanation") or faq_blob.get("template_id") or "")
-            or "Verified FAQ SQL",
-            estimated_rows="moderate",
-            uses_date_range=False,
-        )
-        from_template = True
-        faq_template_id = faq_blob.get("template_id")
-
-        validation = await validate_and_correct(
-            gen_sql.sql,
-            query,
-            allow_correction=False,
-        )
-        if not validation.valid:
-            raise ValueError(
-                f"Verified FAQ SQL failed validation: {'; '.join(validation.errors)}"
-            )
-
-        if validation.warnings:
-            warnings.extend(validation.warnings)
-
-        assumptions = faq_blob.get("assumptions") or []
-        if any("truncat" in str(a).lower() for a in assumptions):
-            warnings.append(
-                "Result set may be truncated — narrow filters in a follow-up query if needed."
-            )
-    else:
-        # ── Step 2+: Intent extraction (may call AI depending on cfg) ───────────
-        intent = await extract_intent(query, context_str)
-        if top_n_override:
-            intent.top_n = top_n_override
-
-        date_range = resolve_date_range(intent.period)
-
-        gen_sql: Optional[GeneratedSQL] = None
-
-        if cfg.NLQ_FAST_PATH:
-            gen_sql = generate_sql_template(intent, date_range)
-            if gen_sql:
-                from_template = True
-
-        if gen_sql is None:
-            gen_sql = await generate_sql(intent, date_range, context_str)
-
-        if gen_sql is None:
-            raise RuntimeError("SQL generation returned nothing")
-
-        validation = await validate_and_correct(
-            gen_sql.sql,
-            query,
-            allow_correction=True,
-        )
-
-        if not validation.valid:
-            raise ValueError(
-                f"Generated SQL failed validation: {'; '.join(validation.errors)}"
-            )
-
-        if validation.corrected:
-            warnings.append("SQL was auto-corrected by AI.")
-
-        if validation.warnings:
-            warnings.extend(validation.warnings)
-
-    final_sql = validation.sql or gen_sql.sql
-
-    try:
-        result = await execute_query(
-            final_sql,
-            params=gen_sql.params if gen_sql.uses_date_range else None,
-        )
-        records = result["records"]
-    except Exception as exc:
-        logger.error("SQL execution failed", error=str(exc), sql=final_sql[:200])
-        raise RuntimeError(f"Query execution failed: {exc}") from exc
-
-    if len(records) > cfg.DATASET_HARD_CAP:
-        records = records[:cfg.DATASET_HARD_CAP]
-        warnings.append(f"Results capped at {cfg.DATASET_HARD_CAP:,} rows.")
-
-    top_match = re.search(r"SELECT\s+TOP\s*\(\s*(\d+)\s*\)", final_sql, re.I)
-    if top_match and len(records) >= int(top_match.group(1)):
-        warnings.append(
-            f"SQL uses TOP ({top_match.group(1)}) — results may not include all matching rows."
-        )
-
-    col_info = _infer_columns(records, intent)
-    insight_data = await generate_insights(
-        query=query,
-        records=records,
-        intent_type=intent.intent,
-        period_label=date_range.label,
-        value_column=col_info["value"],
-        label_column=col_info["label"] or None,
+    snap = await load_snapshot()
+    result = await run_pipeline(
+        question=query,
         provider=provider,
+        snap=snap,
+        top_n=top_n_override,
     )
 
-    narrative = insight_data.get("summary") or (
-        insight_data["insights"][0]["description"]
-        if insight_data.get("insights")
-        else None
-    )
+    chart_type = _infer_chart_type(result.records)
+    intent = _pipeline_to_intent(result)
+    insights = _summary_to_insights(result.summary)
+
     add_turn(conv_id, "user", query)
     add_turn(
         conv_id,
         "assistant",
-        narrative or gen_sql.description,
-        sql=final_sql,
-        intent=_intent_to_dict(intent),
-        result_summary=f"{len(records)} rows returned for {date_range.label}",
+        result.summary or result.description,
+        sql=result.sql,
+        intent=intent,
+        result_summary=f"{result.record_count} rows returned",
     )
 
     duration_ms = int((time.perf_counter() - start) * 1000)
     logger.info(
-        "NLQ query processed",
+        "NLQ query processed (db_chat pipeline)",
         duration_ms=duration_ms,
-        records=len(records),
-        intent=intent.intent,
-        period=intent.period,
-        from_template=from_template,
-        faq=bool(faq_template_id),
+        records=result.record_count,
+        views=result.selected_views,
+        corrected=result.corrected,
     )
 
-    summary_out = narrative or gen_sql.description
     return NLQResponse(
         query=query,
-        sql=final_sql,
-        records=records,
-        record_count=len(records),
-        intent=_intent_to_dict(intent),
-        chart_type=intent.chart_type,
-        period=intent.period,
-        period_label=date_range.label,
-        description=gen_sql.description,
-        summary=summary_out,
-        insights=insight_data.get("insights", []),
+        sql=result.sql,
+        records=result.records,
+        record_count=result.record_count,
+        intent=intent,
+        chart_type=chart_type,
+        period="auto",
+        period_label="",
+        description=result.description,
+        summary=result.summary,
+        insights=insights,
         conv_id=conv_id,
         duration_ms=duration_ms,
-        corrected=validation.corrected,
-        from_template=from_template,
-        warnings=warnings,
-        faq_template_id=faq_template_id,
+        corrected=result.corrected,
+        from_template=False,
+        warnings=result.warnings,
+        faq_template_id=None,
     )

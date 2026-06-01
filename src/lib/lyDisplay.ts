@@ -48,6 +48,5 @@ export function formatCustomerKpi(
 ): string {
   if (opts.loading) return 'Loading…';
   if (customers == null) return '—';
-  if (customers === 0 && opts.hasSalesActivity) return 'Loading…';
   return fmtCount(customers);
 }
