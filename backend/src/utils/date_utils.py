@@ -286,23 +286,4 @@ def cache_key_is_stale(key: str, ref_date: Optional[date] = None) -> bool:
         return False
     today = ref_date or today_ist()
     return suffix != _fmt(today)
-ix.
-    """
-    if period in _ROLLING_CACHE_PERIODS:
-        return f"{prefix}:{period}:{cache_as_of_date(period, ref_date)}"
-    return f"{prefix}:{period}"
 
-
-def cache_key_date_suffix(key: str) -> Optional[str]:
-    """Extract trailing YYYY-MM-DD from a cache key, if present."""
-    m = re.search(r":(\d{4}-\d{2}-\d{2})$", key)
-    return m.group(1) if m else None
-
-
-def cache_key_is_stale(key: str, ref_date: Optional[date] = None) -> bool:
-    """True when a date-suffixed key belongs to a prior calendar day (compared in IST)."""
-    suffix = cache_key_date_suffix(key)
-    if not suffix:
-        return False
-    today = ref_date or today_ist()
-    return suffix != _fmt(today)
