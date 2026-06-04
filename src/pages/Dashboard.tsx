@@ -15,7 +15,7 @@ import { motion } from 'framer-motion';
 import {
   AreaChart, Area, XAxis, YAxis, ResponsiveContainer,
   Tooltip as ReTooltip, PieChart, Pie, Cell,
-  BarChart, Bar, CartesianGrid,
+  BarChart, Bar, CartesianGrid, LabelList,
 } from 'recharts';
 import {
   TrendingUp, RefreshCw, FlaskConical, X,
@@ -752,13 +752,19 @@ export default function Dashboard() {
           <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Bills per day</p>
           <p className="text-[10px] mb-3" style={{ color:'var(--text-muted)' }}>Bill count each day · {mtdLabel}</p>
           <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={billsChart} margin={{ top: 2, right: 0, left: -14, bottom: 0 }}>
+            <BarChart data={billsChart} margin={{ top: 18, right: 0, left: -14, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(88,130,255,0.05)" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 8, fill:'var(--text-muted)' }} tickLine={false} axisLine={false}
                 interval={Math.max(0, Math.floor(billsChart.length / 5) - 1)} />
               <YAxis tick={{ fontSize: 8, fill:'var(--text-muted)' }} tickLine={false} axisLine={false} />
               <ReTooltip contentStyle={{ background:'rgba(5,9,24,0.96)', border:'1px solid rgba(88,130,255,0.2)', borderRadius:12, fontSize:11 }} />
-              <Bar dataKey="Bills" fill="#26C6DA" radius={[2,2,0,0]} maxBarSize={14} />
+              <Bar dataKey="Bills" fill="#26C6DA" radius={[2,2,0,0]} maxBarSize={14}>
+                {billsChart.length <= 20 && (
+                  <LabelList dataKey="Bills" position="top"
+                    formatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}K` : String(v)}
+                    style={{ fontSize: 8, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                )}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
