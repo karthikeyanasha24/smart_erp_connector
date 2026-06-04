@@ -26,6 +26,13 @@ export function fmtLakhsAxis(v: number): string {
   return `${toLakhs(v).toFixed(1)}L`;
 }
 
+/** Chart Y-axis tick for bill/transaction counts */
+export function fmtCountAxis(v: number): string {
+  if (!Number.isFinite(v)) return '0';
+  if (v >= 1000) return `${(v / 1000).toFixed(v >= 10_000 ? 0 : 1)}K`;
+  return String(Math.round(v));
+}
+
 /** Parse API date / ISO → readable label */
 export function formatChartLabel(raw: string, granularity: 'day' | 'month'): string {
   if (!raw) return '';
