@@ -8,6 +8,7 @@ import {
 import {
   RefreshCw, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
   TrendingUp, TrendingDown, ShoppingBag, Users, Receipt, BarChart2, CalendarRange,
+  FileText, Truck, UserCheck,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady, formatCustomerKpi } from '../hooks/useAnalytics';
@@ -19,7 +20,7 @@ const PERIOD_TABS = [
   { label: 'Today',   period: 'today'   },
   { label: 'MTD',     period: 'mtd'     },
   { label: 'QTD',     period: 'qtd'     },
-  { label: 'YTD',     period: 'ytd'     },
+  { label: 'FY YTD',  period: 'ytd'     },
   { label: 'Last 6M', period: 'last_6m' },
   { label: 'Custom',  period: 'custom'  },
 ];
@@ -30,7 +31,7 @@ const PERIOD_WINDOW_HINT: Partial<Record<string, string>> = {
   mtd: 'Calendar month-to-date.',
   qtd: 'Calendar quarter-to-date.',
   ytd:
-    'Calendar year-to-date (1 Jan–today). Last year compares the same calendar slice.',
+    'Indian Financial Year-to-date (Apr 1–today). Last year compares the same FY slice.',
   last_6m:
     'Rolling last 180 days (today back 179 days), not half a calendar year — it can include last year and total more than YTD.',
   custom: 'Uses the dates you pick; last year uses the same calendar shift.',
@@ -249,6 +250,14 @@ export default function Analytics() {
       icon: KPI_ICONS[3], color: KPI_COLORS[3] },
   ] : [];
 
+  // PowerBI-equivalent extras (loaded with bundle via include_kpis=true)
+  const extras = data?.kpis;
+  const extraCards = extras ? [
+    { label: 'Unique Invoices',    value: fmtCount(extras.unique_invoices?.value ?? null),    sub: 'Distinct invoices',   icon: FileText,   color: '#66BB6A' },
+    { label: 'Distinct Clients',   value: fmtCount(extras.distinct_clients?.value ?? null),   sub: 'Unique buyers',       icon: UserCheck,  color: '#29B6F6' },
+    { label: 'Distinct Suppliers', value: fmtCount(extras.distinct_suppliers?.value ?? null), sub: 'Active suppliers',    icon: Truck,      color: '#FFA726' },
+  ] : [];
+
   const onPieEnter = useCallback((_: any, index: number) => setActivePieIndex(index), []);
 
   const showBarLabels = chartData.length <= 31;
@@ -322,6 +331,11 @@ export default function Analytics() {
           <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
           <Bar dataKey="value" name="Revenue" radius={[4, 4, 0, 0]} maxBarSize={44}>
             {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+            {items.length <= 20 && (
+              <LabelList dataKey="value" position="top"
+                formatter={(v: number) => fmtLakhsAxis(Number(v))}
+                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+            )}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -339,7 +353,13 @@ export default function Analytics() {
           <Line type="monotone" dataKey="value" name="Revenue"
             stroke="#5882ff" strokeWidth={2}
             dot={{ fill: '#5882ff', r: 3, strokeWidth: 0 }}
-            activeDot={{ r: 5, fill: '#5882ff' }} />
+            activeDot={{ r: 5, fill: '#5882ff' }}>
+            {items.length <= 20 && (
+              <LabelList dataKey="value" position="top"
+                formatter={(v: number) => v >= 100 ? `${(v/100).toFixed(1)}L` : `${v.toFixed(1)}`}
+                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+            )}
+          </Line>
         </LineChart>
       </ResponsiveContainer>
     );
@@ -378,9 +398,21 @@ export default function Analytics() {
             tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
           <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
           <Bar dataKey="prior" name="Last Year"
-            fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={28} />
+            fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={28}>
+            {daywiseAreaData.length <= 14 && (
+              <LabelList dataKey="prior" position="top"
+                formatter={(v: number) => fmtLakhsAxis(Number(v))}
+                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+            )}
+          </Bar>
           <Bar dataKey="current" name="Current"
-            fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={28} />
+            fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={28}>
+            {daywiseAreaData.length <= 14 && (
+              <LabelList dataKey="current" position="top"
+                formatter={(v: number) => fmtLakhsAxis(Number(v))}
+                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+            )}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     );
@@ -414,9 +446,13 @@ export default function Analytics() {
               tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
             <Tooltip content={<ChartTooltip />} />
             <Area type="monotone" dataKey="prior" name="Last Year"
-              stroke="#94a3b8" strokeWidth={1.5} fill="url(#dgPrior)" dot={false} />
+              stroke="#94a3b8" strokeWidth={1.5} fill="url(#dgPrior)"
+              dot={daywiseAreaData.length <= 12 ? { fill: '#94a3b8', r: 3, strokeWidth: 0 } : false}
+              activeDot={{ r: 4 }} />
             <Area type="monotone" dataKey="current" name="Current"
-              stroke="#5882ff" strokeWidth={2} fill="url(#dgCurr)" dot={false} />
+              stroke="#5882ff" strokeWidth={2} fill="url(#dgCurr)"
+              dot={daywiseAreaData.length <= 12 ? { fill: '#5882ff', r: 3, strokeWidth: 0 } : false}
+              activeDot={{ r: 5 }} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -650,6 +686,39 @@ export default function Analytics() {
         )}
       </div>
 
+      {/* ── PowerBI-equivalent extras row ── */}
+      {extraCards.length > 0 && (
+        <div className="grid grid-cols-3 gap-4">
+          {extraCards.map((k, i) => {
+            const Icon = k.icon;
+            return (
+              <motion.div key={k.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.06, type: 'spring', stiffness: 280, damping: 26 }}>
+                <Card className="p-4 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
+                    style={{ background: `linear-gradient(90deg, transparent, ${k.color}, transparent)` }} />
+                  <div className="absolute top-0 right-0 w-20 h-20 pointer-events-none rounded-full"
+                    style={{ background: `radial-gradient(circle, ${k.color}18 0%, transparent 70%)`, transform: 'translate(30%,-30%)' }} />
+                  <div className="flex items-start justify-between mb-2">
+                    <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{k.label}</p>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: `${k.color}18`, border: `1px solid ${k.color}30` }}>
+                      <Icon size={13} style={{ color: k.color }} />
+                    </div>
+                  </div>
+                  <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                    {k.value ?? '—'}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{k.sub}</p>
+                </Card>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Checksum strip ── */}
       {data?.checksum && !chartLoading && (
         <Card className="px-4 py-2.5 flex flex-wrap items-center gap-2.5">
@@ -729,7 +798,16 @@ export default function Analytics() {
               </Bar>
               {hasLyData && (
                 <Bar dataKey="prior" name="Last Year"
-                  fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={36} />
+                  fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={36}>
+                  {showBarLabels && (
+                    <LabelList
+                      dataKey="prior"
+                      position="top"
+                      formatter={(v: number) => fmtLakhsAxis(Number(v))}
+                      style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }}
+                    />
+                  )}
+                </Bar>
               )}
             </BarChart>
           </ResponsiveContainer>
@@ -943,13 +1021,12 @@ export default function Analytics() {
             subtitle={`${data?.daywise?.length ?? 0} days · current vs last year`}
             loading={uiLoading}
             isDark={isDark}
-            columns={['#', 'Date', 'Label', 'Sales', 'Bills', 'Qty', 'LY Sales']}
+            columns={['#', 'Date', 'Label', 'Sales', 'Qty', 'LY Sales']}
             rows={(data?.daywise ?? []).map((d, i) => [
               String(i + 1),
               d.date,
               formatChartLabel(d.label || d.date, gran),
               fmtLakhs(d.sales),
-              fmtCount(d.bills),
               fmtCount(d.quantity),
               d.prior > 0 ? fmtLakhs(d.prior) : '—',
             ])}

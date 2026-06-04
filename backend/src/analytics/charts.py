@@ -13,7 +13,7 @@ from src.utils.logger import logger
 from src.utils.date_utils import resolve_date_range, trend_granularity
 from src.utils.sql_ref import sql_table
 from src.db.mssql import execute_query
-from src.analytics.metrics_sql import transactions_aggregate, quantity_column
+from src.analytics.metrics_sql import trend_transactions_aggregate as transactions_aggregate, quantity_column
 from src.analytics.trend_yoy import YOY_TREND_PERIODS, fetch_revenue_trend_yoy
 
 

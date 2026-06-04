@@ -74,11 +74,8 @@ async def fetch_revenue_trend_yoy(period: str) -> List[Dict[str, Any]]:
         period_expr = f"CAST([{date_col}] AS DATE)"
         label_expr = f"FORMAT(CAST([{date_col}] AS DATE), 'dd-MMM')"
 
-    if c.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
-        bills_agg = "COUNT(*)"
-    else:
-        bc = c.SALES_ANALYTICS_BILL_COUNT_COLUMN
-        bills_agg = f"SUM([{bc}])"
+    # Trend charts use COUNT(*) for speed — exact invoice count is on the KPI card
+    bills_agg = "COUNT(*)"
 
     # Current period query — only scans the current window
     sql_curr = f"""

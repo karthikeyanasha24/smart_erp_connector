@@ -172,13 +172,8 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
     curr_win = f"[{date_col}] >= @startDate AND [{date_col}] < {end_curr}"
     ly_win = f"[{date_col}] >= @lyStart AND [{date_col}] < {end_ly}"
 
-    if c.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
-        bills_expr = f"SUM(CASE WHEN {curr_win} THEN 1 ELSE 0 END)"
-    else:
-        bc = c.SALES_ANALYTICS_BILL_COUNT_COLUMN
-        bills_expr = (
-            f"SUM(CASE WHEN {curr_win} THEN [{bc}] ELSE 0 END)"
-        )
+    # Trend chart: always COUNT(*) — fast; exact invoice count is on KPI card
+    bills_expr = f"SUM(CASE WHEN {curr_win} THEN 1 ELSE 0 END)"
 
     if granularity == "month":
         period_expr = f"FORMAT([{date_col}], 'yyyy-MM')"

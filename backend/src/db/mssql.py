@@ -95,7 +95,11 @@ def _connect_pyodbc() -> Tuple[DbConnection, str]:
 
     global _selected_driver
     last_err: Optional[Exception] = None
-    for driver in _odbc_drivers_to_try():
+    drivers = _odbc_drivers_to_try()
+    # Re-try last working driver first — avoids 78s fallback delay on startup
+    if _selected_driver and _selected_driver in drivers:
+        drivers = [_selected_driver] + [d for d in drivers if d != _selected_driver]
+    for driver in drivers:
         try:
             conn = pyodbc.connect(
                 _build_odbc_conn_str(driver),
@@ -109,7 +113,7 @@ def _connect_pyodbc() -> Tuple[DbConnection, str]:
             last_err = exc
     installed = _installed_odbc_drivers()
     raise RuntimeError(
-        f"Could not connect to SQL Server. Tried: {_odbc_drivers_to_try()}. "
+        f"Could not connect to SQL Server. Tried: {drivers}. "
         f"Installed ODBC drivers: {installed or 'none'}. "
         "Install ODBC Driver 18, or set MSSQL_DRIVER=pymssql on Linux/Render."
     ) from last_err
@@ -255,29 +259,65 @@ _mssql_startup_ok = False
 
 # ─── Init / Close ─────────────────────────────────────────────────────────────
 
-async def init_mssql() -> None:
-    _pool.initialize()
-    loop = asyncio.get_event_loop()
+# Event set when DB is ready — callers can await this before querying
+# Lazy: created on first access so it belongs to the running event loop
+_db_ready: Optional[asyncio.Event] = None
 
-    def _test() -> None:
-        with _pool.connection() as conn:
-            _ping_connection(conn)
 
-    global _mssql_startup_ok
+def _get_db_ready() -> asyncio.Event:
+    global _db_ready
+    if _db_ready is None:
+        _db_ready = asyncio.Event()
+    return _db_ready
+
+
+async def wait_for_db(timeout: float = 180.0) -> bool:
+    """Wait until DB is connected. Returns True if ready, False if timed out."""
+    ev = _get_db_ready()
     try:
-        await loop.run_in_executor(None, _test)
-        _mssql_startup_ok = True
-        logger.info(
-            "SQL Server connected",
-            server=cfg.mssql_server,
-            port=cfg.mssql_port,
-            database=cfg.mssql_database,
-            client="pymssql" if _is_pymssql() else "pyodbc",
-        )
-    except Exception as exc:
-        _mssql_startup_ok = False
-        logger.error("SQL Server connection failed", error=str(exc))
-        raise
+        await asyncio.wait_for(asyncio.shield(ev.wait()), timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        return False
+
+
+async def _background_connect_loop() -> None:
+    """Keeps retrying DB connection until it succeeds. Sets _db_ready when done."""
+    global _mssql_startup_ok
+    loop = asyncio.get_event_loop()
+    attempt = 0
+
+    def _try_connect() -> None:
+        # initialize() already opens + closes a test connection internally
+        _pool.initialize()
+
+    while True:
+        attempt += 1
+        try:
+            await loop.run_in_executor(None, _try_connect)
+            _mssql_startup_ok = True
+            _get_db_ready().set()
+            logger.info(
+                "SQL Server connected",
+                server=cfg.mssql_server,
+                port=cfg.mssql_port,
+                database=cfg.mssql_database,
+                client="pymssql" if _is_pymssql() else "pyodbc",
+                attempt=attempt,
+            )
+            return
+        except Exception as exc:
+            logger.warning(
+                "SQL Server connection attempt failed — retrying in 8s",
+                attempt=attempt,
+                error=str(exc)[:140],
+            )
+            await asyncio.sleep(8)
+
+
+async def init_mssql() -> None:
+    """Start background connection loop. App starts immediately; DB ready when connected."""
+    asyncio.create_task(_background_connect_loop())
 
 
 async def close_mssql() -> None:
@@ -336,12 +376,27 @@ def _bind_and_execute(
 
         final_sql = re.sub(r"@(\w+)", replace_param, final_sql)
 
+    # 10054 / connection-reset errors from legacy ODBC driver — retry once with a fresh connection
+    _RETRYABLE = ("10054", "10060", "08S01", "communication link failure", "dbnetlib")
+
+    def _is_retryable(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return any(k in msg for k in _RETRYABLE)
+
     start = time.perf_counter()
-    with _pool.connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(final_sql, param_values or [])
-        rows = _rows_to_dicts(cursor)
-        duration = (time.perf_counter() - start) * 1000
+    for attempt in range(2):
+        try:
+            with _pool.connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(final_sql, param_values or [])
+                rows = _rows_to_dicts(cursor)
+                duration = (time.perf_counter() - start) * 1000
+            break
+        except Exception as exc:
+            if attempt == 0 and _is_retryable(exc):
+                logger.warning("Query dropped — retrying with fresh connection", error=str(exc)[:120])
+                continue
+            raise
 
     logger.debug("SQL query executed", rows=len(rows), duration_ms=int(duration))
     return rows, duration
@@ -357,10 +412,13 @@ async def execute_query(
     use_nolock = nolock if nolock is not None else cfg.ANALYTICS_NOLOCK
     use_recompile = recompile if recompile is not None else cfg.ANALYTICS_RECOMPILE
 
-    loop = asyncio.get_event_loop()
+    # Wait until DB is ready (background loop sets this after successful connect)
+    if not _get_db_ready().is_set():
+        ready = await wait_for_db(timeout=180.0)
+        if not ready:
+            raise RuntimeError("SQL Server not available after 180s — check network/VPN")
 
-    if not _pool._initialized:
-        _pool.initialize()
+    loop = asyncio.get_event_loop()
 
     records, duration = await loop.run_in_executor(
         None,

@@ -51,6 +51,13 @@ def _start_of_year(d: date) -> date:
     return d.replace(month=1, day=1)
 
 
+def _start_of_financial_year(d: date) -> date:
+    """Indian financial year starts April 1. If current month < April, use previous year."""
+    if d.month >= 4:
+        return d.replace(month=4, day=1)
+    return d.replace(year=d.year - 1, month=4, day=1)
+
+
 def _get_quarter(d: date) -> int:
     return (d.month - 1) // 3 + 1
 
@@ -86,7 +93,11 @@ def resolve_date_range(period: str, ref_date: Optional[date] = None) -> DateRang
         return DateRange(_fmt(_start_of_month(today)), today_str, "Month-to-Date", "mtd")
 
     if lower in ("ytd", "year_to_date", "this_year"):
-        return DateRange(_fmt(_start_of_year(today)), today_str, "Year-to-Date", "ytd")
+        # Indian financial year: April 1 → today
+        fy_start = _start_of_financial_year(today)
+        fy_year = fy_start.year
+        label = f"FY {fy_year}-{str(fy_year + 1)[2:]} (Apr–{today.strftime('%b')})"
+        return DateRange(_fmt(fy_start), today_str, label, "ytd")
 
     if lower in ("qtd", "quarter_to_date", "this_quarter"):
         return DateRange(_fmt(_start_of_quarter(today)), today_str, "Quarter-to-Date", "qtd")

@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { analytics, type CatalogViewMeta, type ViewQueryResponse } from '../lib/api';
 import { getStaticViewCatalog } from '../data/viewCatalog';
 import { fmtCount } from '../lib/format';
+import TableExportButtons, { type ExportNotify, ExportToast } from '../components/export/TableExportButtons';
 
 const STATIC_CATALOG = getStaticViewCatalog();
 const PAGE_SIZES = [25, 50, 100, 200] as const;
@@ -211,6 +212,7 @@ export default function DataViews() {
   const [result, setResult] = useState<ViewQueryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [exportNotify, setExportNotify] = useState<ExportNotify | null>(null);
 
   /* styles */
   const card = {

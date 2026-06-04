@@ -577,6 +577,12 @@ export const analytics = {
     if (params.skip_count) qs.set('skip_count', 'true');
     return apiFetch<ViewQueryResponse>(`/analytics/views/query?${qs}`, { timeoutMs: 120_000 });
   },
+
+  runSql: (sql: string, limit = 500) =>
+    apiFetch<{ success: boolean; columns: string[]; rows: (string | number | null)[][]; row_count: number; duration_ms: number }>(
+      '/analytics/sql',
+      { method: 'POST', body: JSON.stringify({ sql, limit }), timeoutMs: 120_000 }
+    ),
 };
 
 // ── AI / NLQ ──────────────────────────────────────────────────────────────────

@@ -248,7 +248,7 @@ async def get_transaction_summary(period: str = "mtd") -> Dict[str, Any]:
         txn_expr = f"SUM(CASE WHEN {win} THEN 1 ELSE 0 END)"
     else:
         bc = c.SALES_ANALYTICS_BILL_COUNT_COLUMN
-        txn_expr = f"SUM(CASE WHEN {win} THEN [{bc}] ELSE 0 END)"
+        txn_expr = f"COUNT(DISTINCT CASE WHEN {win} THEN [{bc}] END)"
 
     sql = f"""
         SELECT

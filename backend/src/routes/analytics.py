@@ -508,6 +508,53 @@ async def views_catalog(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+
+@router.post("/sql")
+async def run_custom_sql(
+    body: Dict[str, Any],
+    user: TokenPayload = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Execute a read-only custom SQL query. Body: {sql, limit?}"""
+    import re
+    import time as _time
+    from src.db.mssql import execute_query
+
+    sql_raw: str = (body.get("sql") or "").strip()
+    if not sql_raw:
+        raise HTTPException(status_code=400, detail="sql is required")
+
+    first_token = re.split(r"\s+", sql_raw.lstrip(), maxsplit=1)[0].upper()
+    forbidden = {"INSERT","UPDATE","DELETE","DROP","CREATE","ALTER",
+                 "TRUNCATE","EXEC","EXECUTE","GRANT","REVOKE","MERGE"}
+    if first_token in forbidden:
+        raise HTTPException(status_code=400, detail=f"Only SELECT allowed. Got: {first_token}")
+
+    limit = min(int(body.get("limit", 500)), 1000)
+    if sql_raw.upper().lstrip().startswith("SELECT") and "TOP " not in sql_raw.upper()[:30]:
+        sql_raw = re.sub(r"(?i)^SELECT\b", f"SELECT TOP {limit}", sql_raw, count=1)
+
+    t0 = _time.time()
+    try:
+        result = await execute_query(sql_raw, params={}, nolock=False, recompile=False)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    duration_ms = round((_time.time() - t0) * 1000)
+    records = result.get("records", [])
+    columns = list(records[0].keys()) if records else []
+
+    def _safe(v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, (int, float, bool, str)):
+            return v
+        return str(v)
+
+    rows = [[_safe(r[c]) for c in columns] for r in records]
+    logger.info("custom_sql_executed", user=user.email, rows=len(rows), duration_ms=duration_ms)
+    return {"success": True, "columns": columns, "rows": rows,
+            "row_count": len(rows), "duration_ms": duration_ms}
+
 @router.get("/views/query")
 async def views_query(
     view: str = Query(..., description="View key from catalog"),

@@ -15,6 +15,7 @@ import Branch from './pages/Branch';
 import Product from './pages/Product';
 import DataViews from './pages/DataViews';
 import ERPViews from './pages/ERPViews';
+import SQLPlayground from './pages/SQLPlayground';
 import Settings from './pages/Settings';
 import { pathToPage } from './lib/routes';
 import ScrollToTop from './components/ScrollToTop';
@@ -54,6 +55,7 @@ export default function App() {
                   <Route path="/product" element={<Product />} />
                   <Route path="/data" element={<DataViews />} />
                   <Route path="/erp-views" element={<ERPViews />} />
+                  <Route path="/sql-lab" element={<SQLPlayground />} />
                   <Route path="/settings" element={
                     <RoleRoute allowed={['admin', 'manager']}>
                       <Settings />

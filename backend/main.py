@@ -82,11 +82,7 @@ from src.routes.analytics import router as analytics_router
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("SmarterPConnector API starting up...")
 
-    try:
-        await init_mssql()
-        logger.info("SQL Server connected")
-    except Exception as exc:
-        logger.error("SQL Server connection failed", error=str(exc))
+    await init_mssql()  # starts background retry loop — logs when actually connected
 
     # Preload NLQ schema (file cache or live INFORMATION_SCHEMA)
     try:

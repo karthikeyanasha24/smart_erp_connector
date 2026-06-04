@@ -10,6 +10,7 @@ export type Page =
   | 'product'
   | 'data'
   | 'erp-views'
+  | 'sql-lab'
   | 'settings';
 
 export interface KPIMetric {

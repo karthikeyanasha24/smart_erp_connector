@@ -322,13 +322,14 @@ Your ONLY job is to choose which database views/tables are needed to answer a qu
 Rules:
 - Choose 1 to 4 views maximum. Fewer is better.
 - Return ONLY exact view/table names from the list provided. Never invent names.
-- For revenue / sales / branch performance → prefer dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID
-- For detailed per-item sales transactions → dbo.VW_MB_POWERBI_SLSXNS_REPORT
-- For customer information → dbo.VwAICustomerDetails
+- For revenue / sales / branch / category / department / salesperson SALES performance → dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID (has SalesPersonName, BranchAlias, CategoryShortName, SalesNetAmount, SalesQuantity, CashmemoNo)
+- For detailed per-item sales with product attributes → dbo.VW_MB_POWERBI_SLSXNS_REPORT
+- For customer master data (name, address, DOB) → dbo.VwAICustomerDetails
 - For stock / inventory levels → dbo.VwAIStockData or dbo.VW_MB_POWERBI_STOCK_REPORT
-- For purchases → dbo.VW_MB_POWERBI_PURXNS_REPORT
+- For purchases / procurement → dbo.VW_MB_POWERBI_PURXNS_REPORT
 - For product/item catalog → dbo.VW_MB_POWERBI_PRODUCT_MASTER or dbo.VwMstItems
-- For salesperson info → dbo.VwAISalesPerson
+- For salesperson dimension only (name lookup) → dbo.VwAISalesPerson
+- NEVER use dbo.VwAISalesPerson for sales queries — use dbo.VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID which already has SalesPersonName
 
 Return ONLY a JSON object like:
 {
@@ -406,14 +407,19 @@ Rules:
 6. For date filtering use CAST(@date AS DATE) comparisons.
 
 DATE PATTERNS — use EXACTLY these:
-  This month : [DateCol] >= DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)
-               AND [DateCol] < DATEADD(month,1,DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1))
-  Today      : CAST([DateCol] AS DATE) = CAST(GETDATE() AS DATE)
-  This year  : [DateCol] >= DATEFROMPARTS(YEAR(GETDATE()),1,1)
-               AND [DateCol] < DATEADD(year,1,DATEFROMPARTS(YEAR(GETDATE()),1,1))
-  Last month : [DateCol] >= DATEFROMPARTS(YEAR(DATEADD(month,-1,GETDATE())),MONTH(DATEADD(month,-1,GETDATE())),1)
-               AND [DateCol] < DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)
-  Last N days: [DateCol] >= CAST(DATEADD(day,-N,GETDATE()) AS DATE)
+  This month (MTD)  : [DateCol] >= DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)
+                      AND [DateCol] < DATEADD(month,1,DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1))
+  Today             : CAST([DateCol] AS DATE) = CAST(GETDATE() AS DATE)
+  This quarter (QTD): [DateCol] >= DATEFROMPARTS(YEAR(GETDATE()),((MONTH(GETDATE())-1)/3)*3+1,1)
+                      AND [DateCol] <= CAST(GETDATE() AS DATE)
+  Financial YTD     : [DateCol] >= CASE WHEN MONTH(GETDATE())>=4
+                                        THEN DATEFROMPARTS(YEAR(GETDATE()),4,1)
+                                        ELSE DATEFROMPARTS(YEAR(GETDATE())-1,4,1) END
+                      AND [DateCol] <= CAST(GETDATE() AS DATE)
+  Last month        : [DateCol] >= DATEFROMPARTS(YEAR(DATEADD(month,-1,GETDATE())),MONTH(DATEADD(month,-1,GETDATE())),1)
+                      AND [DateCol] < DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)
+  Last N days       : [DateCol] >= CAST(DATEADD(day,-N,GETDATE()) AS DATE)
+  NOTE: "YTD" always means Indian Financial Year (Apr 1 start), NOT Jan 1.
 
 Return ONLY a JSON object:
 {

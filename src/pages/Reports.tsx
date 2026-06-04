@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
-  CartesianGrid, AreaChart, Area,
+  CartesianGrid, AreaChart, Area, LabelList,
 } from 'recharts';
 import { useTheme } from '../context/ThemeContext';
 import { analytics } from '../lib/api';
@@ -114,7 +114,7 @@ export default function Reports() {
 
       const LABELS: Record<string, string> = {
         mtd: 'Month to Date', qtd: 'Quarter to Date',
-        ytd: 'Year to Date', last_6m: 'Last 6 Months',
+        ytd: 'FY Year to Date (Apr 1)', last_6m: 'Last 6 Months',
       };
 
       const built: PeriodSummary[] = periods.map((p) => {
@@ -174,7 +174,7 @@ export default function Reports() {
   const PERIOD_TABS: Array<{ key: typeof selectedPeriod; label: string }> = [
     { key: 'mtd', label: 'MTD' },
     { key: 'qtd', label: 'QTD' },
-    { key: 'ytd', label: 'YTD' },
+    { key: 'ytd', label: 'FY YTD' },
     { key: 'last_6m', label: 'Last 6M' },
   ];
 
@@ -402,7 +402,11 @@ export default function Reports() {
                   <XAxis type="number" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v}L`} />
                   <YAxis type="category" dataKey="name" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} width={70} />
                   <Tooltip formatter={(v: number) => [`₹${v}L`, 'Sales']} />
-                  <Bar dataKey="sales_L" fill="#00b8e6" radius={[0, 4, 4, 0]} opacity={0.85} />
+                  <Bar dataKey="sales_L" fill="#00b8e6" radius={[0, 4, 4, 0]} opacity={0.85}>
+                    <LabelList dataKey="sales_L" position="right"
+                      formatter={(v: number) => `₹${Number(v).toFixed(1)}L`}
+                      style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -437,7 +441,7 @@ export default function Reports() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={summaries.map((s) => ({
-                  label: ['MTD','QTD','YTD','6M'][['mtd','qtd','ytd','last_6m'].indexOf(s.period)] ?? s.period,
+                  label: ['MTD','QTD','FY YTD','6M'][['mtd','qtd','ytd','last_6m'].indexOf(s.period)] ?? s.period,
                   current: s.sales_L,
                   prior: s.ly_sales_L,
                 }))}
@@ -448,8 +452,16 @@ export default function Reports() {
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v}L`} />
                 <Tooltip formatter={(v: number, n: string) => [`₹${v}L`, n === 'current' ? 'This Year' : 'Last Year']} />
-                <Bar dataKey="current" fill="#00b8e6" radius={[4, 4, 0, 0]} barSize={28} opacity={0.9} />
-                <Bar dataKey="prior" fill="#94a3b8" radius={[4, 4, 0, 0]} barSize={28} opacity={0.5} />
+                <Bar dataKey="current" fill="#00b8e6" radius={[4, 4, 0, 0]} barSize={28} opacity={0.9}>
+                  <LabelList dataKey="current" position="top"
+                    formatter={(v: number) => `₹${Number(v).toFixed(1)}L`}
+                    style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                </Bar>
+                <Bar dataKey="prior" fill="#94a3b8" radius={[4, 4, 0, 0]} barSize={28} opacity={0.5}>
+                  <LabelList dataKey="prior" position="top"
+                    formatter={(v: number) => `₹${Number(v).toFixed(1)}L`}
+                    style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           ) : (

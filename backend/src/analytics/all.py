@@ -194,16 +194,16 @@ def bill_count_case(date_col: str, start_ref: str, end_ref: str) -> str:
         )
     col = cfg.SALES_ANALYTICS_BILL_COUNT_COLUMN
     return (
-        f"SUM(CASE WHEN [{date_col}] >= {start_ref} AND [{date_col}] <= {end_ref} "
-        f"THEN [{col}] ELSE 0 END)"
+        f"COUNT(DISTINCT CASE WHEN [{date_col}] >= {start_ref} AND [{date_col}] <= {end_ref} "
+        f"THEN [{col}] END)"
     )
 
 
 def transactions_aggregate() -> str:
-    """Aggregate for GROUP BY charts (line items = rows on SLS_REPORT)."""
+    """Aggregate for GROUP BY charts."""
     if cfg.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
         return "COUNT(*)"
-    return f"SUM([{cfg.SALES_ANALYTICS_BILL_COUNT_COLUMN}])"
+    return f"COUNT(DISTINCT [{cfg.SALES_ANALYTICS_BILL_COUNT_COLUMN}])"
 
 
 # =============================================================================

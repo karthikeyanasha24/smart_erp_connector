@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, BarChart, Bar,
-  LineChart, Line, PieChart, Pie, Cell, Tooltip, Legend,
+  LineChart, Line, PieChart, Pie, Cell, Tooltip, Legend, LabelList,
 } from 'recharts';
 import {
   Send, Sparkles, Code2, BarChart2, Loader2,
@@ -308,7 +308,11 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
               <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={50} />
               <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={48} />
               <Tooltip formatter={tooltipFmt} />
-              <Bar dataKey="value" fill="#00b8e6" radius={[4, 4, 0, 0]} opacity={0.85} />
+              <Bar dataKey="value" fill="#00b8e6" radius={[4, 4, 0, 0]} opacity={0.85}>
+                <LabelList dataKey="value" position="top"
+                  formatter={(v: number) => formatChartValue(Number(v))}
+                  style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+              </Bar>
             </BarChart>
           )}
         </ResponsiveContainer>
@@ -486,7 +490,14 @@ function nlqToMessage(
   const msg: Message = {
     id,
     role: 'ai',
-    content: resp.summary || resp.description || 'Query executed successfully.',
+    content: (() => {
+      const raw = resp.summary || resp.description || 'Query executed successfully.';
+      // Strip raw JSON leaking from AI (e.g. {"sql":...}) — show only if it's plain text
+      if (raw.trimStart().startsWith('{') || raw.trimStart().startsWith('[')) {
+        try { JSON.parse(raw); return 'Query executed successfully.'; } catch { /* not JSON */ }
+      }
+      return raw;
+    })(),
     sql: resp.sql,
     chartType: viz.chartType,
     chart: viz.chartType !== 'none' && viz.chartData.length ? { data: viz.chartData, valueKey: viz.valueKey } : undefined,
