@@ -26,7 +26,7 @@ import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useDashboardPage, summaryFromKpis, resolveTodaySummary, useTransactions, hasLyTrendData, formatLySub, lyGrowthReady, lyChartSubtitle } from '../hooks/useAnalytics';
-import { fmtLakhs, fmtCount, fmtRupees, fmtSmart } from '../lib/format';
+import { fmtLakhs, fmtCount, fmtCountAxis, fmtRupees, fmtSmart } from '../lib/format';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ const CARD_SURFACE = { background:'rgba(255,255,255,0.03)', border:'1px solid rg
 
 // ─── Mini Sparkline ────────────────────────────────────────────────────────────
 
-function MiniSparkline({ data, color }: { data: number[]; color: string }) {
+function MiniSparkline({ data, color, showLabels = false }: { data: number[]; color: string; showLabels?: boolean }) {
   if (data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
@@ -99,23 +99,37 @@ function MiniSparkline({ data, color }: { data: number[]; color: string }) {
   const pts = data.map((v, i) => {
     const x = (i / (data.length - 1)) * W;
     const y = H - ((v - min) / range) * (H - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+    return { x, y, v };
   });
-  const dLine = `M ${pts.join(' L ')}`;
-  // Filled area path
-  const dFill = `M 0,${H} L ${pts.join(' L ')} L ${W},${H} Z`;
+  const dLine = `M ${pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ')}`;
+  const dFill = `M 0,${H} L ${pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ')} L ${W},${H} Z`;
   const uid = color.replace(/[^a-z0-9]/gi, '');
+  const last = pts[pts.length - 1];
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ overflow: 'visible', display: 'block' }}>
-      <defs>
-        <linearGradient id={`sg_${uid}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity={0.28} />
-          <stop offset="100%" stopColor={color} stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      <path d={dFill} fill={`url(#sg_${uid})`} />
-      <path d={dLine} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ overflow: 'visible', display: 'block' }}>
+        <defs>
+          <linearGradient id={`sg_${uid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.28} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <path d={dFill} fill={`url(#sg_${uid})`} />
+        <path d={dLine} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+        {showLabels && last && (
+          <text x={last.x} y={Math.max(8, last.y - 4)} textAnchor="middle"
+            style={{ fontSize: 7, fill: 'var(--text-muted)', fontWeight: 700 }}>
+            {fmtCountAxis(last.v)}
+          </text>
+        )}
+      </svg>
+      {showLabels && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2, fontSize: 8, color: 'var(--text-muted)', fontWeight: 600 }}>
+          <span>{fmtCountAxis(min)}</span>
+          <span>{fmtCountAxis(max)}</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -154,9 +168,10 @@ interface KpiCardProps {
   color: string;
   delay?: number;
   pending?: boolean;   // show shimmer skeleton instead of value
+  sparkLabels?: boolean;
 }
 
-function KpiCard({ icon, value, label, sub, growth, sparkData, color, delay = 0, pending = false }: KpiCardProps) {
+function KpiCard({ icon, value, label, sub, growth, sparkData, color, delay = 0, pending = false, sparkLabels = false }: KpiCardProps) {
   const up = growth == null || growth >= 0;
   const isPending = pending || value === '…';
   return (
@@ -235,7 +250,7 @@ function KpiCard({ icon, value, label, sub, growth, sparkData, color, delay = 0,
 
       {/* Sparkline */}
       <div style={{ marginTop:'auto', paddingTop:8, opacity: isPending ? 0.25 : 1 }}>
-        <MiniSparkline data={sparkData} color={color} />
+        <MiniSparkline data={sparkData} color={color} showLabels={sparkLabels} />
       </div>
     </motion.div>
   );
@@ -293,7 +308,7 @@ export default function Dashboard() {
 
   const {
     mtdRaw, todayRaw, kpis, todayKpis,
-    loading: mLoading, todayLoading, error: fetchError, refetch,
+    loading: mLoading, todayLoading, error: fetchError, refetch, dataFetchedAt,
   } = useDashboardPage();
 
   const doRefresh = useCallback(() => {
@@ -373,6 +388,8 @@ export default function Dashboard() {
     ...(lyReady ? { 'Last Year': p.prior } : {}),
   }));
   const billsChart  = effectiveTrend.slice(-30).map(p => ({ label: p.label, Bills: p.bills }));
+  const billsFromTrend = effectiveTrend.reduce((s, p) => s + (p.bills ?? 0), 0);
+  const showBillsBarLabels = billsChart.length <= 31;
   const branchChart = effectiveBranches.slice(0, 6);
   const revSpark    = effectiveTrend.slice(-15).map(p => p.current);
   const billsSpark  = effectiveTrend.slice(-15).map(p => p.bills);
@@ -388,18 +405,22 @@ export default function Dashboard() {
   const mtdPeriodHint = `Month-to-date: 1st through today (${mtdLabel}).`;
 
   // ── Data freshness indicator ─────────────────────────────────────────────
-  // fetched_at is the Unix timestamp when data was actually pulled from SQL Server.
-  // If it differs from "now" by more than 5 min, show it as "Data as of [time]" with a cache badge.
-  const fetchedAtTs = !demo ? (mtdRaw?.fetched_at ?? todayRaw?.fetched_at ?? null) : null;
+  // Always show when KPIs were last computed (SQL or server cache), not the browser clock.
+  const fetchedAtTs = !demo
+    ? (dataFetchedAt ?? mtdRaw?.fetched_at ?? todayRaw?.fetched_at ?? null)
+    : null;
   const fetchedAtDate = fetchedAtTs ? new Date(fetchedAtTs * 1000) : null;
   const fetchedAtAge = fetchedAtDate ? (now.getTime() - fetchedAtDate.getTime()) / 1000 : 0;
-  const isFromCache = fetchedAtAge > 300; // more than 5 minutes old → cached data
+  const isFromCache = !demo && (
+    mtdRaw?.from_cache === true
+    || todayRaw?.from_cache === true
+    || fetchedAtAge > 300
+  );
   const fetchedAtFmt = fetchedAtDate
     ? fetchedAtDate.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }).toLowerCase()
-    : timeFmt;
-  // If data is from cache, show actual fetch time; otherwise show live clock
-  const displayTime = isFromCache ? fetchedAtFmt : timeFmt;
-  const displayTimeLabel = isFromCache ? 'Data as of' : 'Last Refreshed';
+    : null;
+  const displayTime = fetchedAtFmt ?? timeFmt;
+  const displayTimeLabel = fetchedAtFmt ? 'Data as of' : 'Last Refreshed';
 
   void isDark; // used via CSS vars
 
@@ -455,9 +476,9 @@ export default function Dashboard() {
               )}
             </div>
             <p style={{ fontSize:28, fontWeight:800, color: isFromCache ? '#ffaa00' : '#fff', letterSpacing:'-0.02em', lineHeight:1 }}>{displayTime}</p>
-            {isFromCache && fetchedAtDate && (
+            {isFromCache && (
               <p style={{ fontSize:10, color:'rgba(255,170,0,0.6)', marginTop:2 }}>
-                Live clock: {timeFmt}
+                Cached snapshot — tap Refresh for live SQL
               </p>
             )}
             <div style={{ display:'flex', gap:6, marginTop:10, justifyContent:'flex-end' }}>
@@ -541,12 +562,13 @@ export default function Dashboard() {
           icon={<Activity size={16} style={{ color:'#26C6DA' }} />}
           value={mtdBills}
           label="Transactions"
-          sub={dataPending ? undefined : 'Bills MTD'}
+          sub={dataPending ? undefined : 'Bills MTD · matches daily chart'}
           growth={dataPending ? null : txnGrowth}
           sparkData={billsSpark}
           color="#26C6DA"
           delay={0.05}
           pending={dataPending}
+          sparkLabels
         />
         <KpiCard
           icon={<ArrowUpRight size={16} style={{ color:'#FFA726' }} />}
@@ -750,18 +772,29 @@ export default function Dashboard() {
         {/* Bills per day */}
         <div className="rounded-2xl p-4" style={CARD_SURFACE}>
           <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Bills per day</p>
-          <p className="text-[10px] mb-3" style={{ color:'var(--text-muted)' }}>Bill count each day · {mtdLabel}</p>
-          <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={billsChart} margin={{ top: 18, right: 0, left: -14, bottom: 0 }}>
+          <p className="text-[10px] mb-3" style={{ color:'var(--text-muted)' }}>
+            Bill count each day · {mtdLabel}
+            {!demo && billsFromTrend > 0 && (
+              <span> · Daily sum {fmtCount(billsFromTrend)}
+                {mS?.bills != null && ` · MTD card ${fmtCount(mS.bills)}`}
+              </span>
+            )}
+          </p>
+          <ResponsiveContainer width="100%" height={150}>
+            <BarChart data={billsChart} margin={{ top: showBillsBarLabels ? 22 : 8, right: 4, left: 2, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(88,130,255,0.05)" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 8, fill:'var(--text-muted)' }} tickLine={false} axisLine={false}
-                interval={Math.max(0, Math.floor(billsChart.length / 5) - 1)} />
-              <YAxis tick={{ fontSize: 8, fill:'var(--text-muted)' }} tickLine={false} axisLine={false} />
-              <ReTooltip contentStyle={{ background:'rgba(5,9,24,0.96)', border:'1px solid rgba(88,130,255,0.2)', borderRadius:12, fontSize:11 }} />
-              <Bar dataKey="Bills" fill="#26C6DA" radius={[2,2,0,0]} maxBarSize={14}>
-                {billsChart.length <= 20 && (
+                interval={billsChart.length > 14 ? ('preserveStartEnd' as const) : 0} />
+              <YAxis tickFormatter={fmtCountAxis} width={40}
+                tick={{ fontSize: 8, fill:'var(--text-muted)' }} tickLine={false} axisLine={false} />
+              <ReTooltip
+                formatter={(v: number) => [fmtCount(Number(v)), 'Bills']}
+                labelFormatter={(l) => String(l)}
+                contentStyle={{ background:'rgba(5,9,24,0.96)', border:'1px solid rgba(88,130,255,0.2)', borderRadius:12, fontSize:11 }} />
+              <Bar dataKey="Bills" name="Bills" fill="#26C6DA" radius={[2,2,0,0]} maxBarSize={14}>
+                {showBillsBarLabels && (
                   <LabelList dataKey="Bills" position="top"
-                    formatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}K` : String(v)}
+                    formatter={(v: number) => fmtCountAxis(Number(v))}
                     style={{ fontSize: 8, fill: 'var(--text-muted)', fontWeight: 600 }} />
                 )}
               </Bar>

@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady, formatCustomerKpi } from '../hooks/useAnalytics';
-import { fmtLakhs, fmtCount, fmtLakhsAxis, formatChartLabel } from '../lib/format';
+import { fmtLakhs, fmtCount, fmtCountAxis, fmtLakhsAxis, formatChartLabel } from '../lib/format';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -279,6 +279,18 @@ export default function Analytics() {
     })),
     [data?.daywise, gran]);
 
+  const daywiseBillsData = useMemo(() =>
+    (data?.daywise ?? []).map(d => ({
+      label: formatChartLabel(d.label || d.date, gran),
+      bills: d.bills ?? 0,
+    })),
+    [data?.daywise, gran]);
+
+  const daywiseBillsSum = useMemo(
+    () => (data?.daywise ?? []).reduce((s, d) => s + (d.bills ?? 0), 0),
+    [data?.daywise],
+  );
+
   const topCategories = useMemo(() =>
     allCategories.slice(0, 12).map(c => ({ name: c.name.slice(0, 14), value: c.revenue })),
     [allCategories]);
@@ -379,6 +391,59 @@ export default function Analytics() {
         <PieLegend items={items} isDark={isDark} />
       </div>
     );
+    return undefined;
+  }
+
+  /** Day-wise bill counts — same SQL definition as Bills Generated KPI */
+  function renderDaywiseBills(type: 'bar' | 'line' | 'pie'): React.ReactNode {
+    if (!daywiseBillsData.length) return undefined;
+    const interval = daywiseBillsData.length > 20 ? ('preserveStartEnd' as const) : 0;
+    const showLabels = daywiseBillsData.length <= 31;
+
+    if (type === 'bar') return (
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={daywiseBillsData} barCategoryGap="28%" margin={{ top: showLabels ? 22 : 10, right: 8, left: 2, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+          <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+          <YAxis tickFormatter={fmtCountAxis} axisLine={false} tickLine={false} width={48}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+          <Tooltip
+            formatter={(v: number) => [fmtCount(Number(v)), 'Bills']}
+            labelFormatter={(l) => String(l)}
+            contentStyle={tooltipStyle} cursor={{ fill: cursorFill, radius: 4 }} />
+          <Bar dataKey="bills" name="Bills" fill="#26C6DA" radius={[4, 4, 0, 0]} maxBarSize={28}>
+            {showLabels && (
+              <LabelList dataKey="bills" position="top"
+                formatter={(v: number) => fmtCountAxis(Number(v))}
+                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+            )}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    );
+
+    if (type === 'line') return (
+      <ResponsiveContainer width="100%" height={200}>
+        <LineChart data={daywiseBillsData} margin={{ top: 8, right: 8, left: 2, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+          <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+          <YAxis tickFormatter={fmtCountAxis} axisLine={false} tickLine={false} width={48}
+            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+          <Tooltip
+            formatter={(v: number) => [fmtCount(Number(v)), 'Bills']}
+            contentStyle={tooltipStyle} />
+          <Line type="monotone" dataKey="bills" name="Bills" stroke="#26C6DA" strokeWidth={2}
+            dot={daywiseBillsData.length <= 12 ? { fill: '#26C6DA', r: 3, strokeWidth: 0 } : false} />
+        </LineChart>
+      </ResponsiveContainer>
+    );
+
+    if (type === 'pie') {
+      const top = daywiseBillsData.slice(0, 10).map(d => ({ name: d.label, value: d.bills }));
+      return renderSingleSeries('pie', top);
+    }
     return undefined;
   }
 
@@ -1016,22 +1081,42 @@ export default function Analytics() {
 
         {/* Day-wise breakdown hidden for Today — single-day view makes row table redundant */}
         {period !== 'today' && (
-          <BreakdownTable
-            title="Day-wise Sales"
-            subtitle={`${data?.daywise?.length ?? 0} days · current vs last year`}
-            loading={uiLoading}
-            isDark={isDark}
-            columns={['#', 'Date', 'Label', 'Sales', 'Qty', 'LY Sales']}
-            rows={(data?.daywise ?? []).map((d, i) => [
-              String(i + 1),
-              d.date,
-              formatChartLabel(d.label || d.date, gran),
-              fmtLakhs(d.sales),
-              fmtCount(d.quantity),
-              d.prior > 0 ? fmtLakhs(d.prior) : '—',
-            ])}
-            renderChart={renderDaywise}
-          />
+          <>
+            <BreakdownTable
+              title="Day-wise Sales"
+              subtitle={`${data?.daywise?.length ?? 0} days · current vs last year`}
+              loading={uiLoading}
+              isDark={isDark}
+              columns={['#', 'Date', 'Label', 'Sales', 'Qty', 'LY Sales']}
+              rows={(data?.daywise ?? []).map((d, i) => [
+                String(i + 1),
+                d.date,
+                formatChartLabel(d.label || d.date, gran),
+                fmtLakhs(d.sales),
+                fmtCount(d.quantity),
+                d.prior > 0 ? fmtLakhs(d.prior) : '—',
+              ])}
+              renderChart={renderDaywise}
+            />
+            <BreakdownTable
+              title="Day-wise Bills"
+              subtitle={
+                s
+                  ? `${data?.daywise?.length ?? 0} days · daily sum ${fmtCount(daywiseBillsSum)} · KPI ${fmtCount(s.bills)}`
+                  : `${data?.daywise?.length ?? 0} days · bill count per day`
+              }
+              loading={uiLoading}
+              isDark={isDark}
+              columns={['#', 'Date', 'Label', 'Bills']}
+              rows={(data?.daywise ?? []).map((d, i) => [
+                String(i + 1),
+                d.date,
+                formatChartLabel(d.label || d.date, gran),
+                fmtCount(d.bills),
+              ])}
+              renderChart={renderDaywiseBills}
+            />
+          </>
         )}
 
         <BreakdownTable

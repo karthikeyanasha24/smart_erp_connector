@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  AreaChart, Area, ResponsiveContainer, XAxis, YAxis, BarChart, Bar,
+  AreaChart, Area, ResponsiveContainer, XAxis, YAxis, CartesianGrid, BarChart, Bar,
   LineChart, Line, PieChart, Pie, Cell, Tooltip, Legend, LabelList,
 } from 'recharts';
 import {
@@ -171,6 +171,7 @@ interface Message {
   reusedFrom?: string;
   userQuestion?: string;
   followUps?: string[];
+  recordCount?: number;
 }
 
 // ── Similarity helpers ────────────────────────────────────────────────────────
@@ -261,61 +262,157 @@ const KPICards = memo(function KPICards({ cards }: { cards: KPICard[] }) {
   );
 });
 
+/** Bar width per category when chart scrolls horizontally (no truncation). */
+const BAR_SLOT_PX = 48;
+const PIE_CHART_MAX = 24;
+
+function truncateChartLabel(label: string, max = 12): string {
+  const s = String(label ?? '').trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
 const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 'bar' | 'area' | 'line' | 'pie'; data: ChartPoint[]; valueKey: string }) {
   const { isDark } = useTheme();
   if (!data.length) return null;
-  const tick = { fill: 'var(--text-muted)', fontSize: 9 };
-  const tooltipFmt = (v: number) => [formatChartValue(v), valueKey];
+
+  const sorted = useMemo(
+    () => [...data].sort((a, b) => b.value - a.value),
+    [data],
+  );
+  const plotData = sorted;
+
+  const tick = { fill: 'var(--text-muted)', fontSize: 10 };
+  const gridStroke = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const tooltipStyle = {
+    background: isDark ? 'rgba(8,15,26,0.97)' : 'rgba(255,255,255,0.98)',
+    border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+    borderRadius: 10,
+    fontSize: 11,
+  };
+  const barScrollMinWidth = type === 'bar' && plotData.length > 20
+    ? plotData.length * 42
+    : undefined;
+  const barHeight = type === 'bar' ? 220 : 176;
+  const piePlotData = type === 'pie' && plotData.length > PIE_CHART_MAX
+    ? plotData.slice(0, PIE_CHART_MAX)
+    : plotData;
+
   return (
     <div className="mt-3 rounded-xl p-4"
       style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
-      <div className="flex items-center gap-2 mb-3">
-        <BarChart2 size={11} style={{ color: '#00b8e6' }} />
-        <span className="text-xs font-semibold" style={{ color: '#00b8e6' }}>{valueKey}</span>
+      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <BarChart2 size={11} style={{ color: '#00b8e6' }} />
+          <span className="text-xs font-semibold" style={{ color: '#00b8e6' }}>{valueKey}</span>
+        </div>
+        {type === 'bar' && plotData.length > 12 && (
+          <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>
+            Scroll chart horizontally · {plotData.length} bars · full table below
+          </span>
+        )}
+        {type === 'bar' && plotData.length <= 12 && plotData.length > 0 && (
+          <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>Values on bars</span>
+        )}
+        {type === 'pie' && plotData.length > PIE_CHART_MAX && (
+          <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>
+            Top {PIE_CHART_MAX} of {plotData.length} in chart — see table for all
+          </span>
+        )}
       </div>
-      <div className="h-44">
+      <div
+        className={type === 'bar' ? 'w-full overflow-y-hidden' : 'w-full'}
+        style={type === 'bar' ? { overflowX: plotData.length > 20 ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' } : undefined}
+      >
+        <div style={{ height: barHeight, minWidth: barScrollMinWidth, width: type === 'bar' ? (barScrollMinWidth ?? '100%') : '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
           {type === 'pie' ? (
             <PieChart>
-              <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) => `${String(name).slice(0, 8)} ${((percent ?? 0) * 100).toFixed(0)}%`}>
-                {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+              <Pie
+                data={piePlotData}
+                dataKey="value"
+                nameKey="label"
+                cx="50%"
+                cy="50%"
+                outerRadius={70}
+                label={piePlotData.length <= 6
+                  ? ({ name, percent }) => `${truncateChartLabel(String(name), 10)} ${((percent ?? 0) * 100).toFixed(0)}%`
+                  : false}
+              >
+                {piePlotData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
               </Pie>
-              <Tooltip formatter={(v: number) => formatChartValue(v)} />
+              <Tooltip formatter={(v: number) => formatChartValue(Number(v))} contentStyle={tooltipStyle} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
             </PieChart>
           ) : type === 'area' ? (
-            <AreaChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <AreaChart data={plotData} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="aiChartGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#00b8e6" stopOpacity={0.35} />
                   <stop offset="95%" stopColor="#00b8e6" stopOpacity={0} />
                 </linearGradient>
               </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
               <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={48} />
-              <Tooltip formatter={tooltipFmt} />
-              <Area type="monotone" dataKey="value" stroke="#00b8e6" strokeWidth={2} fill="url(#aiChartGrad)" dot={false} />
+              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={52} />
+              <Tooltip
+                formatter={(v: number) => [formatChartValue(Number(v)), valueKey]}
+                labelFormatter={(l) => String(l)}
+                contentStyle={tooltipStyle}
+              />
+              <Area type="monotone" dataKey="value" stroke="#00b8e6" strokeWidth={2} fill="url(#aiChartGrad)" dot={plotData.length <= 24} />
             </AreaChart>
           ) : type === 'line' ? (
-            <LineChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <LineChart data={plotData} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
               <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={48} />
-              <Tooltip formatter={tooltipFmt} />
-              <Line type="monotone" dataKey="value" stroke="#00e67a" strokeWidth={2} dot={{ r: 2 }} />
+              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={52} />
+              <Tooltip
+                formatter={(v: number) => [formatChartValue(Number(v)), valueKey]}
+                labelFormatter={(l) => String(l)}
+                contentStyle={tooltipStyle}
+              />
+              <Line type="monotone" dataKey="value" stroke="#00e67a" strokeWidth={2} dot={plotData.length <= 20 ? { r: 3 } : false} />
             </LineChart>
-          ) : (
-            <BarChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }} barSize={14}>
-              <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={50} />
-              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={48} />
-              <Tooltip formatter={tooltipFmt} />
-              <Bar dataKey="value" fill="#00b8e6" radius={[4, 4, 0, 0]} opacity={0.85}>
-                <LabelList dataKey="value" position="top"
-                  formatter={(v: number) => formatChartValue(Number(v))}
-                  style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+          ) : type === 'bar' ? (
+            <BarChart
+              data={plotData}
+              margin={{ top: 24, right: 12, left: 4, bottom: plotData.length > 6 ? 80 : 24 }}
+              barCategoryGap="20%"
+              maxBarSize={40}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: 'var(--text-muted)', fontSize: 9, textAnchor: 'end' }}
+                angle={-45}
+                axisLine={false}
+                tickLine={false}
+                interval={0}
+                tickFormatter={(v: string) => truncateChartLabel(v, 14)}
+                height={plotData.length > 6 ? 80 : 36}
+              />
+              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={56} />
+              <Tooltip
+                formatter={(v: number) => [formatChartValue(Number(v)), valueKey]}
+                labelFormatter={(l) => String(l)}
+                contentStyle={tooltipStyle}
+                cursor={{ fill: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}
+              />
+              <Bar dataKey="value" fill="#00b8e6" radius={[4, 4, 0, 0]} opacity={0.9}>
+                {plotData.length <= 24 && (
+                  <LabelList
+                    dataKey="value"
+                    position="top"
+                    formatter={(v: number) => formatChartValue(Number(v))}
+                    style={{ fontSize: 9, fill: 'var(--text-secondary)', fontWeight: 600 }}
+                  />
+                )}
               </Bar>
             </BarChart>
-          )}
+          ) : null}
         </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
@@ -326,13 +423,17 @@ const ResultTable = memo(function ResultTable({
   rows,
   exportName,
   onExportNotify,
+  totalRows,
 }: {
   columns: string[];
   rows: string[][];
   exportName?: string;
   onExportNotify?: (n: ExportNotify) => void;
+  /** When API returned more rows than displayed (should match rows.length after fix). */
+  totalRows?: number;
 }) {
   const { isDark } = useTheme();
+  const total = totalRows ?? rows.length;
   return (
     <div className="mt-3 rounded-xl overflow-hidden"
       style={{ border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}>
@@ -340,7 +441,9 @@ const ResultTable = memo(function ResultTable({
         <div className="flex items-center justify-between px-3 py-2"
           style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
           <span className="text-2xs font-medium" style={{ color: 'var(--text-muted)' }}>
-            {rows.length} row(s)
+            {rows.length === total
+              ? `${total} row(s) — full result`
+              : `Showing ${rows.length} of ${total} row(s)`}
           </span>
           <TableExportButtons
             columns={columns}
@@ -351,7 +454,7 @@ const ResultTable = memo(function ResultTable({
           />
         </div>
       )}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto overflow-y-auto max-h-[min(70vh,520px)]">
         <table className="w-full text-xs min-w-[280px]">
           <thead>
             <tr style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}>
@@ -471,6 +574,34 @@ const Toast = memo(function Toast({ message, type, visible }: { message: string;
 
 // ── NLQ → Message converter ───────────────────────────────────────────────────
 
+/** Never show raw {"sql":...} JSON in the chat bubble. */
+function formatAiContent(resp: NLQResponse): string {
+  const raw = (resp.summary || resp.description || '').trim();
+  if (!raw) {
+    return resp.record_count > 0
+      ? `Returned ${resp.record_count} row(s). See chart and table below.`
+      : 'Query completed — no rows for this period.';
+  }
+  if (raw.startsWith('{') || raw.startsWith('[')) {
+    if (/"(sql|explanation)"\s*:/.test(raw)) {
+      if (resp.record_count > 0) {
+        const desc = resp.description?.trim();
+        return desc && !desc.startsWith('{')
+          ? desc
+          : `Returned ${resp.record_count} row(s). See chart and table below.`;
+      }
+      return 'SQL was generated but could not be run to completion. Open View SQL below, or use FAQ templates on the left (e.g. the same festival/season question).';
+    }
+    try {
+      JSON.parse(raw);
+      return resp.record_count > 0
+        ? `Returned ${resp.record_count} row(s).`
+        : 'Query completed.';
+    } catch { /* partial JSON — fall through */ }
+  }
+  return raw;
+}
+
 function nlqToMessage(
   resp: NLQResponse,
   id: string,
@@ -490,14 +621,7 @@ function nlqToMessage(
   const msg: Message = {
     id,
     role: 'ai',
-    content: (() => {
-      const raw = resp.summary || resp.description || 'Query executed successfully.';
-      // Strip raw JSON leaking from AI (e.g. {"sql":...}) — show only if it's plain text
-      if (raw.trimStart().startsWith('{') || raw.trimStart().startsWith('[')) {
-        try { JSON.parse(raw); return 'Query executed successfully.'; } catch { /* not JSON */ }
-      }
-      return raw;
-    })(),
+    content: formatAiContent(resp),
     sql: resp.sql,
     chartType: viz.chartType,
     chart: viz.chartType !== 'none' && viz.chartData.length ? { data: viz.chartData, valueKey: viz.valueKey } : undefined,
@@ -512,6 +636,7 @@ function nlqToMessage(
     feedback: null,
     reusedFrom,
     userQuestion,
+    recordCount: resp.record_count,
   };
   // Attach adaptive follow-up suggestions
   msg.followUps = generateFollowUps(userQuestion, msg);
@@ -683,12 +808,14 @@ export default function AIQuery() {
       const aiMsg = nlqToMessage(resp, (Date.now() + 1).toString(), provider, msg, approvedMatch?.question);
       setMessages(prev => [...prev, aiMsg]);
     } catch (err) {
+      const detail = err instanceof Error ? err.message : 'Unknown error';
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'ai',
-        content: `Query failed: ${err instanceof Error ? err.message : 'Unknown error'}. Check connection and try again.`,
+        content: `Query failed: ${detail}. Check ERP connection and try again, or pick a **FAQ template** for a verified SQL path.`,
         timestamp: new Date().toLocaleTimeString(),
         userQuestion: msg,
+        warnings: [detail],
       }]);
     } finally {
       setLoading(false);
@@ -757,6 +884,7 @@ export default function AIQuery() {
         <ResultTable
           columns={msg.table.columns}
           rows={msg.table.rows}
+          totalRows={msg.recordCount}
           exportName={`ai_query_${msg.id.slice(0, 8)}`}
           onExportNotify={handleExportNotify}
         />
@@ -855,7 +983,7 @@ export default function AIQuery() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full md:w-72 flex-shrink-0 flex flex-col gap-3 min-h-0 md:max-h-full max-h-80 overflow-hidden"
+        className="w-full md:w-56 flex-shrink-0 flex flex-col gap-3 min-h-0 md:max-h-full max-h-80 overflow-hidden"
       >
         {/* Stats card */}
         <div className="rounded-2xl p-4 flex-shrink-0"
@@ -1201,8 +1329,8 @@ export default function AIQuery() {
                   ? <Sparkles size={13} className="text-white" />
                   : <span className="text-xs font-bold" style={{ color: '#00b8e6' }}>You</span>}
               </div>
-              <div className={`max-w-3xl flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                <div className={`rounded-2xl px-4 py-3 ${msg.role === 'user' ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}
+              <div className={`w-full min-w-0 flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div className={`rounded-2xl px-4 py-3 ${msg.role === 'user' ? 'rounded-tr-sm max-w-xl' : 'rounded-tl-sm w-full'}`}
                   style={{
                     background: msg.role === 'user'
                       ? 'linear-gradient(135deg, #00b8e6, #0092b8)'
