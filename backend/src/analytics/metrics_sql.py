@@ -29,16 +29,20 @@ def bill_count_case(date_col: str, start_ref: str, end_ref: str) -> str:
 
 
 def transactions_aggregate() -> str:
-    """Exact bill count for KPI summary cards — COUNT(DISTINCT invoice)."""
+    """Bill count for KPI cards and GROUP BY trend/chart queries (same definition)."""
     if cfg.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
         return "COUNT(*)"
     return f"COUNT(DISTINCT [{cfg.SALES_ANALYTICS_BILL_COUNT_COLUMN}])"
 
 
+def bills_in_window(window_predicate: str) -> str:
+    """Conditional bill aggregate when current and LY share one GROUP BY scan."""
+    if cfg.SALES_ANALYTICS_BILL_COUNT_MODE == "rows":
+        return f"SUM(CASE WHEN {window_predicate} THEN 1 ELSE 0 END)"
+    col = cfg.SALES_ANALYTICS_BILL_COUNT_COLUMN
+    return f"COUNT(DISTINCT CASE WHEN {window_predicate} THEN [{col}] END)"
+
+
 def trend_transactions_aggregate() -> str:
-    """Fast COUNT(*) for trend chart GROUP BY queries.
-    Always uses row count for speed -- COUNT(DISTINCT) over months of daily groups
-    is 10-50x slower and causes timeouts. Trend bars show approximate volume;
-    exact invoice count is shown on the KPI summary card via bill_count_case().
-    """
-    return "COUNT(*)"
+    """Alias — trend/day-wise bars must match KPI bill totals."""
+    return transactions_aggregate()

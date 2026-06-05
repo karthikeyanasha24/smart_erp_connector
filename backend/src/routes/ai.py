@@ -116,6 +116,9 @@ async def nlq_query(
     except RuntimeError as exc:
         logger.error("NLQ query failed", error=str(exc), query=body.query[:100])
         raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        logger.exception("NLQ query unexpected failure", query=body.query[:100])
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/explain-sql", dependencies=[Depends(require_permission("query:*"))])

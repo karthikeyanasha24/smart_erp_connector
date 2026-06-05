@@ -20,6 +20,7 @@ _faq_initialized = False
 _try_faq_template: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None
 _list_frequent_ai_queries: Optional[Callable[[], List[str]]] = None
 _load_error: Optional[str] = None
+_faq_source_mtime: float = 0.0
 
 
 _FALLBACK_FREQUENT: List[str] = [
@@ -76,11 +77,26 @@ _FALLBACK_FREQUENT: List[str] = [
 ]
 
 
+def _faq_sources_mtime() -> float:
+    """Max mtime of FAQ Python sources — reload when templates change on disk."""
+    mtimes: list[float] = []
+    for name in ("nlq_faq_sql.py", "nlq_faq_kpi.py"):
+        p = _TEST_DIR / name
+        if p.exists():
+            mtimes.append(p.stat().st_mtime)
+    return max(mtimes) if mtimes else 0.0
+
+
 def _ensure_loaded() -> None:
     global _faq_initialized, _try_faq_template, _list_frequent_ai_queries, _load_error
-    if _faq_initialized:
+    global _faq_source_mtime
+
+    source_mtime = _faq_sources_mtime()
+    if _faq_initialized and source_mtime <= _faq_source_mtime:
         return
+
     _faq_initialized = True
+    _faq_source_mtime = source_mtime
     td = str(_TEST_DIR)
     if not (_TEST_DIR / "nlq_faq_sql.py").exists():
         _load_error = f"FAQ module path missing: {_TEST_DIR / 'nlq_faq_sql.py'}"
@@ -90,11 +106,15 @@ def _ensure_loaded() -> None:
     if td not in sys.path:
         sys.path.insert(0, td)
 
+    for mod in ("nlq_faq_kpi", "nlq_faq_sql"):
+        sys.modules.pop(mod, None)
+
     try:
         import nlq_faq_sql as nfs
 
         _try_faq_template = nfs.try_faq_template
         _list_frequent_ai_queries = nfs.list_frequent_ai_queries
+        _load_error = None
     except Exception as exc:
         _load_error = str(exc)
         _LOG.warning("verified FAQ import failed", exc_info=True)

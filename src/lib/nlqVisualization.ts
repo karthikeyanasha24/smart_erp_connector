@@ -43,6 +43,9 @@ const DATE_COL_HINTS = ['monthstart', 'monthlabel', 'transactiondate', 'invoiced
 
 const SKIP_COLS = new Set(['id', 'rownum', 'rn']);
 
+/** Match backend DB_CHAT_MAX_ROWS — full FAQ / store×category grids must not be truncated in the table. */
+const NLQ_TABLE_MAX_ROWS = 3000;
+
 function toNum(v: unknown): number | null {
   if (v == null || v === '') return null;
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -210,14 +213,13 @@ function buildChartData(
   const uniqueLabels = new Set(rawLabels.filter(Boolean));
   if (uniqueLabels.size < records.length) {
     const aggregated = aggregateSum(records, labelKey, valueKey)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 40);
+      .sort((a, b) => b.value - a.value);
     return { chartData: aggregated, labelKey, valueKey };
   }
 
-  // Multi-dimension ranking without date — composite label, top 40
+  // Multi-dimension ranking without date — composite label
   if (dimKeys.length >= 2) {
-    const aggregated = aggregateComposite(records, dimKeys, valueKey).slice(0, 40);
+    const aggregated = aggregateComposite(records, dimKeys, valueKey);
     return {
       chartData: aggregated,
       labelKey: dimKeys.join(' · '),
@@ -226,8 +228,8 @@ function buildChartData(
   }
 
   return {
-    chartData: records.slice(0, 40).map((r, i) => ({
-      label: String(r[labelKey] ?? `#${i + 1}`).slice(0, 28),
+    chartData: records.map((r, i) => ({
+      label: String(r[labelKey] ?? `#${i + 1}`).slice(0, 40),
       value: toNum(r[valueKey]) ?? 0,
     })),
     labelKey,
@@ -252,6 +254,22 @@ function formatCell(v: unknown): string {
   return s.length > 28 ? `${s.slice(0, 26)}…` : s;
 }
 
+/** Detect key-value metric tables like (Metric | Value | Detail) — show as KPI cards, not a chart */
+function isMetricKeyValueTable(records: Record<string, unknown>[]): boolean {
+  if (records.length < 2 || records.length > 20) return false;
+  const cols = Object.keys(records[0]);
+  if (cols.length < 2 || cols.length > 3) return false;
+  const firstColLower = cols[0].toLowerCase();
+  const secondColLower = cols[1].toLowerCase();
+  // First column must be a text "Metric/Label" column, second must be numeric
+  const firstIsLabel = ['metric', 'label', 'kpi', 'indicator', 'name'].some(h => firstColLower.includes(h));
+  const secondIsNum = records.every(r => toNum(r[cols[1]]) != null || r[cols[1]] == null);
+  // All values in first column must be distinct strings
+  const vals = records.map(r => String(r[cols[0]] ?? ''));
+  const allDistinct = new Set(vals).size === vals.length;
+  return firstIsLabel && secondIsNum && allDistinct;
+}
+
 export function buildNLQVisualization(
   records: Record<string, unknown>[],
   chartTypeHint?: string,
@@ -262,6 +280,29 @@ export function buildNLQVisualization(
 
   const { valueKey, labelKey, dateKey, dimKeys } = pickColumns(records);
   const rowCount = records.length;
+
+  // Key-value metric table → KPI cards (e.g. AI insights: Metric | Value | Detail)
+  if (isMetricKeyValueTable(records)) {
+    const cols = Object.keys(records[0]);
+    const metricCol = cols[0];
+    const valueCol = cols[1];
+    const detailCol = cols[2] ?? null;
+    const cards: KPICard[] = records.map(r => {
+      const n = toNum(r[valueCol]);
+      const detail = detailCol ? String(r[detailCol] ?? '').trim() : '';
+      const labelBase = String(r[metricCol] ?? '');
+      return {
+        label: detail ? `${labelBase} — ${detail}` : labelBase,
+        value: n != null ? formatCompact(n) : '—',
+        raw: n ?? undefined,
+      };
+    });
+    const table: ResultTable = {
+      columns: cols,
+      rows: records.map(r => cols.map(c => formatCell(r[c]))),
+    };
+    return { chartType: 'none', chartData: [], valueKey: valueCol, labelKey: metricCol, kpiCards: cards, table };
+  }
 
   // Single scalar row → KPI cards from all numeric columns
   if (rowCount === 1) {
@@ -304,12 +345,11 @@ export function buildNLQVisualization(
     chartType = 'bar';
   }
 
+  const cols = Object.keys(records[0]).slice(0, 8);
   const table: ResultTable = {
-    columns: Object.keys(records[0]).slice(0, 8),
-    rows: records.slice(0, 12).map(r =>
-      Object.keys(records[0])
-        .slice(0, 8)
-        .map(c => formatCell(r[c])),
+    columns: cols,
+    rows: records.slice(0, NLQ_TABLE_MAX_ROWS).map(r =>
+      cols.map(c => formatCell(r[c])),
     ),
   };
 

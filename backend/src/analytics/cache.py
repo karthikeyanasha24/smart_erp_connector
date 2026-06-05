@@ -152,6 +152,11 @@ class AnalyticsCache:
             except RuntimeError:
                 pass
 
+    def get_created_at(self, key: str) -> Optional[float]:
+        """Unix timestamp when this key was last written, or None if missing."""
+        entry = self._store.get(key)
+        return entry.created_at if entry else None
+
     def delete(self, key: str) -> bool:
         if key in self._store:
             del self._store[key]

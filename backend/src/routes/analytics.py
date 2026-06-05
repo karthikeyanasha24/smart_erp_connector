@@ -40,7 +40,11 @@ from src.analytics.customers import get_customer_count
 from src.analytics.transactions import get_transactions, get_transaction_summary
 from src.analytics.view_explorer import fetch_view_page, list_catalog_views
 from src.analytics.concurrency import run_analytics_sql
-from src.analytics.cache_prime import prime_chart_caches_from_bundle, assemble_bundle_from_chart_caches
+from src.analytics.cache_prime import (
+    assemble_bundle_from_chart_caches,
+    bundle_cache_fetched_at,
+    prime_chart_caches_from_bundle,
+)
 from src.analytics.dashboard import get_dashboard
 from src.db.mssql import check_mssql_health
 from src.middleware.auth import get_current_user, require_permission, require_roles
@@ -134,7 +138,16 @@ async def _fetch_analytics_bundle(
         force_refresh=force_refresh,
     )
     if cached is not None:
-        payload: Dict[str, Any] = {"success": True, "period": period, **cached, "from_cache": True}
+        fetched_at = bundle_cache_fetched_at(
+            period, n, include_kpis=include_kpis, include_departments=include_departments,
+        )
+        payload: Dict[str, Any] = {
+            "success": True,
+            "period": period,
+            **cached,
+            "from_cache": True,
+            "fetched_at": fetched_at or time.time(),
+        }
         # Chart caches never include customer_count or extras (distinct_clients etc).
         # Fetch them in parallel when the caller needs them.
         extra_coros = []
@@ -218,6 +231,8 @@ async def _fetch_analytics_bundle(
         prime_chart_caches_from_bundle(period, payload, top_n=n)
     except Exception:
         pass
+    payload["fetched_at"] = time.time()
+    payload["from_cache"] = False
     return payload
 
 
@@ -264,7 +279,17 @@ async def dashboard_page(
             _fetch_analytics_bundle("mtd", 100, include_kpis=True, include_extras=True, force_refresh=force),
             _fetch_analytics_bundle("today", 10, include_kpis=True, include_extras=False, force_refresh=force),
         )
-        return {"success": True, "mtd": mtd, "today": today}
+        ts = [
+            float(x)
+            for x in (mtd.get("fetched_at"), today.get("fetched_at"))
+            if isinstance(x, (int, float)) and x > 0
+        ]
+        return {
+            "success": True,
+            "mtd": mtd,
+            "today": today,
+            "fetched_at": max(ts) if ts else time.time(),
+        }
     except HTTPException:
         raise
     except Exception as exc:

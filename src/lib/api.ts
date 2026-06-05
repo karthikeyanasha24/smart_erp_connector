@@ -119,12 +119,16 @@ export interface AnalyticsBundleResponse {
   customer_count?: number | null;
   timings_ms?: Record<string, number>;
   errors?: Record<string, string>;
+  /** Unix seconds when underlying SQL/cache was last populated */
+  fetched_at?: number;
+  from_cache?: boolean;
 }
 
 export interface DashboardPageResponse {
   success: boolean;
   mtd: AnalyticsBundleResponse;
   today: AnalyticsBundleResponse;
+  fetched_at?: number;
 }
 
 export interface CategoryPoint {
@@ -355,6 +359,7 @@ export interface DashboardResponse {
   branches: { name: string; revenue: number; percentage: number }[];
   date_range?: { start: string; end: string };
   fetched_at?: number;   // Unix timestamp when data was fetched from SQL Server
+  from_cache?: boolean;  // Served from server chart cache (may be older than label suggests)
   checksum: { trend_total: number; summary_total: number; match: boolean };
 }
 

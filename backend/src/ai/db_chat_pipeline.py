@@ -28,7 +28,7 @@ from src.utils.date_utils import today_ist
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _SCHEMA_CACHE_FILE = _PROJECT_ROOT / "db-chat" / "schema_cache.json"
 
-MAX_RESULT_ROWS = int(os.getenv("DB_CHAT_MAX_ROWS", "500"))
+MAX_RESULT_ROWS = int(os.getenv("DB_CHAT_MAX_ROWS", "3000"))
 
 _snap_cache: Optional[dict] = None
 
@@ -48,6 +48,8 @@ class PipelineResult:
     corrected: bool = False
     truncated: bool = False
     conversational: bool = False
+    from_template: bool = False
+    faq_template_id: Optional[str] = None
 
 
 # ─── Schema loading ───────────────────────────────────────────────────────────
@@ -291,6 +293,38 @@ async def call_ai_async(messages: list[dict], system: str, provider: str) -> str
     return await asyncio.to_thread(call_ai, messages, system, provider)
 
 
+def _decode_json_string_literal(value: str) -> str:
+    """Decode a JSON string body (handles \\n, \\\", etc.)."""
+    try:
+        return json.loads(f'"{value}"')
+    except json.JSONDecodeError:
+        return (
+            value.replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+            .replace("\\\\", "\\")
+        )
+
+
+def _extract_json_string_field(raw: str, field: str) -> str:
+    """Pull a string field from AI JSON even when the response is truncated."""
+    closed = re.search(
+        rf'"{field}"\s*:\s*"((?:\\.|[^"\\])*)"',
+        raw,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if closed:
+        return _decode_json_string_literal(closed.group(1))
+    open_ = re.search(rf'"{field}"\s*:\s*"(.*)', raw, re.DOTALL | re.IGNORECASE)
+    if not open_:
+        return ""
+    body = open_.group(1)
+    for trailer in ('",\n  "explanation"', '",\n  "estimatedRows"', '",\n  "', '"\n}', '"}'):
+        if trailer in body:
+            body = body.split(trailer)[0]
+    return _decode_json_string_literal(body.rstrip('"'))
+
+
 def parse_json_response(raw: str) -> dict:
     text = raw.strip()
     if text.startswith("```"):
@@ -300,12 +334,24 @@ def parse_json_response(raw: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
+        match = re.search(r"\{[\s\S]*\}", text)
         if match:
             try:
                 return json.loads(match.group())
             except Exception:
                 pass
+    sql = _extract_json_string_field(text, "sql")
+    explanation = _extract_json_string_field(text, "explanation")
+    answer = _extract_json_string_field(text, "answer")
+    if sql or explanation or answer:
+        out: dict = {}
+        if sql:
+            out["sql"] = sql
+        if explanation:
+            out["explanation"] = explanation
+        if answer:
+            out["answer"] = answer
+        return out
     return {"answer": text}
 
 
@@ -401,7 +447,7 @@ Generate T-SQL SELECT queries using ONLY the views and columns listed in the sch
 Rules:
 1. ONLY use table/view names and column names from the provided schema. NEVER invent names.
 2. Always add WITH (NOLOCK) after every table/view reference.
-3. Use TOP N (default 20) to limit results.
+3. Do NOT add TOP N limits unless the user explicitly asks for "top N" or a ranking query. Return all matching rows.
 4. NEVER write DROP, DELETE, UPDATE, INSERT, EXEC, or DDL. SELECT and WITH (CTEs) only.
 5. Use square brackets around column names: [ColumnName].
 6. For date filtering use CAST(@date AS DATE) comparisons.
@@ -428,6 +474,8 @@ Return ONLY a JSON object:
 }
 
 If no SQL is needed (e.g. the question is conversational), set sql to null and add an "answer" field.
+
+Keep SQL compact (under ~60 lines). Prefer simple GROUP BY over large festival/date CTE tables unless the schema provides a calendar table.
 """.strip()
 
 
@@ -474,11 +522,35 @@ def _sql_aliases(sql: str) -> set[str]:
     return aliases
 
 
+def _sql_table_tokens(sql: str) -> set[str]:
+    """Bracketed names used as tables/views in FROM/JOIN (not columns)."""
+    tokens: set[str] = set()
+    for m in re.finditer(
+        r"(?:FROM|JOIN)\s+(?:\[?\w+\]?\.)?\[?(\w+)\]?",
+        sql,
+        re.IGNORECASE,
+    ):
+        tokens.add(m.group(1).lower())
+    return tokens
+
+
+def _sql_cte_names(sql: str) -> set[str]:
+    """Names defined in WITH … AS (…) so they are not validated as dbo views."""
+    names: set[str] = set()
+    for m in re.finditer(r"\bWITH\s+(\w+)\s+AS\s*\(", sql, re.IGNORECASE):
+        names.add(m.group(1).lower())
+    for m in re.finditer(r",\s*(\w+)\s+AS\s*\(", sql, re.IGNORECASE):
+        names.add(m.group(1).lower())
+    return names
+
+
 def validate_sql(sql: str, snap: dict, selected_views: list[str]) -> list[str]:
     problems: list[str] = []
     objects = snap.get("objects", {})
     objects_lower = {k.lower(): k for k in objects}
     aliases = _sql_aliases(sql)
+    table_tokens = _sql_table_tokens(sql)
+    cte_names = _sql_cte_names(sql)
 
     table_pattern = re.compile(
         r"(?:FROM|JOIN)\s+(\[?\w+\]?\.\[?\w+\]?|\[?\w+\]?)",
@@ -492,6 +564,8 @@ def validate_sql(sql: str, snap: dict, selected_views: list[str]) -> list[str]:
             continue
         if f"dbo.{raw}" in objects or f"dbo.{raw}".lower() in objects_lower:
             continue
+        if raw.lower() in cte_names:
+            continue
         problems.append(f"Unknown table/view '{raw}' — not found in schema.")
 
     all_cols: set[str] = set()
@@ -503,6 +577,8 @@ def validate_sql(sql: str, snap: dict, selected_views: list[str]) -> list[str]:
     for m in col_pattern.finditer(sql):
         col = m.group(1)
         if col.isdigit() or col.lower() in aliases:
+            continue
+        if col.lower() in table_tokens:
             continue
         if col.lower() not in all_cols:
             problems.append(
@@ -556,10 +632,31 @@ async def explain_results(
         provider,
     )
     result = parse_json_response(raw)
-    return result.get("answer") or raw
+    answer = (result.get("answer") or "").strip()
+    if answer.startswith("{") and '"sql"' in answer:
+        answer = ""
+    if answer:
+        return answer
+    if row_count > 0:
+        return f"Returned {row_count} row(s) for your question."
+    return "No rows matched this query for the selected period."
 
 
 # ─── Main pipeline ────────────────────────────────────────────────────────────
+
+def _views_referenced_in_sql(sql: str, snap: dict) -> list[str]:
+    """Map FROM/JOIN targets in SQL to schema object keys."""
+    objects = snap.get("objects", {})
+    if not objects:
+        return []
+    found: list[str] = []
+    lower_sql = sql.lower()
+    for name in objects:
+        bare = name.split(".")[-1].lower()
+        if bare in lower_sql or name.lower() in lower_sql:
+            found.append(name)
+    return found[:4]
+
 
 async def run_pipeline(
     question: str,
@@ -572,6 +669,7 @@ async def run_pipeline(
     Full db_chat pipeline for the AI Query page.
     """
     from src.db.mssql import execute_query
+    from src.ai.test_faq_loader import try_verified_faq
 
     if execute_fn is None:
         execute_fn = execute_query
@@ -579,6 +677,8 @@ async def run_pipeline(
     ai_provider = normalize_provider(provider)
     warnings: list[str] = []
     corrected = False
+    faq_template_id: Optional[str] = None
+    from_template = False
 
     if snap is None:
         snap = await load_snapshot()
@@ -589,32 +689,64 @@ async def run_pipeline(
             "Run: cd db-chat && python schema_cache.py"
         )
 
-    selected_views, view_reason = await select_views(question, snap, ai_provider)
-    logger.info(
-        "db_chat view selection",
-        views=selected_views,
-        reason=view_reason,
-    )
+    sql = ""
+    explanation = ""
+    conversational_answer = ""
+
+    faq = try_verified_faq(question)
+    if faq and (faq.get("sql") or "").strip():
+        sql = str(faq["sql"]).strip()
+        explanation = str(
+            faq.get("explanation") or faq.get("description") or "Verified FAQ SQL"
+        )
+        faq_template_id = faq.get("template_id")
+        from_template = True
+        selected_views = _views_referenced_in_sql(sql, snap) or _keyword_fallback(question, snap)
+        view_reason = f"Verified FAQ template ({faq_template_id})"
+        for note in faq.get("assumptions") or []:
+            warnings.append(str(note))
+        logger.info("db_chat FAQ template hit", template_id=faq_template_id)
+    else:
+        selected_views, view_reason = await select_views(question, snap, ai_provider)
+        logger.info(
+            "db_chat view selection",
+            views=selected_views,
+            reason=view_reason,
+        )
+
+        focused = focused_schema_for_sql(snap, selected_views)
+        sql, explanation, conversational_answer = await generate_sql(
+            question, focused, ai_provider, top_n=top_n
+        )
 
     focused = focused_schema_for_sql(snap, selected_views)
-    sql, explanation, conversational_answer = await generate_sql(
-        question, focused, ai_provider, top_n=top_n
-    )
 
     if not sql:
+        summary = conversational_answer or explanation
+        if summary.strip().startswith("{") and '"sql"' in summary:
+            summary = (
+                "Could not run this query — the model returned SQL text without a "
+                "complete result. Try **FAQ templates** on the left, or rephrase with "
+                "a shorter date range (e.g. last 12 months by month)."
+            )
         return PipelineResult(
             sql=None,
             records=[],
             record_count=0,
-            summary=conversational_answer or explanation,
+            summary=summary,
             description=explanation or "Conversational response",
             selected_views=selected_views,
             view_selection_reason=view_reason,
             warnings=warnings,
             conversational=True,
+            from_template=from_template,
+            faq_template_id=faq_template_id,
         )
 
-    first_word = sql.strip().split()[0].upper()
+    # Strip leading comments before safety check
+    import re as _re
+    sql_no_comments = _re.sub(r'--[^\n]*', '', sql).strip()
+    first_word = sql_no_comments.split()[0].upper() if sql_no_comments.split() else ""
     if first_word not in ("SELECT", "WITH"):
         raise ValueError("AI generated a non-SELECT statement — blocked for safety.")
 
@@ -622,22 +754,28 @@ async def run_pipeline(
     if problems:
         problem_str = "; ".join(problems)
         warnings.append(f"SQL validation issues: {problem_str}")
-        sql2, explanation2, _ = await generate_sql(
-            question, focused, ai_provider, prior_error=problem_str, top_n=top_n
-        )
-        if sql2:
-            sql, explanation = sql2, explanation2
-            corrected = True
-            problems2 = validate_sql(sql, snap, selected_views)
-            if problems2:
-                warnings.append(
-                    f"SQL still has issues after retry: {'; '.join(problems2)}"
-                )
+        # Verified FAQ SQL is trusted — schema linter can false-positive on CTE aliases.
+        if not from_template:
+            sql2, explanation2, _ = await generate_sql(
+                question, focused, ai_provider, prior_error=problem_str, top_n=top_n
+            )
+            if sql2:
+                sql, explanation = sql2, explanation2
+                corrected = True
+                problems2 = validate_sql(sql, snap, selected_views)
+                if problems2:
+                    warnings.append(
+                        f"SQL still has issues after retry: {'; '.join(problems2)}"
+                    )
 
     try:
         result = await execute_fn(sql, nolock=True, recompile=False)
         records = result["records"]
     except Exception as exc:
+        if from_template:
+            raise RuntimeError(
+                f"Verified FAQ SQL failed on the database: {exc}"
+            ) from exc
         logger.warning("SQL execution failed — retrying with AI fix", error=str(exc))
         sql2, explanation2, _ = await generate_sql(
             question, focused, ai_provider, prior_error=str(exc), top_n=top_n
@@ -646,6 +784,7 @@ async def run_pipeline(
             raise RuntimeError(str(exc)) from exc
         sql, explanation = sql2, explanation2
         corrected = True
+        from_template = False
         result = await execute_fn(sql, nolock=True, recompile=False)
         records = result["records"]
 
@@ -663,6 +802,12 @@ async def run_pipeline(
         question, sql, records, row_count, truncated, ai_provider
     )
 
+    if summary.strip().startswith("{") and '"sql"' in summary:
+        summary = (
+            f"Query returned {len(records)} row(s). "
+            f"{explanation or 'See chart and table below.'}"
+        )
+
     return PipelineResult(
         sql=sql,
         records=records,
@@ -674,4 +819,6 @@ async def run_pipeline(
         warnings=warnings,
         corrected=corrected,
         truncated=truncated,
+        from_template=from_template,
+        faq_template_id=faq_template_id,
     )

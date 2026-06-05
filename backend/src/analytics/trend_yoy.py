@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 from src.config import cfg
 from src.db.mssql import execute_query
 from src.utils.sql_ref import sql_table
-from src.analytics.metrics_sql import quantity_column
+from src.analytics.metrics_sql import quantity_column, transactions_aggregate
 from src.utils.date_utils import resolve_date_range, get_prior_year_range, trend_granularity
 
 
@@ -74,8 +74,7 @@ async def fetch_revenue_trend_yoy(period: str) -> List[Dict[str, Any]]:
         period_expr = f"CAST([{date_col}] AS DATE)"
         label_expr = f"FORMAT(CAST([{date_col}] AS DATE), 'dd-MMM')"
 
-    # Trend charts use COUNT(*) for speed — exact invoice count is on the KPI card
-    bills_agg = "COUNT(*)"
+    bills_agg = transactions_aggregate()
 
     # Current period query — only scans the current window
     sql_curr = f"""

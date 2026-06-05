@@ -851,6 +851,8 @@ function dashboardFromBundle(
       summary_total: summary.mtd_sales,
       match: true,
     },
+    fetched_at: core.fetched_at,
+    from_cache: core.from_cache,
   };
 }
 
@@ -912,9 +914,20 @@ function applyDashboardPagePayload(
     setTodayKpis: (k: KPIsResponse | null) => void;
     setLoading: (v: boolean) => void;
     setTodayLoading: (v: boolean) => void;
+    setFetchedAt?: (ts: number | null) => void;
   },
 ): void {
   const { mtd: mtdCore, today: todayCore } = page;
+  const pageFetchedAt =
+    typeof page.fetched_at === 'number' && page.fetched_at > 0
+      ? page.fetched_at
+      : Math.max(
+          mtdCore.fetched_at ?? 0,
+          todayCore.fetched_at ?? 0,
+        ) || null;
+  if (pageFetchedAt && handlers.setFetchedAt) {
+    handlers.setFetchedAt(pageFetchedAt);
+  }
 
   if (mtdCore.kpis) {
     cacheSet(KEY_KPIS_MTD, mtdCore.kpis);
@@ -1062,6 +1075,8 @@ export interface DashboardPageResult {
   loading: boolean;
   todayLoading: boolean;
   error: string | null;
+  /** Unix seconds — when today/MTD KPIs were last computed on the server */
+  dataFetchedAt: number | null;
   refetch: () => void;
 }
 
@@ -1112,20 +1127,30 @@ export function useDashboardPage(): DashboardPageResult {
     }
   }, []);
 
-  const run = useCallback(async (silent = false, clearToday = false) => {
-    if (clearToday) clearIntradayClientCache();
+  const [dataFetchedAt, setDataFetchedAt] = useState<number | null>(() => {
+    const m = getDashboardCache(KEY_DASH_MTD)?.fetched_at;
+    const t = getDashboardCache(KEY_DASH_TODAY)?.fetched_at;
+    return m || t || null;
+  });
+
+  const run = useCallback(async (silent = false, forceRefresh = false) => {
+    if (forceRefresh) clearIntradayClientCache();
     if (!silent) {
       setLoading(!cacheGet<KPIsResponse>(KEY_KPIS_MTD));
     }
-    // Instant today from cached MTD trend while live SQL runs
-    const hydrated = hydrateTodayFromMtd(getDashboardCache(KEY_DASH_MTD), { setToday, setTodayLoading });
-    if (!hydrated && !hasTodaySnapshot(getDashboardCache(KEY_DASH_TODAY), cacheGet(KEY_KPIS_TODAY))) {
-      if (!silent) setTodayLoading(true);
+    // On explicit Refresh, wait for live today KPIs — do not paint stale MTD trend chips.
+    if (!forceRefresh) {
+      const hydrated = hydrateTodayFromMtd(getDashboardCache(KEY_DASH_MTD), { setToday, setTodayLoading });
+      if (!hydrated && !hasTodaySnapshot(getDashboardCache(KEY_DASH_TODAY), cacheGet(KEY_KPIS_TODAY))) {
+        if (!silent) setTodayLoading(true);
+      }
+    } else {
+      setTodayLoading(true);
     }
     setError(null);
 
     try {
-      const page = await analytics.dashboardPage();
+      const page = await analytics.dashboardPage(forceRefresh);
       applyDashboardPagePayload(page, {
         setMtd,
         setToday,
@@ -1133,6 +1158,7 @@ export function useDashboardPage(): DashboardPageResult {
         setTodayKpis,
         setLoading,
         setTodayLoading,
+        setFetchedAt: setDataFetchedAt,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Dashboard load failed';
@@ -1166,6 +1192,7 @@ export function useDashboardPage(): DashboardPageResult {
     loading,
     todayLoading,
     error,
+    dataFetchedAt,
     refetch: useCallback(() => {
       setTodayLoading(true);
       run(false, true);

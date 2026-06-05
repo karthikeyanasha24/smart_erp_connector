@@ -165,25 +165,28 @@ WHERE {_today_where("s")}
 
 def _sql_mtd_sales_by_branch(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     s.[BranchAlias],
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales
+    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
+    COUNT(DISTINCT s.[InvoiceNo]) AS UniqueInvoices,
+    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[InvoiceNo]), 0) AS decimal(18, 2)) AS ATS,
+    COUNT(DISTINCT s.[CustomerId]) AS UniqueCustomers
 FROM {_APP} s WITH (NOLOCK)
 WHERE {_mtd_where("s")}
 GROUP BY s.[BranchAlias]
-ORDER BY TotalSales DESC
+ORDER BY MTDSales DESC
 """
     return _blob(
         "mtd_sales_by_branch",
         sql,
-        "Month-to-date net sales by branch, ordered highest first.",
-        ["MTD: first day of current month through end of today (exclusive tomorrow)."],
+        "Month-to-date net sales, invoice count, ATS and unique customers by branch. All branches returned.",
+        ["MTD: first day of current month through end of today.", "No row cap — all branches returned."],
     )
 
 
 def _sql_ytd_sales_by_department(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     s.[DepartmentShortName] AS Department,
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales
 FROM {_APP} s WITH (NOLOCK)
@@ -313,7 +316,7 @@ ORDER BY PeriodLabel
 
 def _sql_avg_bill_by_branch(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     sp.[BranchAlias],
     CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales,
     COUNT(DISTINCT sp.[CashmemoNo]) AS BillCount,
@@ -419,7 +422,7 @@ ORDER BY Revenue DESC
 
 def _sql_sales_by_fabric(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     s.[Fabric],
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue,
     CAST(SUM(s.[AppQty]) AS decimal(18, 4)) AS QtySold
@@ -459,7 +462,7 @@ ORDER BY QtySold DESC
 
 def _sql_category_quantity_mtd(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     s.[CategoryShortName] AS Category,
     CAST(SUM(s.[AppQty]) AS decimal(18, 4)) AS QtySold,
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue
@@ -478,7 +481,7 @@ ORDER BY QtySold DESC
 
 def _sql_products_zero_sales_mtd(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     pm.[Itemcode],
     pm.[ArticleNo],
     pm.[CategoryShortName] AS Category,
@@ -557,7 +560,7 @@ ORDER BY GrossMarginPct DESC
 
 def _sql_sales_by_neckline(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     pm.[NECKLINE] AS Neckline,
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue,
     CAST(SUM(s.[AppQty]) AS decimal(18, 4)) AS QtySold
@@ -849,7 +852,7 @@ ORDER BY MovementClass, TurnoverRatio DESC
 
 def _sql_departments_most_profit(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     s.[DepartmentShortName] AS Department,
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue,
     CAST(SUM(s.[CostValue]) AS decimal(18, 2)) AS CostValue,
@@ -870,7 +873,7 @@ ORDER BY GrossProfit DESC
 
 def _sql_branch_efficiency_bills_vs_sales(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     s.[BranchAlias],
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDRevenue,
     COUNT(DISTINCT s.[XnNo]) AS BillCount,
@@ -942,7 +945,7 @@ ORDER BY ReturnQty DESC
 
 def _sql_new_customers_mtd(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     c.[CustomerId],
     c.[CustomerFirstName],
     c.[CustomerLastName],
@@ -983,7 +986,7 @@ ORDER BY CustomerCount DESC
 
 def _sql_sales_by_customer_group(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     c.[CustomerGroupName],
     CAST(SUM(s.[SaleNetAmount]) AS decimal(18, 2)) AS TotalSales,
     COUNT(DISTINCT s.[CustomerId]) AS UniqueCustomers,
@@ -1039,7 +1042,7 @@ ORDER BY TotalPurchaseValue DESC
 
 def _sql_inactive_customers(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     c.[CustomerId],
     c.[CustomerFirstName],
     c.[CustomerLastName],
@@ -1085,7 +1088,7 @@ ORDER BY c.[CreditLimit] DESC
 
 def _sql_birthday_customers_this_week(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     c.[CustomerId],
     c.[CustomerFirstName],
     c.[CustomerLastName],
@@ -1215,7 +1218,7 @@ def _low_stock_threshold() -> int:
 
 def _sql_stock_by_branch(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     st.[BranchAlias],
     CAST(SUM(st.[StockQty]) AS decimal(18, 4)) AS TotalStockQty,
     CAST(SUM(st.[StockQty] * st.[ItemMRP]) AS decimal(18, 2)) AS StockValueAtMRP
@@ -1259,7 +1262,7 @@ ORDER BY st.[StockQty] ASC, st.[BranchAlias]
 
 def _sql_dead_stock_90_days(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     st.[BranchAlias],
     st.[ItemId],
     st.[ArticleNo],
@@ -1305,7 +1308,7 @@ ORDER BY TotalStockQty DESC
 
 def _sql_stock_value_by_category(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     st.[CategoryShortName] AS Category,
     CAST(SUM(st.[StockQty]) AS decimal(18, 4)) AS TotalStockQty,
     CAST(SUM(st.[StockQty] * st.[ItemMRP]) AS decimal(18, 2)) AS StockValueAtMRP
@@ -1324,7 +1327,7 @@ ORDER BY StockValueAtMRP DESC
 
 def _sql_stock_transfers_mtd(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     t.TransferDirection,
     t.[SourceBranchAlias],
     t.[TargetBranchAlias],
@@ -1405,7 +1408,7 @@ CatStock AS (
     WHERE st.[CategoryShortName] IS NOT NULL
     GROUP BY st.[CategoryShortName]
 )
-SELECT TOP (500)
+SELECT
     COALESCE(cs.Category, ck.Category) AS Category,
     CAST(ISNULL(cs.MTDQtySold, 0) AS decimal(18, 4)) AS MTDQtySold,
     CAST(ISNULL(ck.OnHandQty, 0) AS decimal(18, 4)) AS OnHandQty,
@@ -1431,7 +1434,7 @@ ORDER BY TurnoverRatio DESC
 
 def _sql_git_by_supplier(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     g.[SupplierName],
     g.[SupplierAlias],
     CAST(SUM(g.[GitQty]) AS decimal(18, 4)) AS GoodsInTransitQty,
@@ -1453,7 +1456,7 @@ ORDER BY GoodsInTransitQty DESC
 
 def _sql_stock_aging_analysis(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     CASE
         WHEN st.[PurInvoiceDt] IS NULL THEN N'Unknown date'
         WHEN DATEDIFF(DAY, st.[PurInvoiceDt], GETDATE()) <= 30 THEN N'0-30 days'
@@ -1509,7 +1512,7 @@ ORDER BY Revenue DESC
 
 def _sql_supplier_sales_trend(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     m.[SupplierName],
     m.[XnMemoDate_MONTHNAME] AS SalesMonth,
     CAST(SUM(m.[NetAmount]) AS decimal(18, 2)) AS Revenue,
@@ -1578,7 +1581,7 @@ ORDER BY StockValueAtMRP DESC
 
 def _sql_supplier_performance_by_branch(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     s.[SupplierName],
     s.[BranchAlias],
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue,
@@ -1598,9 +1601,8 @@ ORDER BY s.[SupplierName], Revenue DESC
 
 
 def _sql_purchases_by_supplier_mtd(q: str) -> Dict[str, Any]:
-    n = _top_n_from_question(q, 500)
     sql = f"""
-SELECT TOP ({n})
+SELECT
     p.[SupplierName],
     p.[SupplierAlias],
     CAST(SUM(p.[NetPurNetAmount]) AS decimal(18, 2)) AS NetPurchaseAmount,
@@ -1614,7 +1616,7 @@ ORDER BY NetPurchaseAmount DESC
     return _blob(
         "purchases_by_supplier_mtd",
         sql,
-        f"Top {n} suppliers by MTD net purchase amount and quantity (PURXNS).",
+        "All suppliers by MTD net purchase amount and quantity (PURXNS). No row cap — full list returned.",
         ["PurInvDate MTD filter; metric SUM(NetPurNetAmount)."],
     )
 
@@ -1647,7 +1649,7 @@ ORDER BY ReturnRatePct DESC
 
 def _sql_supplier_sales_by_state(_q: str) -> Dict[str, Any]:
     sql = f"""
-SELECT TOP (500)
+SELECT
     s.[SupplierState],
     s.[SupplierName],
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue
@@ -1677,7 +1679,7 @@ WITH sup AS (
       AND s.[SupplierName] IS NOT NULL
     GROUP BY s.[SupplierName]
 )
-SELECT TOP (500)
+SELECT
     [SupplierName],
     CAST(Revenue AS decimal(18, 2)) AS Revenue,
     CAST(100.0 * Revenue / NULLIF(SUM(Revenue) OVER (), 0) AS decimal(18, 4)) AS ContributionPct
@@ -1714,6 +1716,233 @@ ORDER BY Revenue DESC
         sql,
         f"Top {n} suppliers in {city} by MTD net sales (SupplierCity LIKE).",
         [f"City filter: SupplierCity LIKE '%{city}%'; MTD on XnDt."],
+    )
+
+
+
+# ─── Additional analytics (sell-through, margins, repeat customers, festival) ──
+
+
+def _sql_product_sell_through(_q: str) -> Dict[str, Any]:
+    sql = f"""
+WITH Sales AS (
+    SELECT s.[Itemcode], SUM(s.[AppQty]) AS SoldQty
+    FROM {_APP} s WITH (NOLOCK)
+    WHERE {_mtd_where("s")} AND s.[Itemcode] IS NOT NULL
+    GROUP BY s.[Itemcode]
+),
+Stock AS (
+    SELECT pm.[Itemcode], MAX(st.[ArticleNo]) AS ArticleNo, SUM(st.[StockQty]) AS StockQty
+    FROM {_STOCK} st WITH (NOLOCK)
+    INNER JOIN {_PM} pm WITH (NOLOCK) ON pm.[ItemId] = st.[ItemId]
+    WHERE pm.[Itemcode] IS NOT NULL
+    GROUP BY pm.[Itemcode]
+)
+SELECT
+    COALESCE(sa.[Itemcode], st.[Itemcode]) AS Itemcode,
+    CAST(ISNULL(sa.SoldQty, 0) AS decimal(18, 4)) AS MTDQtySold,
+    CAST(ISNULL(st.StockQty, 0) AS decimal(18, 4)) AS OnHandQty,
+    CAST(
+        100.0 * ISNULL(sa.SoldQty, 0) / NULLIF(ISNULL(sa.SoldQty, 0) + ISNULL(st.StockQty, 0), 0)
+        AS decimal(18, 4)
+    ) AS SellThroughPct
+FROM Sales sa
+FULL OUTER JOIN Stock st ON st.[Itemcode] = sa.[Itemcode]
+WHERE ISNULL(sa.SoldQty, 0) + ISNULL(st.StockQty, 0) > 0
+ORDER BY SellThroughPct DESC, MTDQtySold DESC, Itemcode
+"""
+    return _blob(
+        "product_sell_through_pct",
+        sql,
+        "MTD sell-through % per item: sold qty / (sold + on-hand). All items returned.",
+        [
+            "Stock ItemId bridged to Itemcode via PRODUCT_MASTER.",
+            "MTD sold qty from APP_REPORT (XnDt); on-hand from STOCK_REPORT.",
+            "No TOP by default — all items with MTD sales and/or on-hand stock.",
+            "Say 'top 50 product sell through' to limit to N rows (max 500).",
+            "Results capped at 3000 rows for display.",
+        ],
+    )
+
+
+def _sql_five_year_sales_dept_category(_q: str) -> Dict[str, Any]:
+    sql = f"""
+SELECT
+    DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
+    s.[DepartmentShortName] AS Department,
+    s.[CategoryShortName] AS Category,
+    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales
+FROM {_APP} s WITH (NOLOCK)
+WHERE s.[XnDt] >= DATEADD(YEAR, -5, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+  AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
+GROUP BY
+    DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1),
+    s.[DepartmentShortName],
+    s.[CategoryShortName]
+ORDER BY MonthStart ASC, TotalSales DESC
+"""
+    return _blob(
+        "five_year_sales_dept_category",
+        sql,
+        "Monthly net sales by Department and Category for the past 5 years.",
+        [
+            "Full 5-year monthly grain; chart aggregates to monthly totals.",
+            "No row limit — all department x category x month combinations returned.",
+        ],
+    )
+
+
+def _sql_category_contribution_pct(_q: str) -> Dict[str, Any]:
+    sql = f"""
+WITH c AS (
+    SELECT s.[CategoryShortName] AS Category, SUM(s.[NetAmount]) AS Revenue
+    FROM {_APP} s WITH (NOLOCK)
+    WHERE {_mtd_where("s")} AND s.[CategoryShortName] IS NOT NULL
+    GROUP BY s.[CategoryShortName]
+)
+SELECT
+    Category,
+    CAST(Revenue AS decimal(18, 2)) AS Revenue,
+    CAST(100.0 * Revenue / NULLIF(SUM(Revenue) OVER (), 0) AS decimal(18, 4)) AS ContributionPct
+FROM c
+WHERE Revenue <> 0
+ORDER BY ContributionPct DESC
+"""
+    return _blob(
+        "category_contribution_percentage",
+        sql,
+        "MTD revenue contribution % by category. All categories returned.",
+        [
+            "Source: VW_MB_POWERBI_APP_REPORT (NetAmount, XnDt).",
+            "No row cap — full category list returned.",
+        ],
+    )
+
+
+def _sql_new_vs_repeat_customers(_q: str) -> Dict[str, Any]:
+    sql = f"""
+WITH Bills AS (
+    SELECT
+        s.[CustomerId],
+        COUNT(DISTINCT s.[InvoiceId]) AS InvoiceCount,
+        SUM(s.[SaleNetAmount]) AS Revenue
+    FROM {_SALES_AI} s WITH (NOLOCK)
+    WHERE {_invoice_mtd_where("s")} AND s.[CustomerId] IS NOT NULL
+    GROUP BY s.[CustomerId]
+)
+SELECT N'Repeat' AS CustomerType,
+       COUNT(*) AS CustomerCount,
+       CAST(SUM(Revenue) AS decimal(18, 2)) AS Revenue
+FROM Bills WHERE InvoiceCount > 1
+UNION ALL
+SELECT N'One-time',
+       COUNT(*),
+       CAST(SUM(Revenue) AS decimal(18, 2))
+FROM Bills WHERE InvoiceCount = 1
+"""
+    return _blob(
+        "new_vs_repeat_customer_analysis",
+        sql,
+        "MTD split of one-time vs repeat customers (>1 invoice = repeat).",
+        [
+            "Repeat proxy — not first-purchase-day logic.",
+            "Revenue from VwAISalesData.SaleNetAmount.",
+        ],
+    )
+
+
+def _sql_gross_margin_by_category(_q: str) -> Dict[str, Any]:
+    sql = f"""
+SELECT
+    s.[CategoryShortName] AS Category,
+    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue,
+    CAST(SUM(s.[CostValue]) AS decimal(18, 2)) AS CostValue,
+    CAST(SUM(s.[NetAmount]) - SUM(s.[CostValue]) AS decimal(18, 2)) AS GrossProfit,
+    CAST(
+        100.0 * (SUM(s.[NetAmount]) - SUM(s.[CostValue])) / NULLIF(SUM(s.[NetAmount]), 0)
+        AS decimal(18, 4)
+    ) AS GrossMarginPct
+FROM {_APP} s WITH (NOLOCK)
+WHERE {_mtd_where("s")} AND s.[CategoryShortName] IS NOT NULL
+GROUP BY s.[CategoryShortName]
+ORDER BY GrossProfit DESC
+"""
+    return _blob(
+        "gross_margin_by_category",
+        sql,
+        "MTD revenue, cost, gross profit and margin % by category.",
+        [
+            "Revenue = NetAmount, Cost = CostValue from VW_MB_POWERBI_APP_REPORT.",
+            "No row cap — all categories returned.",
+            "Department variant: ask 'gross margin by department'.",
+        ],
+    )
+
+
+def _sql_dead_stock_identification(_q: str) -> Dict[str, Any]:
+    sql = f"""
+SELECT
+    st.[BranchAlias],
+    st.[ItemId],
+    st.[ArticleNo],
+    st.[CategoryShortName] AS Category,
+    CAST(st.[StockQty] AS decimal(18, 4)) AS StockQty,
+    CAST(st.[PurInvoiceDt] AS DATE) AS PurInvoiceDate,
+    DATEDIFF(DAY, st.[PurInvoiceDt], GETDATE()) AS DaysSincePurInvoice
+FROM {_STOCK} st WITH (NOLOCK)
+WHERE st.[StockQty] > 0
+  AND st.[PurInvoiceDt] IS NOT NULL
+  AND st.[PurInvoiceDt] < DATEADD(DAY, -90, CAST(GETDATE() AS DATE))
+ORDER BY DaysSincePurInvoice DESC, st.[StockQty] DESC
+"""
+    return _blob(
+        "dead_stock_identification",
+        sql,
+        "All stock lines unsold 90+ days. No row limit — full result returned.",
+        [
+            "Proxy for dead stock: aged by last purchase invoice date on stock row.",
+            "Does not require sales velocity — use with business validation.",
+            "Results capped at 3000 rows for display.",
+        ],
+    )
+
+
+def _sql_festival_sales_trend(_q: str) -> Dict[str, Any]:
+    sql = f"""
+WITH MonthlyTotals AS (
+    SELECT
+        DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
+        CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales,
+        COUNT(DISTINCT s.[XnNo]) AS BillCount
+    FROM {_APP} s WITH (NOLOCK)
+    WHERE s.[XnDt] >= DATEADD(YEAR, -3, DATEFROMPARTS(YEAR(GETDATE()), 1, 1))
+      AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
+    GROUP BY DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1)
+),
+Ranked AS (
+    SELECT *,
+        AVG(TotalSales) OVER () AS AvgSales,
+        RANK() OVER (ORDER BY TotalSales DESC) AS SalesRank
+    FROM MonthlyTotals
+)
+SELECT
+    MonthStart,
+    TotalSales,
+    BillCount,
+    SalesRank,
+    CAST(100.0 * TotalSales / NULLIF(AvgSales, 0) AS decimal(18, 1)) AS PctOfAvg
+FROM Ranked
+ORDER BY MonthStart ASC
+"""
+    return _blob(
+        "festival_sales_trend_prediction",
+        sql,
+        "Monthly sales last 3 years with rank vs average — reveals festival/seasonal peaks.",
+        [
+            "No hardcoded festival dates — peaks emerge from the data.",
+            "PctOfAvg: how each month compares to the 3-year average.",
+            "Top-ranked months = historical festival/peak seasons.",
+        ],
     )
 
 
@@ -2262,6 +2491,73 @@ _register(
         r"^(?:show\s+)?today(?:'?s)?\s+(?:total\s+)?sales?\b(?!\s+with\s+unique)",
     ],
     _sql_total_sales_today,
+)
+
+
+_register(
+    "product_sell_through_pct",
+    [
+        r"product[\s-]?wise\s+sell[\s-]?through",
+        r"sell[\s-]?through\s+(?:percent|pct|%|analysis|rate)",
+        r"product\s+sell[\s-]?through",
+    ],
+    _sql_product_sell_through,
+)
+_register(
+    "five_year_sales_dept_category",
+    [
+        r"(?:last\s+)?5\s+years?\s+sales?\s+(?:analysis\s+)?.*(?:department|dept)",
+        r"five\s+year\s+sales?\s+(?:analysis\s+)?.*(?:department|dept)",
+        r"5\s+years?\s+sales?\s+by\s+(?:department|dept|category)",
+    ],
+    _sql_five_year_sales_dept_category,
+)
+_register(
+    "category_contribution_percentage",
+    [
+        r"category\s+contribution\s+(?:%|percent|percentage)",
+        r"contribution\s+(?:%|percent|percentage).*(?:total\s+)?revenue.*categor",
+        r"categor.*contribution\s+(?:%|percent|percentage)",
+    ],
+    _sql_category_contribution_pct,
+)
+_register(
+    "new_vs_repeat_customer_analysis",
+    [
+        r"new\s+vs\.?\s+repeat\s+customer",
+        r"repeat\s+vs\.?\s+new\s+customer",
+        r"new\s+and\s+repeat\s+customer\s+analysis",
+        r"one[\s-]?time\s+vs\.?\s+repeat\s+customer",
+    ],
+    _sql_new_vs_repeat_customers,
+)
+_register(
+    "gross_margin_by_category",
+    [
+        r"gross\s+margin\s+(?:analysis\s+)?by\s+(?:department|category|dept)",
+        r"gross\s+margin\s+analysis",
+        r"margin\s+by\s+(?:department|category)",
+    ],
+    _sql_gross_margin_by_category,
+)
+_register(
+    "dead_stock_identification",
+    [
+        r"dead\s+stock\s+identification",
+        r"identify\s+dead\s+stock",
+        r"dead\s+stock\s+(?:report|items?|list)",
+    ],
+    _sql_dead_stock_identification,
+)
+_register(
+    "festival_sales_trend_prediction",
+    [
+        r"sales?\s+trend\s+prediction.*festival",
+        r"festival.*sales?\s+trend",
+        r"seasonal\s+sales?\s+(?:trend|prediction|forecast)",
+        r"upcoming\s+festival.*sales?",
+    ],
+    _sql_festival_sales_trend,
 )
 
 

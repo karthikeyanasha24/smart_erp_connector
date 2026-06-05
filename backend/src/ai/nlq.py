@@ -154,7 +154,7 @@ async def process_query(
         conv_id=conv_id,
         duration_ms=duration_ms,
         corrected=result.corrected,
-        from_template=False,
+        from_template=result.from_template,
         warnings=result.warnings,
-        faq_template_id=None,
+        faq_template_id=result.faq_template_id,
     )

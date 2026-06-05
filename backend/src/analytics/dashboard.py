@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from src.config import cfg
 from src.db.mssql import execute_query
 from src.utils.sql_ref import sql_table
-from src.analytics.metrics_sql import bill_count_case, quantity_column, transactions_aggregate
+from src.analytics.metrics_sql import bill_count_case, bills_in_window, quantity_column, transactions_aggregate
 from src.analytics.cache import cache
 from src.utils.logger import logger
 from src.utils.date_utils import (
@@ -172,8 +172,7 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
     curr_win = f"[{date_col}] >= @startDate AND [{date_col}] < {end_curr}"
     ly_win = f"[{date_col}] >= @lyStart AND [{date_col}] < {end_ly}"
 
-    # Trend chart: always COUNT(*) — fast; exact invoice count is on KPI card
-    bills_expr = f"SUM(CASE WHEN {curr_win} THEN 1 ELSE 0 END)"
+    bills_expr = bills_in_window(curr_win)
 
     if granularity == "month":
         period_expr = f"FORMAT([{date_col}], 'yyyy-MM')"

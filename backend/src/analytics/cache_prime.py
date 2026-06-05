@@ -55,6 +55,29 @@ def assemble_bundle_from_chart_caches(
     return payload
 
 
+def bundle_cache_fetched_at(
+    period: str,
+    top_n: int,
+    *,
+    include_kpis: bool = False,
+    include_departments: bool = False,
+) -> Optional[float]:
+    """Oldest cache write time among bundle chart keys (when served from cache)."""
+    n = min(top_n, cfg.ANALYTICS_TOP_N_MAX)
+    gran = trend_granularity(period)
+    keys: list[str] = [
+        period_cache_key("chart:branch:v2", period),
+        f"{period_cache_key('chart:trend:v4', period)}:{gran}",
+        f"{period_cache_key('chart:category:v2', period)}:{n}",
+    ]
+    if include_kpis:
+        keys.append(period_cache_key("kpi:v3", period))
+    if include_departments:
+        keys.append(f"{period_cache_key('chart:department:v3', period)}:{n}")
+    times = [t for k in keys if (t := cache.get_created_at(k)) is not None]
+    return min(times) if times else None
+
+
 def prime_chart_caches_from_bundle(
     period: str,
     payload: Dict[str, Any],

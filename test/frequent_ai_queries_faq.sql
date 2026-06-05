@@ -860,13 +860,10 @@ SELECT
 -- ============================================================================
 -- 37/50 • AI-based Demand Forecasting by Store and Category
 -- template_id: demand_forecast_store_category
--- explanation: Directs narrative 'insights' requests to KPI queries plus optional OpenAI summary.
--- assumption: Informational single-row result.
+-- explanation: Next-month forecast per store+category (avg last 3 complete months).
+-- assumption: SLS_DATA_WITHOUT_ITEMID CashmemoDt; no TOP — all active store×category pairs.
 -- ============================================================================
-SELECT
-    N'Not available as SQL' AS Status,
-    N'AI-generated narrative insights require a separate LLM summary step after KPI SQL runs.' AS Reason,
-    N'Run specific KPI questions (MTD sales, top branch, stock, etc.) then ask for interpretation.' AS Suggestion
+-- See nlq_faq_kpi._sql_demand_forecast_store_category (kept in Python for maintainability).
 
 
 -- ============================================================================
@@ -1132,7 +1129,8 @@ Stock AS (
     WHERE pm.[Itemcode] IS NOT NULL
     GROUP BY pm.[Itemcode]
 )
-SELECT TOP (100)
+-- No TOP by default (see nlq_faq_kpi._sql_sell_through); optional TOP when question says "top N".
+SELECT
     COALESCE(sa.[Itemcode], st.[Itemcode]) AS Itemcode,
     CAST(ISNULL(sa.SoldQty, 0) AS decimal(18, 4)) AS MTDQtySold,
     CAST(ISNULL(st.StockQty, 0) AS decimal(18, 4)) AS OnHandQty,
@@ -1143,7 +1141,7 @@ SELECT TOP (100)
 FROM Sales sa
 FULL OUTER JOIN Stock st ON st.[Itemcode] = sa.[Itemcode]
 WHERE ISNULL(sa.SoldQty, 0) + ISNULL(st.StockQty, 0) > 0
-ORDER BY SellThroughPct DESC
+ORDER BY SellThroughPct DESC, MTDQtySold DESC, Itemcode
 
 
 -- ============================================================================
@@ -1179,12 +1177,8 @@ FROM Avg3 a
 
 -- ============================================================================
 -- 50/50 • AI-generated Business Insights and Recommendations
--- template_id: ai_insights_not_supported
--- explanation: Directs narrative 'insights' requests to KPI queries plus optional OpenAI summary.
--- assumption: Informational single-row result.
+-- template_id: ai_business_insights_snapshot
+-- explanation: Executive KPI snapshot (~10 rows) for LLM business recommendations.
+-- assumption: SLS_DATA_WITHOUT_ITEMID CashmemoDt; see nlq_faq_kpi._sql_ai_business_insights.
 -- ============================================================================
-SELECT
-    N'Not available as SQL' AS Status,
-    N'AI-generated narrative insights require a separate LLM summary step after KPI SQL runs.' AS Reason,
-    N'Run specific KPI questions (MTD sales, top branch, stock, etc.) then ask for interpretation.' AS Suggestion
 
