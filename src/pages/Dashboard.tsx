@@ -495,6 +495,7 @@ export default function Dashboard() {
           {[
             { label:'Today',       value: todaySales,            loading: todayPending },
             { label:'Bills Today', value: todayBills,            loading: todayPending },
+            { label:'Today Qty',   value: todayQty,              loading: todayPending },
             { label:'MTD Sales',   value: mS ? mtdSales : '…',  loading: !mS && mLoading },
             { label:'MTD Qty',     value: mS ? mtdQty   : '…',  loading: !mS && mLoading },
           ].map((chip) => (

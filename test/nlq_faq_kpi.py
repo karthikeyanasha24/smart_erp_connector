@@ -1099,13 +1099,13 @@ ORDER BY ReturnRatePct DESC, ReturnQty DESC
             sql,
             "Items with MTD returns ranked by return qty vs sold qty (conversion proxy).",
             [
-                "Returns from SLSXNS SlrQty; sold qty from APP_REPORT AppQty.",
+                "Returns from SLSXNS SlrQty; sold qty from APP_REPORT AppQty."
             ],
         )
 
-    # ── Additional helpers ────────────────────────────────────────────────────
+    # ── Additional SQL builders ───────────────────────────────────────────────
 
-    def _sql_highest_store_current_month(_q: str) -> Dict[str, Any]:
+    def _sql_highest_store_current_month(_q):
         sql = f"""
 SELECT TOP (1)
     sp.[BranchAlias] AS Store,
@@ -1121,13 +1121,10 @@ ORDER BY TotalSales DESC
             "highest_store_current_month",
             sql,
             "Store with highest MTD net sales (current month).",
-            [
-                "Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt) — aligned with dashboard.",
-                "Single row result.",
-            ],
+            ["Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt). Single row."],
         )
 
-    def _sql_most_selling_product_mtd(_q: str) -> Dict[str, Any]:
+    def _sql_most_selling_product_mtd(_q):
         sql = f"""
 SELECT TOP (1)
     s.[Itemcode],
@@ -1144,11 +1141,12 @@ ORDER BY MTDQtySold DESC
         return _blob(
             "most_selling_product_mtd",
             sql,
-            "Single product with the highest quantity sold in the current month.",
-            ["Sorted by qty sold; change to ORDER BY MTDSales for revenue ranking."],
+            "Single product with highest quantity sold in the current month.",
+            ["Sorted by qty sold. Use SLSXNS_REPORT NetSlsQty for quantity."],
         )
 
-    def _sql_slow_moving_inventory(_q: str) -> Dict[str, Any]:
+    def _sql_slow_moving_inventory(_q):
+        from nlq_faq_sql import _stock_by_itemcode_cte
         sql = f"""
 WITH SalesLast30 AS (
     SELECT s.[Itemcode], SUM(s.[AppQty]) AS SoldQty30d
@@ -1158,39 +1156,31 @@ WITH SalesLast30 AS (
       AND s.[Itemcode] IS NOT NULL
     GROUP BY s.[Itemcode]
 ),
-StockNow AS (
-    SELECT pm.[Itemcode], SUM(st.[StockQty]) AS OnHandQty
-    FROM {_STOCK} st WITH (NOLOCK)
-    INNER JOIN {_PM} pm WITH (NOLOCK) ON pm.[ItemId] = st.[ItemId]
-    WHERE pm.[Itemcode] IS NOT NULL
-    GROUP BY pm.[Itemcode]
-)
+{_stock_by_itemcode_cte("StockNow")}
 SELECT
     sn.[Itemcode],
     CAST(ISNULL(sl.SoldQty30d, 0) AS decimal(18, 4)) AS SoldQty30d,
-    CAST(sn.OnHandQty AS decimal(18, 4)) AS OnHandQty,
+    CAST(sn.StockQty AS decimal(18, 4)) AS OnHandQty,
     CAST(
         CASE WHEN ISNULL(sl.SoldQty30d, 0) = 0 THEN NULL
-             ELSE sn.OnHandQty / (sl.SoldQty30d / 30.0)
+             ELSE sn.StockQty / (sl.SoldQty30d / 30.0)
         END AS decimal(18, 1)
     ) AS DaysOfStockLeft
 FROM StockNow sn
 LEFT JOIN SalesLast30 sl ON sl.[Itemcode] = sn.[Itemcode]
-WHERE sn.OnHandQty > 0
-  AND ISNULL(sl.SoldQty30d, 0) < sn.OnHandQty * 0.1
+WHERE sn.StockQty > 0
+  AND ISNULL(sl.SoldQty30d, 0) < sn.StockQty * 0.1
 ORDER BY OnHandQty DESC, SoldQty30d ASC
 """
         return _blob(
             "slow_moving_inventory_identification",
             sql,
             "Items where 30-day sales < 10% of on-hand qty (slow-moving proxy).",
-            [
-                "Stock from STOCK_REPORT via PRODUCT_MASTER; sales from APP_REPORT.",
-                "DaysOfStockLeft = on-hand / avg daily sales last 30d.",
-            ],
+            ["Stock via STOCK_REPORT+PRODUCT_MASTER; sales from APP_REPORT."],
         )
 
-    def _sql_fast_moving_inventory(_q: str) -> Dict[str, Any]:
+    def _sql_fast_moving_inventory(_q):
+        from nlq_faq_sql import _stock_by_itemcode_cte
         sql = f"""
 WITH SalesLast30 AS (
     SELECT s.[Itemcode], SUM(s.[AppQty]) AS SoldQty30d
@@ -1200,47 +1190,36 @@ WITH SalesLast30 AS (
       AND s.[Itemcode] IS NOT NULL
     GROUP BY s.[Itemcode]
 ),
-StockNow AS (
-    SELECT pm.[Itemcode], SUM(st.[StockQty]) AS OnHandQty
-    FROM {_STOCK} st WITH (NOLOCK)
-    INNER JOIN {_PM} pm WITH (NOLOCK) ON pm.[ItemId] = st.[ItemId]
-    WHERE pm.[Itemcode] IS NOT NULL
-    GROUP BY pm.[Itemcode]
-)
+{_stock_by_itemcode_cte("StockNow")}
 SELECT
     sl.[Itemcode],
     CAST(sl.SoldQty30d AS decimal(18, 4)) AS SoldQty30d,
-    CAST(ISNULL(sn.OnHandQty, 0) AS decimal(18, 4)) AS OnHandQty,
+    CAST(ISNULL(sn.StockQty, 0) AS decimal(18, 4)) AS OnHandQty,
     CAST(
-        CASE WHEN ISNULL(sn.OnHandQty, 0) = 0 THEN NULL
-             ELSE sn.OnHandQty / (sl.SoldQty30d / 30.0)
+        CASE WHEN ISNULL(sn.StockQty, 0) = 0 THEN NULL
+             ELSE sn.StockQty / (sl.SoldQty30d / 30.0)
         END AS decimal(18, 1)
     ) AS DaysOfStockLeft
 FROM SalesLast30 sl
 LEFT JOIN StockNow sn ON sn.[Itemcode] = sl.[Itemcode]
 WHERE sl.SoldQty30d > 0
-  AND ISNULL(sn.OnHandQty, 0) < sl.SoldQty30d * 0.5
+  AND ISNULL(sn.StockQty, 0) < sl.SoldQty30d * 0.5
 ORDER BY sl.SoldQty30d DESC
 """
         return _blob(
             "fast_moving_inventory_identification",
             sql,
-            "Items with high 30-day sales but on-hand stock < 50% of 30-day sales (fast-moving, low cover).",
-            [
-                "Stock from STOCK_REPORT via PRODUCT_MASTER; sales from APP_REPORT.",
-                "DaysOfStockLeft < 15 days = high replenishment urgency.",
-            ],
+            "Items with high 30-day sales but on-hand stock < 50% of monthly demand.",
+            ["DaysOfStockLeft < 15 = high replenishment urgency."],
         )
 
-    def _sql_customer_repeat_purchase(_q: str) -> Dict[str, Any]:
+    def _sql_customer_repeat_purchase(_q):
         sql = f"""
 WITH CustPurchases AS (
     SELECT
         s.[CustomerId],
         COUNT(DISTINCT s.[InvoiceId]) AS InvoiceCount,
-        CAST(SUM(s.[SaleNetAmount]) AS decimal(18, 2)) AS TotalSpend,
-        MIN(CAST(s.[InvoiceDt] AS DATE)) AS FirstPurchaseDt,
-        MAX(CAST(s.[InvoiceDt] AS DATE)) AS LastPurchaseDt
+        CAST(SUM(s.[SaleNetAmount]) AS decimal(18, 2)) AS TotalSpend
     FROM {_SALES_AI} s WITH (NOLOCK)
     WHERE {_invoice_mtd_where("s")}
       AND s.[CustomerId] IS NOT NULL
@@ -1258,13 +1237,10 @@ ORDER BY InvoiceCount ASC
             "customer_repeat_purchase_analysis",
             sql,
             "MTD customer distribution by visit count — shows repeat purchase behaviour.",
-            [
-                "InvoiceCount = number of distinct invoices per customer this month.",
-                "CustomerCount at each tier and average spend.",
-            ],
+            ["InvoiceCount = distinct invoices per customer this month."],
         )
 
-    def _sql_avg_basket_by_store(_q: str) -> Dict[str, Any]:
+    def _sql_avg_basket_by_store(_q):
         sql = f"""
 SELECT
     sp.[BranchAlias] AS Store,
@@ -1283,552 +1259,252 @@ ORDER BY ATS DESC
             "average_basket_size_by_store",
             sql,
             "MTD average basket size (ATS) per store, sorted highest to lowest.",
-            ["Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt, SalesNetAmount)."],
+            ["Uses SLS_DATA_WITHOUT_ITEMID (CashmemoDt, SalesNetAmount). No row limit."],
         )
 
-    # ── Register all KPI FAQ patterns ────────────────────────────────────────
+    # ── Register all KPI patterns ─────────────────────────────────────────────
 
-    register(
-        "store_mtd_sales_customers_ats",
-        [
-            r"store[\s-]?wise\s+mtd\s+sales?",
-            r"store[\s-]?wise.*(?:unique\s+customer|ats)",
-            r"mtd\s+sales?\s+(?:by\s+)?store",
-            r"all\s+stores?\s+mtd\s+sales?",
-        ],
-        _sql_store_mtd_kpi,
-    )
+    register("store_mtd_sales_customers_ats", [
+        r"store[\s-]?wise\s+mtd\s+sales?",
+        r"store[\s-]?wise.*(?:unique\s+customer|ats)",
+        r"mtd\s+sales?\s+(?:by\s+)?store",
+    ], _sql_store_mtd_kpi)
 
-    register(
-        "store_ranking_sales_ats_customers",
-        [
-            r"store\s+rank(?:ing)?\s+based\s+on\s+sales?",
-            r"rank\s+stores?\s+by\s+(?:sales?|ats|customer)",
-            r"store\s+rank(?:ing)?.*(?:ats|customer\s+count)",
-        ],
-        _sql_store_mtd_kpi,
-    )
+    register("store_ranking_sales_ats_customers", [
+        r"store\s+rank(?:ing)?\s+based\s+on\s+sales?",
+        r"rank\s+stores?\s+by\s+(?:sales?|ats|customer)",
+        r"store\s+rank(?:ing)?.*(?:ats|customer\s+count)",
+    ], _sql_store_mtd_kpi)
 
-    register(
-        "department_mtd_sales_customers_ats",
-        [
-            r"department[\s-]?wise\s+mtd\s+sales?",
-            r"dept[\s-]?wise\s+mtd\s+sales?",
-            r"department[\s-]?wise.*(?:unique\s+customer|ats)",
-            r"mtd\s+sales?\s+by\s+department",
-        ],
-        _sql_dept_mtd_kpi,
-    )
+    register("department_mtd_sales_customers_ats", [
+        r"department[\s-]?wise\s+mtd\s+sales?",
+        r"dept[\s-]?wise\s+mtd\s+sales?",
+        r"department[\s-]?wise.*(?:unique\s+customer|ats)",
+        r"mtd\s+sales?\s+by\s+department",
+    ], _sql_dept_mtd_kpi)
 
-    register(
-        "category_mtd_sales_customers_ats",
-        [
-            r"categor(?:y|ies)[\s-]?wise\s+mtd\s+sales?",
-            r"category[\s-]?wise.*(?:unique\s+customer|ats)",
-            r"mtd\s+sales?\s+by\s+categor",
-        ],
-        _sql_cat_mtd_kpi,
-    )
+    register("category_mtd_sales_customers_ats", [
+        r"categor(?:y|ies)[\s-]?wise\s+mtd\s+sales?",
+        r"category[\s-]?wise.*(?:unique\s+customer|ats)",
+        r"mtd\s+sales?\s+by\s+categor",
+    ], _sql_cat_mtd_kpi)
 
-    register(
-        "monthly_sales_since_apr_2024",
-        [
-            r"month[\s-]?wise\s+sales?\s+comparison\s+since\s+apr",
-            r"monthly\s+sales?\s+since\s+(?:apr(?:il)?[\s\']?24|april\s+2024|fy\s*24)",
-            r"month[\s-]?wise\s+sales?\s+comparison.*2024",
-            r"sales?\s+comparison\s+since\s+apr(?:il)?",
-        ],
-        _sql_monthly_since_apr_2024,
-    )
+    register("monthly_sales_since_apr_2024", [
+        r"month[\s-]?wise\s+sales?\s+comparison\s+since\s+apr",
+        r"monthly\s+sales?\s+since\s+(?:apr(?:il)?[\s\']?24|april\s+2024)",
+        r"month[\s-]?wise\s+sales?\s+comparison.*2024",
+        r"sales?\s+comparison\s+since\s+apr(?:il)?",
+    ], _sql_monthly_since_apr_2024)
 
-    register(
-        "five_year_sales_dept_category",
-        [
-            r"last\s+5\s+years?\s+sales?\s+analysis",
-            r"5\s+year.*(?:department|dept).*(?:categor|category)",
-            r"five\s+year.*sales?\s+(?:analysis|trend)",
-        ],
-        _sql_five_year_dept_category,
-    )
+    register("average_sales_mtd_level", [
+        r"average\s+(?:daily\s+)?sales?\s+(?:at\s+)?mtd",
+        r"avg(?:erage)?\s+(?:daily\s+)?sales?\s+this\s+month",
+        r"average\s+sales?\s+(?:level|per\s+day).*(?:this\s+month|mtd)",
+    ], _sql_average_sales_mtd)
 
-    register(
-        "average_sales_mtd_level",
-        [
-            r"average\s+(?:daily\s+)?sales?\s+(?:at\s+)?mtd",
-            r"avg(?:erage)?\s+(?:daily\s+)?sales?\s+this\s+month",
-            r"average\s+sales?\s+(?:level|per\s+day).*(?:this\s+month|mtd)",
-        ],
-        _sql_average_sales_mtd,
-    )
+    register("today_sales_customers_invoices", [
+        r"today(?:'?s)?\s+sales?\s+with\s+unique\s+customer",
+        r"today(?:'?s)?\s+sales?\s+.*unique.*invoices?\s+billed",
+        r"today(?:'?s)?\s+sales?\s+unique\s+customer\s+count",
+        r"sales?\s+today\s+with\s+(?:unique\s+)?customer\s+count",
+    ], _sql_today_sales_customers_invoices)
 
-    register(
-        "today_sales_customers_invoices",
-        [
-            r"today(?:'?s)?\s+sales?\s+with\s+unique\s+customer",
-            r"today(?:'?s)?\s+sales?\s+.*unique.*invoices?\s+billed",
-            r"today(?:'?s)?\s+sales?\s+unique\s+customer\s+count",
-            r"sales?\s+today\s+with\s+(?:unique\s+)?customer\s+count",
-        ],
-        _sql_today_sales_customers_invoices,
-    )
+    register("ytd_growth_vs_last_year", [
+        r"(?:current\s+year\s+)?ytd\s+growth\s+vs\.?\s+last\s+year",
+        r"ytd\s+growth.*last\s+year\s+ytd",
+        r"year[\s-]?to[\s-]?date\s+growth\s+(?:vs|versus|compared\s+to)\s+last\s+year",
+    ], _sql_ytd_growth)
 
-    register(
-        "ytd_growth_vs_last_year",
-        [
-            r"(?:current\s+year\s+)?ytd\s+growth\s+vs\.?\s+last\s+year",
-            r"ytd\s+growth.*last\s+year\s+ytd",
-            r"year[\s-]?to[\s-]?date\s+growth\s+(?:vs|versus|compared\s+to)\s+last\s+year",
-        ],
-        _sql_ytd_growth,
-    )
+    register("qtd_growth_vs_last_year", [
+        r"(?:current\s+year\s+)?qtd\s+growth\s+vs\.?\s+last\s+year",
+        r"qtd\s+growth.*last\s+year\s+qtd",
+        r"quarter[\s-]?to[\s-]?date\s+growth\s+(?:vs|versus|compared\s+to)\s+last\s+year",
+    ], _sql_qtd_growth)
 
-    register(
-        "qtd_growth_vs_last_year",
-        [
-            r"(?:current\s+year\s+)?qtd\s+growth\s+vs\.?\s+last\s+year",
-            r"qtd\s+growth.*last\s+year\s+qtd",
-            r"quarter[\s-]?to[\s-]?date\s+growth\s+(?:vs|versus|compared\s+to)\s+last\s+year",
-        ],
-        _sql_qtd_growth,
-    )
+    register("mtd_growth_vs_last_year", [
+        r"(?:current\s+year\s+)?mtd\s+growth\s+vs\.?\s+last\s+year",
+        r"mtd\s+growth.*last\s+year\s+mtd",
+        r"month[\s-]?to[\s-]?date\s+growth\s+(?:vs|versus|compared\s+to)\s+last\s+year",
+        r"current.*mtd.*growth.*last\s+year",
+    ], _sql_mtd_growth)
 
-    register(
-        "mtd_growth_vs_last_year",
-        [
-            r"(?:current\s+year\s+)?mtd\s+growth\s+vs\.?\s+last\s+year",
-            r"mtd\s+growth.*last\s+year\s+mtd",
-            r"month[\s-]?to[\s-]?date\s+growth\s+(?:vs|versus|compared\s+to)\s+last\s+year",
-            r"current.*mtd.*growth.*last\s+year",
-        ],
-        _sql_mtd_growth,
-    )
+    register("highest_store_current_month", [
+        r"which\s+store\s+has\s+(?:the\s+)?highest\s+sales?\s+(?:in\s+the\s+)?(?:current\s+month|this\s+month|mtd)",
+        r"top\s+store\s+(?:by\s+sales?|this\s+month|current\s+month)",
+        r"best\s+store\s+(?:this\s+month|current\s+month|mtd)",
+        r"which\s+store.*highest\s+sales?.*(?:current|this)\s+month",
+    ], _sql_highest_store_current_month)
 
-    register(
-        "highest_store_current_month",
-        [
-            r"which\s+store\s+has\s+(?:the\s+)?highest\s+sales?\s+(?:in\s+the\s+)?(?:current\s+month|this\s+month|mtd)",
-            r"top\s+store\s+(?:by\s+sales?|this\s+month|current\s+month)",
-            r"best\s+store\s+(?:this\s+month|current\s+month|mtd)",
-            r"which\s+store.*highest\s+sales?.*(?:current|this)\s+month",
-        ],
-        _sql_highest_store_current_month,
-    )
+    register("highest_department_sales_mtd", [
+        r"which\s+department\s+has\s+(?:the\s+)?highest\s+sales?\s+(?:in\s+the\s+)?(?:current\s+month|this\s+month|mtd)",
+        r"top\s+department\s+(?:by\s+sales?|this\s+month)",
+        r"best\s+department\s+(?:this\s+month|current\s+month|mtd)",
+    ], _sql_highest_department_mtd)
 
-    register(
-        "highest_department_sales_mtd",
-        [
-            r"which\s+department\s+has\s+(?:the\s+)?highest\s+sales?\s+(?:in\s+the\s+)?(?:current\s+month|this\s+month|mtd)",
-            r"top\s+department\s+(?:by\s+sales?|this\s+month)",
-            r"best\s+department\s+(?:this\s+month|current\s+month|mtd)",
-            r"which\s+department.*highest\s+sales?.*(?:current|this)\s+month",
-        ],
-        _sql_highest_department_mtd,
-    )
+    register("highest_category_sales_mtd", [
+        r"which\s+categor(?:y|ies)\s+has\s+(?:the\s+)?highest\s+sales?\s+(?:in\s+the\s+)?(?:current\s+month|this\s+month|mtd)",
+        r"top\s+categor(?:y|ies)\s+(?:by\s+sales?|this\s+month)",
+        r"best\s+categor(?:y|ies)\s+(?:this\s+month|current\s+month|mtd)",
+    ], _sql_highest_category_mtd)
 
-    register(
-        "highest_category_sales_mtd",
-        [
-            r"which\s+categor(?:y|ies)\s+has\s+(?:the\s+)?highest\s+sales?\s+(?:in\s+the\s+)?(?:current\s+month|this\s+month|mtd)",
-            r"top\s+categor(?:y|ies)\s+(?:by\s+sales?|this\s+month)",
-            r"best\s+categor(?:y|ies)\s+(?:this\s+month|current\s+month|mtd)",
-            r"which\s+categor(?:y|ies).*highest\s+sales?.*(?:current|this)\s+month",
-        ],
-        _sql_highest_category_mtd,
-    )
+    register("most_selling_product_mtd", [
+        r"most\s+selling\s+product\s+(?:in\s+the\s+)?(?:current\s+month|this\s+month|year|ytd|mtd)?",
+        r"which\s+product\s+(?:sold|sells?)\s+(?:the\s+)?most\s+(?:this\s+month|this\s+year|mtd|ytd)?",
+    ], _sql_most_selling_product_mtd)
 
-    register(
-        "most_selling_product_current_month_year",
-        [
-            r"most\s+selling\s+product\s+(?:in\s+the\s+)?(?:current\s+month|this\s+month|year|ytd|mtd)?",
-            r"best\s+selling\s+product\s+(?:current\s+month|this\s+month|this\s+year)?",
-            r"which\s+product\s+(?:sold|sells?)\s+(?:the\s+)?most\s+(?:this\s+month|this\s+year|mtd|ytd)?",
-            r"top\s+(?:1\s+)?product\s+(?:by\s+(?:qty|quantity|sales?))?",
-        ],
-        _sql_most_selling_product_mtd,
-    )
+    register("least_selling_product_mtd", [
+        r"least\s+selling\s+product",
+        r"which\s+product\s+(?:sold|sells?)\s+(?:the\s+)?least",
+        r"bottom\s+(?:product|item)s?\s+by\s+(?:sales?|qty)",
+        r"worst\s+selling\s+product",
+    ], _sql_least_product_mtd)
 
-    register(
-        "least_selling_product_mtd",
-        [
-            r"least\s+selling\s+product",
-            r"which\s+product\s+(?:sold|sells?)\s+(?:the\s+)?least",
-            r"bottom\s+(?:product|item)s?\s+by\s+(?:sales?|qty)",
-            r"worst\s+selling\s+product",
-        ],
-        _sql_least_product_mtd,
-    )
+    register("lowest_supplier_sales_mtd", [
+        r"which\s+supplier\s+has\s+(?:the\s+)?lowest\s+sales?",
+        r"lowest\s+supplier\s+by\s+sales?",
+        r"which\s+supplier.*lowest\s+sales?.*(?:current|this)\s+month",
+    ], _sql_lowest_supplier_mtd)
 
-    register(
-        "lowest_supplier_sales_mtd",
-        [
-            r"which\s+supplier\s+has\s+(?:the\s+)?lowest\s+sales?",
-            r"lowest\s+supplier\s+by\s+sales?",
-            r"worst\s+supplier\s+by\s+(?:sales?|revenue)",
-            r"which\s+supplier.*lowest\s+sales?.*(?:current|this)\s+month",
-        ],
-        _sql_lowest_supplier_mtd,
-    )
+    register("top_stores_by_growth_pct", [
+        r"top\s+\d*\s*(?:performing\s+)?stores?\s+based\s+on\s+growth",
+        r"stores?\s+(?:with\s+)?highest\s+growth\s+(?:percent|pct|%)?",
+        r"top\s+\d+\s+stores?\s+growth\s+(?:percent|pct|%)?",
+        r"best\s+performing\s+stores?\s+(?:by\s+)?growth",
+    ], _sql_top_stores_growth)
 
-    from nlq_faq_sql import (
-        _sql_highest_supplier_sales_mtd,
-        _sql_predict_next_month_sales,
-        _sql_supplier_contribution_pct_mtd,
-        _sql_stock_aging_analysis,
-        _sql_dead_stock_90_days,
-        _sql_top_customers_by_value,
-        _sql_festival_sales_trend,
-    )
+    register("bottom_stores_sales_decline", [
+        r"bottom\s+\d*\s*(?:performing\s+)?stores?\s+based\s+on\s+(?:sales?\s+)?decline",
+        r"stores?\s+(?:with\s+)?biggest\s+(?:sales?\s+)?decline",
+        r"worst\s+performing\s+stores?\s+(?:by\s+)?(?:sales?\s+)?decline",
+    ], _sql_bottom_stores_decline)
 
-    register(
-        "highest_supplier_sales_mtd",
-        [
-            r"which\s+supplier\s+has\s+(?:the\s+)?highest\s+sales?",
-            r"highest\s+supplier\s+by\s+sales?",
-            r"top\s+supplier\s+(?:by\s+sales?|this\s+month)",
-            r"which\s+supplier.*highest\s+sales?.*(?:current|this)\s+month",
-        ],
-        _sql_highest_supplier_sales_mtd,
-    )
+    register("products_fastest_mom_growth", [
+        r"which\s+products?\s+are\s+growing\s+fastest\s+month[\s-]?over[\s-]?month",
+        r"products?\s+growing\s+fastest\s+(?:mom|month[\s-]?over[\s-]?month)",
+        r"fastest\s+growing\s+products?\s+(?:mom|month[\s-]?over[\s-]?month|monthly)",
+    ], _sql_products_mom_growth)
 
-    register(
-        "predict_next_month_sales",
-        [
-            r"predict\s+next\s+month\s+sales?",
-            r"ai\s+forecasting.*next\s+month",
-            r"next\s+month\s+sales?\s+(?:forecast|prediction)",
-        ],
-        _sql_predict_next_month_sales,
-    )
+    register("categories_negative_growth_trends", [
+        r"which\s+categor(?:y|ies)\s+are\s+showing\s+negative\s+growth",
+        r"categor(?:y|ies)\s+(?:with\s+)?negative\s+growth\s+trends?",
+        r"declining\s+categor(?:y|ies)\s+trend",
+    ], _sql_categories_negative_growth)
 
-    register(
-        "top_stores_by_growth_pct",
-        [
-            r"top\s+\d*\s*(?:performing\s+)?stores?\s+based\s+on\s+growth",
-            r"stores?\s+(?:with\s+)?highest\s+growth\s+(?:percent|pct|%)?",
-            r"top\s+\d+\s+stores?\s+growth\s+(?:percent|pct|%)?",
-            r"best\s+performing\s+stores?\s+(?:by\s+)?growth",
-        ],
-        _sql_top_stores_growth,
-    )
+    register("expected_stock_requirement_30_days", [
+        r"expected\s+stock\s+requirement\s+(?:for\s+)?next\s+30\s+days?",
+        r"stock\s+(?:needed|required)\s+(?:for\s+)?next\s+30\s+days?",
+    ], _sql_stock_requirement_30d)
 
-    register(
-        "bottom_stores_sales_decline",
-        [
-            r"bottom\s+\d*\s*(?:performing\s+)?stores?\s+based\s+on\s+(?:sales?\s+)?decline",
-            r"stores?\s+(?:with\s+)?biggest\s+(?:sales?\s+)?decline",
-            r"worst\s+performing\s+stores?\s+(?:by\s+)?(?:sales?\s+)?decline",
-            r"bottom\s+\d+\s+stores?\s+(?:sales?\s+)?decline",
-        ],
-        _sql_bottom_stores_decline,
-    )
+    register("potential_stockout_prediction", [
+        r"potential\s+stock[\s-]?out\s+(?:products?\s+)?prediction",
+        r"predict\s+stock[\s-]?out",
+        r"items?\s+at\s+risk\s+of\s+stock[\s-]?out",
+    ], _sql_stockout_risk)
 
-    register(
-        "products_fastest_mom_growth",
-        [
-            r"which\s+products?\s+are\s+growing\s+fastest\s+month[\s-]?over[\s-]?month",
-            r"products?\s+growing\s+fastest\s+(?:mom|month[\s-]?over[\s-]?month)",
-            r"fastest\s+growing\s+products?\s+(?:mom|month[\s-]?over[\s-]?month|monthly)",
-            r"products?\s+with\s+highest\s+mom\s+growth",
-        ],
-        _sql_products_mom_growth,
-    )
+    register("slow_moving_inventory_identification", [
+        r"slow[\s-]?moving\s+inventory\s+(?:identification|identify|report)?",
+        r"identify\s+slow[\s-]?moving\s+(?:inventory|items?|products?|stock)",
+        r"which\s+(?:items?|products?)\s+are\s+slow[\s-]?moving",
+    ], _sql_slow_moving_inventory)
 
-    register(
-        "categories_negative_growth_trends",
-        [
-            r"which\s+categor(?:y|ies)\s+are\s+showing\s+negative\s+growth",
-            r"categor(?:y|ies)\s+(?:with\s+)?negative\s+growth\s+trends?",
-            r"declining\s+categor(?:y|ies)\s+trend",
-            r"categor(?:y|ies)\s+negative\s+(?:growth|trend|performance)",
-        ],
-        _sql_categories_negative_growth,
-    )
+    register("fast_moving_inventory_identification", [
+        r"fast[\s-]?moving\s+inventory\s+(?:identification|identify|report)?",
+        r"identify\s+fast[\s-]?moving\s+(?:inventory|items?|products?|stock)",
+        r"which\s+(?:items?|products?)\s+are\s+fast[\s-]?moving",
+    ], _sql_fast_moving_inventory)
 
-    register(
-        "expected_stock_requirement_30_days",
-        [
-            r"expected\s+stock\s+requirement\s+(?:for\s+)?next\s+30\s+days?",
-            r"stock\s+(?:needed|required)\s+(?:for\s+)?next\s+30\s+days?",
-            r"demand\s+(?:forecast|projection)\s+next\s+30\s+days?\s+(?:stock|inventory)",
-        ],
-        _sql_stock_requirement_30d,
-    )
+    register("customer_repeat_purchase_analysis", [
+        r"customer\s+repeat\s+purchase\s+(?:analysis|report)?",
+        r"repeat\s+purchase\s+(?:analysis|behaviour|behavior)",
+        r"how\s+many\s+times\s+customers?\s+(?:purchase|buy|visit)",
+    ], _sql_customer_repeat_purchase)
 
-    register(
-        "potential_stockout_prediction",
-        [
-            r"potential\s+stock[\s-]?out\s+(?:products?\s+)?prediction",
-            r"predict\s+stock[\s-]?out",
-            r"items?\s+at\s+risk\s+of\s+stock[\s-]?out",
-            r"which\s+items?\s+(?:might|will|could)\s+run\s+out",
-        ],
-        _sql_stockout_risk,
-    )
+    register("peak_sales_hours_billing_time", [
+        r"peak\s+sales?\s+hours?",
+        r"peak\s+billing\s+time",
+        r"best\s+(?:sales?\s+)?hours?\s+of\s+(?:the\s+)?day",
+        r"hourly\s+sales?\s+(?:analysis|breakdown|distribution)",
+    ], _sql_peak_sales_hours)
 
-    register(
-        "slow_moving_inventory_identification",
-        [
-            r"slow[\s-]?moving\s+inventory\s+(?:identification|identify|report)?",
-            r"identify\s+slow[\s-]?moving\s+(?:inventory|items?|products?|stock)",
-            r"which\s+(?:items?|products?)\s+are\s+slow[\s-]?moving",
-            r"slow\s+moving\s+stock",
-        ],
-        _sql_slow_moving_inventory,
-    )
+    register("festival_vs_non_festival_sales", [
+        r"festival\s+vs\.?\s+non[\s-]?festival\s+sales?",
+        r"non[\s-]?festival\s+vs\.?\s+festival\s+sales?",
+        r"festive\s+vs\.?\s+non[\s-]?festive\s+sales?\s+comparison",
+    ], _sql_festival_sales)
 
-    register(
-        "fast_moving_inventory_identification",
-        [
-            r"fast[\s-]?moving\s+inventory\s+(?:identification|identify|report)?",
-            r"identify\s+fast[\s-]?moving\s+(?:inventory|items?|products?|stock)",
-            r"which\s+(?:items?|products?)\s+are\s+fast[\s-]?moving",
-            r"fast\s+moving\s+stock",
-            r"quick[\s-]?selling\s+(?:items?|products?|stock)",
-        ],
-        _sql_fast_moving_inventory,
-    )
+    register("weather_festival_impact_sales", [
+        r"weather.*festival.*impact.*sales?",
+        r"festival.*impact.*sales?\s+trend",
+        r"impact\s+of\s+(?:weather|festival)\s+on\s+sales?",
+        r"how\s+(?:weather|festivals?)\s+(?:affect|impact)\s+sales?",
+    ], _sql_festival_sales)
 
-    register(
-        "customer_repeat_purchase_analysis",
-        [
-            r"customer\s+repeat\s+purchase\s+(?:analysis|report)?",
-            r"repeat\s+purchase\s+(?:analysis|behaviour|behavior)",
-            r"how\s+many\s+times\s+customers?\s+(?:purchase|buy|visit)",
-            r"customer\s+visit\s+frequency\s+(?:analysis|report)?",
-        ],
-        _sql_customer_repeat_purchase,
-    )
+    register("region_wise_sales_performance", [
+        r"region[\s-]?wise\s+sales?\s+(?:performance|comparison|report)?",
+        r"sales?\s+by\s+region",
+        r"regional\s+sales?\s+(?:performance|comparison|analysis)",
+    ], _sql_region_sales)
 
-    register(
-        "peak_sales_hours_not_supported",
-        [
-            r"peak\s+sales?\s+hours?",
-            r"peak\s+billing\s+time",
-            r"best\s+(?:sales?\s+)?hours?\s+of\s+(?:the\s+)?day",
-            r"hourly\s+sales?\s+(?:analysis|breakdown|distribution)",
-            r"which\s+hour.*(?:most\s+sales?|highest\s+sales?)",
-        ],
-        _sql_peak_sales_hours,
-    )
+    register("average_basket_size_by_store", [
+        r"average\s+basket\s+size\s+by\s+store",
+        r"basket\s+size\s+(?:by\s+store|store[\s-]?wise)",
+        r"avg(?:erage)?\s+basket\s+(?:size|value)\s+(?:by\s+)?store",
+        r"store[\s-]?wise\s+(?:average\s+)?basket\s+(?:size|value)",
+    ], _sql_avg_basket_by_store)
 
-    register(
-        "festival_vs_non_festival_sales",
-        [
-            r"festival\s+vs\.?\s+non[\s-]?festival\s+sales?",
-            r"non[\s-]?festival\s+vs\.?\s+festival\s+sales?",
-            r"festive\s+vs\.?\s+non[\s-]?festive\s+sales?\s+comparison",
-            r"compare\s+festival.*non[\s-]?festival\s+sales?",
-        ],
-        _sql_festival_sales,
-    )
+    register("average_invoice_value_trend", [
+        r"average\s+invoice\s+value\s+trend",
+        r"avg(?:erage)?\s+invoice\s+value\s+(?:trend|over\s+time|analysis)",
+        r"invoice\s+value\s+trend\s+(?:analysis|over\s+time)?",
+        r"ats\s+trend\s+(?:analysis|over\s+time|last\s+\d+\s+months?)?",
+    ], _sql_invoice_value_trend)
 
-    register(
-        "weather_festival_impact",
-        [
-            r"weather.*(?:festival\s+)?impact\s+on\s+sales?",
-            r"weather/festival\s+impact",
-            r"festival.*impact.*sales?\s+trend",
-            r"impact\s+of\s+(?:weather|festival)\s+on\s+sales?",
-        ],
-        _sql_festival_sales_trend,
-    )
+    register("discount_impact_sales", [
+        r"discount\s+impact\s+on\s+sales?\s+(?:performance)?",
+        r"impact\s+of\s+discount\s+on\s+sales?",
+        r"discount\s+(?:analysis|effect)\s+(?:on\s+)?sales?",
+    ], _sql_discount_impact)
 
-    register(
-        "supplier_contribution_percentage",
-        [
-            r"supplier\s+contribution\s+%?\s+in\s+overall\s+sales?",
-            r"supplier\s+contribution\s+percentage",
-            r"supplier\s+share\s+(?:of\s+)?(?:overall\s+)?sales?",
-        ],
-        _sql_supplier_contribution_pct_mtd,
-    )
+    register("product_recommendation_customer", [
+        r"product\s+recommendation\s+based\s+on\s+customer\s+buying\s+pattern",
+        r"recommend\s+products?\s+based\s+on\s+(?:customer\s+)?buying\s+pattern",
+        r"customer\s+buying\s+pattern\s+(?:product\s+)?recommendation",
+    ], _sql_product_recommendation)
 
-    register(
-        "region_wise_sales_performance",
-        [
-            r"region[\s-]?wise\s+sales?\s+(?:performance|comparison|report)?",
-            r"sales?\s+by\s+region",
-            r"regional\s+sales?\s+(?:performance|comparison|analysis)",
-            r"compare\s+regions?\s+(?:by\s+)?sales?",
-        ],
-        _sql_region_sales,
-    )
+    register("demand_forecast_store_category", [
+        r"ai[\s-]?based\s+demand\s+forecast(?:ing)?\s+by\s+store\s+and\s+categor",
+        r"demand\s+forecast(?:ing)?\s+(?:by\s+)?(?:store|branch).*categor",
+        r"forecast\s+(?:demand|sales?)\s+(?:by\s+)?store\s+(?:and\s+)?categor",
+    ], _sql_demand_forecast_store_category)
 
-    register(
-        "average_basket_size_by_store",
-        [
-            r"average\s+basket\s+size\s+by\s+store",
-            r"basket\s+size\s+(?:by\s+store|store[\s-]?wise)",
-            r"avg(?:erage)?\s+basket\s+(?:size|value)\s+(?:by\s+)?store",
-            r"store[\s-]?wise\s+(?:average\s+)?basket\s+(?:size|value)",
-        ],
-        _sql_avg_basket_by_store,
-    )
+    register("daily_sales_target_achievement", [
+        r"daily\s+sales?\s+target\s+(?:vs\.?\s+)?achievement",
+        r"sales?\s+target\s+(?:vs\.?\s+)?achievement\s+(?:tracking|daily)?",
+        r"track\s+daily\s+sales?\s+target",
+    ], _sql_daily_target_achievement)
 
-    register(
-        "average_invoice_value_trend",
-        [
-            r"average\s+invoice\s+value\s+trend",
-            r"avg(?:erage)?\s+invoice\s+value\s+(?:trend|over\s+time|analysis)",
-            r"invoice\s+value\s+trend\s+(?:analysis|over\s+time)?",
-            r"ats\s+trend\s+(?:analysis|over\s+time|last\s+\d+\s+months?)?",
-        ],
-        _sql_invoice_value_trend,
-    )
+    register("high_return_low_conversion_products", [
+        r"high\s+return.*low\s+conversion\s+product",
+        r"products?\s+with\s+high\s+return\s+(?:rate|ratio|percentage)",
+        r"which\s+products?\s+(?:have\s+)?(?:high\s+)?return\s+(?:rate|frequently)",
+    ], _sql_high_return_low_sales)
 
-    register(
-        "discount_impact_sales",
-        [
-            r"discount\s+impact\s+on\s+sales?\s+(?:performance)?",
-            r"impact\s+of\s+discount\s+on\s+sales?",
-            r"discount\s+(?:analysis|effect|influence)\s+(?:on\s+)?sales?",
-            r"mrp\s+vs\.?\s+net\s+sales?\s+(?:by\s+)?categor",
-        ],
-        _sql_discount_impact,
-    )
+    register("ai_based_alerts_sales_drop_spike", [
+        r"ai[\s-]?based\s+alerts?\s+(?:for\s+)?(?:sudden\s+)?sales?\s+(?:drop|spike)",
+        r"alerts?\s+(?:for\s+)?(?:sudden\s+)?sales?\s+(?:drop|spike|change)",
+        r"detect\s+(?:sales?\s+)?(?:drop|spike|anomal)",
+        r"(?:sudden\s+)?sales?\s+(?:drop|spike)\s+alert",
+    ], _sql_sales_spike_alert)
 
-    register(
-        "product_recommendation_customer",
-        [
-            r"product\s+recommendation\s+based\s+on\s+customer\s+buying\s+pattern",
-            r"recommend\s+products?\s+based\s+on\s+(?:customer\s+)?buying\s+pattern",
-            r"customer\s+buying\s+pattern\s+(?:product\s+)?recommendation",
-            r"what\s+products?\s+should\s+(?:we\s+)?recommend",
-        ],
-        _sql_product_recommendation,
-    )
+    register("ai_business_insights_snapshot", [
+        r"ai[\s-]?(?:generated|based)\s+business\s+insights?\s+(?:and\s+recommendations?)?",
+        r"business\s+insights?\s+(?:and\s+)?recommendations?",
+        r"ai\s+insights?\s+(?:for\s+)?(?:this\s+month|mtd|current\s+period)?",
+        r"generate\s+(?:business\s+)?insights?\s+(?:and\s+)?recommendations?",
+    ], _sql_ai_business_insights_snapshot)
 
-    register(
-        "demand_forecast_store_category",
-        [
-            r"ai[\s-]?based\s+demand\s+forecast(?:ing)?\s+by\s+store\s+and\s+categor",
-            r"demand\s+forecast(?:ing)?\s+(?:by\s+)?(?:store|branch).*categor",
-            r"forecast\s+(?:demand|sales?)\s+(?:by\s+)?store\s+(?:and\s+)?categor",
-        ],
-        _sql_demand_forecast_store_category,
-    )
-
-    register(
-        "daily_sales_target_achievement",
-        [
-            r"daily\s+sales?\s+target\s+(?:vs\.?\s+)?achievement",
-            r"sales?\s+target\s+(?:vs\.?\s+)?achievement\s+(?:tracking|daily)?",
-            r"track\s+daily\s+sales?\s+target",
-            r"how\s+(?:are\s+we\s+doing\s+)?(?:vs?\.?\s+)?(?:daily\s+)?target",
-        ],
-        _sql_daily_target_achievement,
-    )
-
-    register(
-        "high_return_low_conversion_products",
-        [
-            r"high\s+return.*low\s+conversion\s+product",
-            r"products?\s+with\s+high\s+return\s+(?:rate|ratio|percentage)",
-            r"which\s+products?\s+(?:have\s+)?(?:high\s+)?return\s+(?:rate|frequently)",
-            r"low\s+conversion.*high\s+return\s+product",
-        ],
-        _sql_high_return_low_sales,
-    )
-
-    register(
-        "sales_spike_drop_alert",
-        [
-            r"ai[\s-]?based\s+alerts?\s+(?:for\s+)?(?:sudden\s+)?sales?\s+(?:drop|spike)",
-            r"alerts?\s+(?:for\s+)?(?:sudden\s+)?sales?\s+(?:drop|spike|change)",
-            r"detect\s+(?:sales?\s+)?(?:drop|spike|anomal)",
-            r"(?:sudden\s+)?sales?\s+(?:drop|spike)\s+alert",
-        ],
-        _sql_sales_spike_alert,
-    )
-
-    register(
-        "top_customers_purchase_value",
-        [
-            r"top\s+customers?\s+based\s+on\s+purchase\s+value",
-            r"top\s+customers?\s+by\s+(?:purchase|spend|value)",
-            r"best\s+customers?\s+by\s+(?:purchase|revenue|value)",
-        ],
-        _sql_top_customers_by_value,
-    )
-
-    register(
-        "new_vs_repeat_customer_analysis",
-        [
-            r"new\s+vs\.?\s+repeat\s+customer\s+analysis",
-            r"repeat\s+vs\.?\s+new\s+customers?",
-            r"new\s+and\s+repeat\s+customer",
-        ],
-        _sql_new_vs_repeat,
-    )
-
-    register(
-        "category_contribution_percentage",
-        [
-            r"categor(?:y|ies)\s+contribution\s+%",
-            r"category\s+contribution.*(?:total\s+)?revenue",
-            r"revenue\s+share\s+by\s+categor",
-        ],
-        _sql_category_contribution,
-    )
-
-    register(
-        "gross_margin_by_category",
-        [
-            r"gross\s+margin\s+analysis\s+by\s+(?:department|categor)",
-            r"gross\s+margin.*department/categor",
-            r"margin\s+by\s+categor",
-        ],
-        _sql_gross_margin_category,
-    )
-
-    register(
-        "stock_aging_analysis",
-        [
-            r"inventory\s+aging\s+analysis",
-            r"stock\s+aging\s+analysis",
-            r"aged\s+inventory",
-        ],
-        _sql_stock_aging_analysis,
-    )
-
-    register(
-        "dead_stock_identification",
-        [
-            r"dead\s+stock\s+identification",
-            r"identify\s+dead\s+stock",
-            r"no\s+sales?\s+.*\d+\s+days?",
-        ],
-        _sql_dead_stock_90_days,
-    )
-
-    register(
-        "product_sell_through_pct",
-        [
-            r"product[\s-]?wise\s+sell\s+through",
-            r"sell\s+through\s+%",
-            r"sell[\s-]?through\s+(?:percent|pct|%)",
-        ],
-        _sql_sell_through,
-    )
-
-    register(
-        "ai_business_insights_snapshot",
-        [
-            r"ai[\s-]?(?:generated|based)\s+business\s+insights?\s+(?:and\s+recommendations?)?",
-            r"business\s+insights?\s+(?:and\s+)?recommendations?",
-            r"ai\s+insights?\s+(?:for\s+)?(?:this\s+month|mtd|current\s+period)?",
-            r"generate\s+(?:business\s+)?insights?\s+(?:and\s+)?recommendations?",
-        ],
-        _sql_ai_business_insights_snapshot,
-    )
-
-    register(
-        "sales_trend_festivals_seasons",
-        [
-            r"sales?\s+trend\s+prediction\s+(?:for\s+)?upcoming\s+festivals?",
-            r"predict\s+sales?\s+(?:for\s+)?upcoming\s+(?:festivals?|seasons?)",
-            r"upcoming\s+festivals?/seasons",
-            r"upcoming\s+(?:festival|season)\s+sales?\s+(?:trend|prediction|forecast)",
-        ],
-        _sql_festival_sales_trend,
-    )
+    register("sales_trend_prediction_festivals", [
+        r"sales?\s+trend\s+prediction\s+(?:for\s+)?upcoming\s+festivals?",
+        r"predict\s+sales?\s+(?:for\s+)?upcoming\s+(?:festivals?|seasons?)",
+        r"upcoming\s+(?:festival|season)\s+sales?\s+(?:trend|prediction|forecast)",
+    ], _sql_festival_sales)

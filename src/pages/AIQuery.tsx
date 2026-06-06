@@ -262,8 +262,10 @@ const KPICards = memo(function KPICards({ cards }: { cards: KPICard[] }) {
   );
 });
 
-/** Bar width per category when chart scrolls horizontally (no truncation). */
-const BAR_SLOT_PX = 48;
+/** Min px per bar when chart scrolls horizontally. */
+const BAR_SLOT_PX = 52;
+/** Bars above this count trigger horizontal scroll so none are clipped. */
+const BAR_SCROLL_THRESHOLD = 8;
 const PIE_CHART_MAX = 24;
 
 function truncateChartLabel(label: string, max = 12): string {
@@ -290,10 +292,11 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
     borderRadius: 10,
     fontSize: 11,
   };
-  const barScrollMinWidth = type === 'bar' && plotData.length > 20
-    ? plotData.length * 42
-    : undefined;
-  const barHeight = type === 'bar' ? 220 : 176;
+  const needsBarScroll = type === 'bar' && plotData.length > BAR_SCROLL_THRESHOLD;
+  const barScrollMinWidth = needsBarScroll ? plotData.length * BAR_SLOT_PX : undefined;
+  const barHeight = type === 'bar'
+    ? (plotData.length > 30 ? 280 : plotData.length > 15 ? 250 : 220)
+    : 176;
   const piePlotData = type === 'pie' && plotData.length > PIE_CHART_MAX
     ? plotData.slice(0, PIE_CHART_MAX)
     : plotData;
@@ -306,12 +309,12 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
           <BarChart2 size={11} style={{ color: '#00b8e6' }} />
           <span className="text-xs font-semibold" style={{ color: '#00b8e6' }}>{valueKey}</span>
         </div>
-        {type === 'bar' && plotData.length > 12 && (
+        {type === 'bar' && needsBarScroll && (
           <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>
-            Scroll chart horizontally · {plotData.length} bars · full table below
+            Scroll chart horizontally · {plotData.length} bars
           </span>
         )}
-        {type === 'bar' && plotData.length <= 12 && plotData.length > 0 && (
+        {type === 'bar' && !needsBarScroll && plotData.length > 0 && (
           <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>Values on bars</span>
         )}
         {type === 'pie' && plotData.length > PIE_CHART_MAX && (
@@ -322,7 +325,7 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
       </div>
       <div
         className={type === 'bar' ? 'w-full overflow-y-hidden' : 'w-full'}
-        style={type === 'bar' ? { overflowX: plotData.length > 20 ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' } : undefined}
+        style={type === 'bar' ? { overflowX: needsBarScroll ? 'auto' : 'hidden', WebkitOverflowScrolling: 'touch' } : undefined}
       >
         <div style={{ height: barHeight, minWidth: barScrollMinWidth, width: type === 'bar' ? (barScrollMinWidth ?? '100%') : '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -682,6 +685,7 @@ export default function AIQuery() {
 
   // Left panel tabs
   const [leftTab, setLeftTab] = useState<LeftTab>('suggestions');
+  const [leftOpen, setLeftOpen] = useState(true);
 
   const [templateFilter, setTemplateFilter] = useState('');
 
@@ -978,12 +982,28 @@ export default function AIQuery() {
 
       <Toast message={toast?.message ?? ''} type={toast?.type ?? 'success'} visible={!!toast} />
 
+      {/* ── Left panel toggle (desktop) ─────────────────────────────────────── */}
+      <button
+        type="button"
+        onClick={() => setLeftOpen(o => !o)}
+        className="hidden md:flex items-center justify-center flex-shrink-0 self-start mt-1"
+        style={{
+          width: 22, height: 48, borderRadius: 6,
+          background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+          border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+          color: 'var(--text-muted)', cursor: 'pointer',
+        }}
+        title={leftOpen ? 'Collapse panel' : 'Expand panel'}
+      >
+        <ChevronDown size={11} style={{ transform: leftOpen ? 'rotate(90deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />
+      </button>
+
       {/* ── Left panel ──────────────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full md:w-56 flex-shrink-0 flex flex-col gap-3 min-h-0 md:max-h-full max-h-80 overflow-hidden"
+        transition={{ duration: 0.25 }}
+        className={`w-full flex-shrink-0 flex flex-col gap-3 min-h-0 md:max-h-full max-h-80 overflow-hidden${leftOpen ? ' md:w-56' : ' md:w-0 md:pointer-events-none md:opacity-0'}`}
       >
         {/* Stats card */}
         <div className="rounded-2xl p-4 flex-shrink-0"
