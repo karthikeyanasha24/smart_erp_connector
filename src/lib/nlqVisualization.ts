@@ -2,6 +2,8 @@
  * Map NLQ API records → chart / KPI cards / table (no mock data).
  */
 
+import { fmtCount, fmtLakhs, fmtLakhsAxis, fmtRupees } from './format';
+
 export interface ChartPoint {
   label: string;
   value: number;
@@ -246,12 +248,59 @@ function formatCompact(n: number): string {
   return n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 }
 
-function formatCell(v: unknown): string {
+const SALES_COL_HINTS = [
+  'sales', 'revenue', 'amount', 'netsales', 'mtdsales', 'totalsales', 'turnover', 'margin',
+];
+const COUNT_COL_HINTS = [
+  'count', 'customers', 'customer', 'invoices', 'invoice', 'bills', 'billcount', 'qty', 'quantity', 'units',
+];
+const RUPEE_AVG_HINTS = ['ats', 'avg', 'average', 'ticket', 'basket', 'billvalue', 'invoicevalue', 'avginvoice'];
+const PERCENT_COL_HINTS = ['percent', 'pct', 'growth', 'contribution', 'rate', 'share'];
+
+function colLower(col?: string): string {
+  return (col ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isSalesColumn(col?: string): boolean {
+  const l = colLower(col);
+  if (!l) return false;
+  if (RUPEE_AVG_HINTS.some(h => l.includes(h))) return false;
+  if (COUNT_COL_HINTS.some(h => l.includes(h)) && !l.includes('sales')) return false;
+  return SALES_COL_HINTS.some(h => l.includes(h));
+}
+
+function isCountColumn(col?: string): boolean {
+  const l = colLower(col);
+  return COUNT_COL_HINTS.some(h => l.includes(h)) && !l.includes('sales');
+}
+
+function isRupeeAvgColumn(col?: string): boolean {
+  const l = colLower(col);
+  return RUPEE_AVG_HINTS.some(h => l.includes(h));
+}
+
+function isPercentColumn(col?: string): boolean {
+  const l = colLower(col);
+  return PERCENT_COL_HINTS.some(h => l.includes(h));
+}
+
+function formatNumeric(n: number, col?: string, opts?: { axis?: boolean }): string {
+  if (isPercentColumn(col)) return `${n.toFixed(2)}%`;
+  if (isCountColumn(col)) return fmtCount(n);
+  if (isRupeeAvgColumn(col)) return fmtRupees(n);
+  if (isSalesColumn(col) || Math.abs(n) >= 100_000) {
+    return opts?.axis ? fmtLakhsAxis(n) : fmtLakhs(n);
+  }
+  return formatCompact(n);
+}
+
+function formatCell(v: unknown, col?: string, maxTextLen = 28): string {
   if (v == null) return '—';
   const n = toNum(v);
-  if (n != null) return formatCompact(n);
+  if (n != null) return formatNumeric(n, col);
+  if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
   const s = String(v);
-  return s.length > 28 ? `${s.slice(0, 26)}…` : s;
+  return s.length > maxTextLen ? `${s.slice(0, maxTextLen - 2)}…` : s;
 }
 
 /** Detect key-value metric tables like (Metric | Value | Detail) — show as KPI cards, not a chart */
@@ -293,13 +342,13 @@ export function buildNLQVisualization(
       const labelBase = String(r[metricCol] ?? '');
       return {
         label: detail ? `${labelBase} — ${detail}` : labelBase,
-        value: n != null ? formatCompact(n) : '—',
+        value: n != null ? formatNumeric(n, valueCol) : '—',
         raw: n ?? undefined,
       };
     });
     const table: ResultTable = {
       columns: cols,
-      rows: records.map(r => cols.map(c => formatCell(r[c]))),
+      rows: records.map(r => cols.map(c => formatCell(r[c], c))),
     };
     return { chartType: 'none', chartData: [], valueKey: valueCol, labelKey: metricCol, kpiCards: cards, table };
   }
@@ -312,7 +361,7 @@ export function buildNLQVisualization(
       if (n == null) continue;
       cards.push({
         label: col.replace(/([A-Z])/g, ' $1').trim(),
-        value: formatCompact(n),
+        value: formatNumeric(n, col),
         raw: n,
       });
     }
@@ -349,7 +398,7 @@ export function buildNLQVisualization(
   const table: ResultTable = {
     columns: cols,
     rows: records.slice(0, NLQ_TABLE_MAX_ROWS).map(r =>
-      cols.map(c => formatCell(r[c])),
+      cols.map(c => formatCell(r[c], c)),
     ),
   };
 
@@ -363,6 +412,14 @@ export function buildNLQVisualization(
   };
 }
 
-export function formatChartValue(n: number): string {
-  return formatCompact(n);
+export function formatTableCell(v: unknown, col?: string, maxTextLen = 28): string {
+  return formatCell(v, col, maxTextLen);
+}
+
+export function formatChartValue(n: number, valueKey?: string): string {
+  return formatNumeric(n, valueKey);
+}
+
+export function formatChartAxisValue(n: number, valueKey?: string): string {
+  return formatNumeric(n, valueKey, { axis: true });
 }

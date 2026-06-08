@@ -89,7 +89,9 @@ async def sales_dashboard(
     else:
         _validate_period(period)
     try:
-        data = await get_dashboard(period, start_date, end_date, force_refresh=force)
+        data = await run_analytics_sql(
+            get_dashboard(period, start_date, end_date, force_refresh=force)
+        )
         return {"success": True, **data}
     except Exception as exc:
         logger.error("Dashboard fetch failed", period=period, error=str(exc))

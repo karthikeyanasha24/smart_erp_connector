@@ -20,12 +20,12 @@ import {
 import {
   TrendingUp, RefreshCw, FlaskConical, X,
   ChevronRight, WifiOff,
-  Zap, ArrowUpRight, ArrowDownRight, Activity,
+  Zap, ArrowUpRight, ArrowDownRight, Activity, Users,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { useDashboardPage, summaryFromKpis, resolveTodaySummary, useTransactions, hasLyTrendData, formatLySub, lyGrowthReady, lyChartSubtitle } from '../hooks/useAnalytics';
+import { useDashboardPage, summaryFromKpis, resolveTodaySummary, useTransactions, hasLyTrendData, formatLySub, lyGrowthReady, lyChartSubtitle, formatCustomerKpi } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtCountAxis, fmtRupees, fmtSmart } from '../lib/format';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -360,7 +360,33 @@ export default function Dashboard() {
   const todayBills   = todayPending ? '…' : (tS?.bills ? fmtCount(tS.bills) : '—');
   const todayQty     = todayPending ? '…' : (tS?.quantity ? fmtCount(tS.quantity) : '—');
   const todayAvg     = todayPending ? '…' : (tS && tS.bills > 0 ? fmtRupees(tS.mtd_sales / tS.bills) : '—');
-  const mtdCustomers = mS?.customers != null ? fmtCount(mS.customers) : null;
+  const mtdCustomerCount =
+    mS?.customers
+    ?? kpis?.distinct_clients?.value
+    ?? kpis?.customers?.value
+    ?? null;
+  const todayCustomerCount =
+    tS?.customers
+    ?? todayRaw?.summary?.customers
+    ?? todayKpis?.distinct_clients?.value
+    ?? todayKpis?.customers?.value
+    ?? null;
+  const mtdCustomerPending =
+    (mS?.mtd_sales ?? 0) > 0
+    && (mS?.bills ?? 0) > 0
+    && mtdCustomerCount == null;
+  const todayCustomerPending =
+    (tS?.mtd_sales ?? 0) > 0
+    && (tS?.bills ?? 0) > 0
+    && todayCustomerCount == null;
+  const mtdCustomerDisplay = formatCustomerKpi(mtdCustomerCount, {
+    loading: (dataPending || mtdCustomerPending) && mtdCustomerCount == null,
+    hasSalesActivity: (mS?.mtd_sales ?? 0) > 0 && ((mS?.bills ?? 0) > 0 || (mS?.quantity ?? 0) > 0),
+  });
+  const todayCustomerDisplay = formatCustomerKpi(todayCustomerCount, {
+    loading: (todayPending || todayCustomerPending) && todayCustomerCount == null,
+    hasSalesActivity: (tS?.mtd_sales ?? 0) > 0 && ((tS?.bills ?? 0) > 0 || (tS?.quantity ?? 0) > 0),
+  });
 
   const effectiveTrend    = demo ? DEMO_TREND      : (trend.length > 0 ? trend : (isSkeletonMode ? DEMO_TREND : []));
   const effectiveCats     = demo ? DEMO.categories : (categories.length > 0 ? categories : (isSkeletonMode ? DEMO.categories : []));
@@ -620,6 +646,32 @@ export default function Dashboard() {
           color="#EC407A"
           delay={0.25}
           pending={todayPending}
+        />
+      </div>
+
+      {/* ── Customer count (Today + MTD) — same metric as Analytics Customer Count card ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <KpiCard
+          icon={<Users size={16} style={{ color:'#EC407A' }} />}
+          value={todayCustomerDisplay}
+          label="Today's Customer Count"
+          sub={todayCustomerDisplay === 'Loading…' ? 'Distinct customers' : 'Unique customers today'}
+          growth={null}
+          sparkData={[]}
+          color="#EC407A"
+          delay={0.28}
+          pending={todayPending || todayCustomerDisplay === 'Loading…'}
+        />
+        <KpiCard
+          icon={<Users size={16} style={{ color:'#0EA5E9' }} />}
+          value={mtdCustomerDisplay}
+          label="MTD Customer Count"
+          sub={mtdCustomerDisplay === 'Loading…' ? 'Distinct customers' : `Unique customers · ${mtdLabel}`}
+          growth={null}
+          sparkData={[]}
+          color="#0EA5E9"
+          delay={0.29}
+          pending={dataPending || mtdCustomerDisplay === 'Loading…'}
         />
       </div>
 

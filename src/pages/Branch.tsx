@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { useTheme } from '../context/ThemeContext';
 import { useBranches, fmtRevenue, fmtCount, prefetchBranchesChart } from '../hooks/useAnalytics';
+import { fmtLakhsAxis } from '../lib/format';
 import { analytics, BranchPoint } from '../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -435,7 +436,7 @@ export default function Branch() {
                           <YAxis
                             tick={{ fill: T.subtle, fontSize: 10 }}
                             axisLine={false} tickLine={false}
-                            tickFormatter={v => `₹${(v / 100000).toFixed(0)}L`} width={46} />
+                            tickFormatter={v => fmtLakhsAxis(v)} width={46} />
                           {trendAvg > 0 && (
                             <ReferenceLine y={trendAvg} stroke={`${T.amber}60`} strokeDasharray="4 3"
                               label={{ value: 'Avg', position: 'right', fill: T.amber, fontSize: 10 }} />

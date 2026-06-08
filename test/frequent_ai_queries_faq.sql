@@ -8,7 +8,7 @@
 -- ============================================================================
 -- 1/50 • Store Wise MTD Sales, Unique Customer Count, ATS
 -- template_id: store_mtd_sales_customers_ats
--- explanation: Store-wise MTD sales, invoice count, ATS (sales per bill), and unique customers.
+-- explanation: Store-wise MTD sales, invoice count, ATS (sales per customer), and unique customers.
 -- assumption: Sales/ATS from APP_REPORT (NetAmount, XnNo).
 -- assumption: Unique customers from salesperson view (CustomerId, CashmemoDt MTD).
 -- ============================================================================
@@ -16,7 +16,7 @@ SELECT TOP (500)
     s.[BranchAlias] AS Store,
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT s.[XnNo]) AS UniqueInvoices,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(s.[NetAmount]) / NULLIF(ISNULL(cust.UniqueCustomers, 0), 0) AS decimal(18, 2)) AS ATS,
     ISNULL(cust.UniqueCustomers, 0) AS UniqueCustomers
 FROM dbo.[VW_MB_POWERBI_APP_REPORT] s WITH (NOLOCK)
 LEFT JOIN (
@@ -42,7 +42,7 @@ SELECT TOP (500)
     s.[DepartmentShortName] AS Department,
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT s.[XnNo]) AS UniqueInvoices,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(s.[NetAmount]) / NULLIF(ISNULL(cust.UniqueCustomers, 0), 0) AS decimal(18, 2)) AS ATS,
     ISNULL(cust.UniqueCustomers, 0) AS UniqueCustomers
 FROM dbo.[VW_MB_POWERBI_APP_REPORT] s WITH (NOLOCK)
 LEFT JOIN (
@@ -68,7 +68,7 @@ SELECT TOP (500)
     s.[CategoryShortName] AS Category,
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT s.[XnNo]) AS UniqueInvoices,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(s.[NetAmount]) / NULLIF(ISNULL(cust.UniqueCustomers, 0), 0) AS decimal(18, 2)) AS ATS,
     ISNULL(cust.UniqueCustomers, 0) AS UniqueCustomers
 FROM dbo.[VW_MB_POWERBI_APP_REPORT] s WITH (NOLOCK)
 LEFT JOIN (
@@ -821,7 +821,7 @@ SELECT
 -- ============================================================================
 -- 35/50 • Store Ranking based on Sales, ATS, and Customer Count
 -- template_id: store_ranking_sales_ats_customers
--- explanation: Store-wise MTD sales, invoice count, ATS (sales per bill), and unique customers.
+-- explanation: Store-wise MTD sales, invoice count, ATS (sales per customer), and unique customers.
 -- assumption: Sales/ATS from APP_REPORT (NetAmount, XnNo).
 -- assumption: Unique customers from salesperson view (CustomerId, CashmemoDt MTD).
 -- ============================================================================
@@ -829,7 +829,7 @@ SELECT TOP (500)
     s.[BranchAlias] AS Store,
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT s.[XnNo]) AS UniqueInvoices,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(s.[NetAmount]) / NULLIF(ISNULL(cust.UniqueCustomers, 0), 0) AS decimal(18, 2)) AS ATS,
     ISNULL(cust.UniqueCustomers, 0) AS UniqueCustomers
 FROM dbo.[VW_MB_POWERBI_APP_REPORT] s WITH (NOLOCK)
 LEFT JOIN (

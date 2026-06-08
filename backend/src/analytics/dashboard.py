@@ -20,10 +20,16 @@ from src.utils.date_utils import (
     resolve_custom_range,
     get_prior_year_range,
     trend_granularity,
+    trend_granularity_for_custom,
+    custom_range_span_days,
+    custom_dashboard_cache_key,
     period_cache_key,
     today_ist,
     DateRange,
 )
+
+# Skip COUNT(DISTINCT CustomerId) on long custom ranges — same rationale as bundle _LONG_PERIODS.
+_CUSTOM_SKIP_CUSTOMERS_DAYS = 45
 
 
 def _safe_float(val: Any) -> float:
@@ -292,8 +298,12 @@ async def get_dashboard(
         if _som == _today_str:
             effective_period = "today"   # alias: mtd == today on the 1st
 
-    # Custom-range dashboards are not cached (date params vary).
-    cache_key = period_cache_key("dashboard:v3", effective_period) if effective_period != "custom" else None
+    if period == "custom" and start_date and end_date:
+        cache_key = custom_dashboard_cache_key("dashboard:v3", start_date, end_date)
+    elif effective_period != "custom":
+        cache_key = period_cache_key("dashboard:v3", effective_period)
+    else:
+        cache_key = None
 
     # ── _fetch is defined first so the _bg closure can always access it ──
     async def _fetch() -> Dict[str, Any]:
@@ -313,12 +323,22 @@ async def get_dashboard(
                 "ly_custom",
             )
 
-        gran = trend_granularity(period if period != "custom" else "mtd")
+        if period == "custom" and start_date and end_date:
+            gran = trend_granularity_for_custom(start_date, end_date)
+            skip_customers = custom_range_span_days(start_date, end_date) > _CUSTOM_SKIP_CUSTOMERS_DAYS
+        else:
+            gran = trend_granularity(period if period != "custom" else "mtd")
+            skip_customers = False
         top_n = cfg.ANALYTICS_TOP_N_MAX
+
+        async def _customers_or_skip() -> Optional[int]:
+            if skip_customers:
+                return None
+            return await _query_customers(dr)
 
         summary, customers, trend, categories, branches = await asyncio.gather(
             _query_summary(dr, ly_dr),
-            _query_customers(dr),
+            _customers_or_skip(),
             _query_trend(dr, ly_dr, gran),
             _query_contribution(dr, "category", top_n),
             _query_contribution(dr, "branch", top_n),

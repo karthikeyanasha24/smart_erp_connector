@@ -16,8 +16,8 @@ MOCK_CASES = {
         {"MonthStart": "2021-08-01", "Department": "SA", "Category": "WOV", "TotalSales": 139410},
     ],
     "store_mtd_sales_customers_ats": [
-        {"Store": "BR1", "MTDSales": 100000, "UniqueInvoices": 50, "ATS": 2000, "UniqueCustomers": 40},
-        {"Store": "BR2", "MTDSales": 80000, "UniqueInvoices": 45, "ATS": 1777, "UniqueCustomers": 35},
+        {"Store": "BR1", "MTDSales": 100000, "UniqueInvoices": 50, "ATS": 2500, "UniqueCustomers": 40},
+        {"Store": "BR2", "MTDSales": 80000, "UniqueInvoices": 45, "ATS": 2285.71, "UniqueCustomers": 35},
     ],
     "monthly_sales_since_apr_2024": [
         {"MonthStart": "2024-04-01", "MonthLabel": "April 2024", "TotalSales": 500000},

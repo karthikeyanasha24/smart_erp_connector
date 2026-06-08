@@ -5,7 +5,7 @@
     "question": "Store Wise MTD Sales, Unique Customer Count, ATS",
     "category": "Store",
     "template_id": "store_mtd_sales_customers_ats",
-    "sql": "SELECT TOP (500)\n    sp.[BranchAlias] AS Store,\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,\n    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,\n    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,\n    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND sp.[BranchAlias] IS NOT NULL\nGROUP BY sp.[BranchAlias]\nHAVING SUM(sp.[SalesNetAmount]) <> 0\nORDER BY MTDSales DESC",
+    "sql": "SELECT TOP (500)\n    sp.[BranchAlias] AS Store,\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,\n    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,\n    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CustomerId]), 0) AS decimal(18, 2)) AS ATS,\n    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND sp.[BranchAlias] IS NOT NULL\nGROUP BY sp.[BranchAlias]\nHAVING SUM(sp.[SalesNetAmount]) <> 0\nORDER BY MTDSales DESC",
     "builtin": true
   },
   {
@@ -14,7 +14,7 @@
     "question": "Department Wise MTD Sales, Unique Customer Count, ATS",
     "category": "Department",
     "template_id": "department_mtd_sales_customers_ats",
-    "sql": "SELECT TOP (500)\n    sp.[DepartmentShortName] AS Department,\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,\n    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,\n    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,\n    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND sp.[DepartmentShortName] IS NOT NULL\nGROUP BY sp.[DepartmentShortName]\nHAVING SUM(sp.[SalesNetAmount]) <> 0\nORDER BY MTDSales DESC",
+    "sql": "SELECT TOP (500)\n    sp.[DepartmentShortName] AS Department,\n    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,\n    COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,\n    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CustomerId]), 0) AS decimal(18, 2)) AS ATS,\n    COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers\nFROM dbo.[VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID] sp WITH (NOLOCK)\nWHERE sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))\n  AND sp.[DepartmentShortName] IS NOT NULL\nGROUP BY sp.[DepartmentShortName]\nHAVING SUM(sp.[SalesNetAmount]) <> 0\nORDER BY MTDSales DESC",
     "builtin": true
   },
   {

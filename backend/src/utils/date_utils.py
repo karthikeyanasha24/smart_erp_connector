@@ -184,6 +184,41 @@ def trend_granularity(period: str) -> str:
     return "month"
 
 
+def custom_range_span_days(start: str, end: str) -> int:
+    """Inclusive day count for a custom YYYY-MM-DD range."""
+    s = date.fromisoformat(start.strip()[:10])
+    e = date.fromisoformat(end.strip()[:10])
+    if e < s:
+        s, e = e, s
+    return (e - s).days + 1
+
+
+def trend_granularity_for_custom(start: str, end: str) -> str:
+    """Use daily points for short custom ranges; monthly for longer spans (faster SQL)."""
+    return "day" if custom_range_span_days(start, end) <= 31 else "month"
+
+
+def custom_dashboard_cache_key(
+    prefix: str,
+    start_date: str,
+    end_date: str,
+    ref_date: Optional[date] = None,
+) -> str:
+    """
+    Cache key for a custom dashboard range.
+    Appends today's IST date when the range includes today so keys roll at midnight.
+    """
+    today = ref_date or today_ist()
+    s = start_date.strip()[:10]
+    e = end_date.strip()[:10]
+    if s > e:
+        s, e = e, s
+    base = f"{prefix}:custom:{s.replace('-', '')}_{e.replace('-', '')}"
+    if date.fromisoformat(e) >= today:
+        return f"{base}:{_fmt(today)}"
+    return base
+
+
 def get_prior_year_range(period: str, ref_date: Optional[date] = None) -> DateRange:
     """Same calendar window one year earlier (for YoY bar comparison)."""
     dr = resolve_date_range(period, ref_date)

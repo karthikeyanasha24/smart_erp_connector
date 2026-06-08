@@ -807,6 +807,17 @@ function dashboardFromBundle(
   const lyFromTrend = yoyTrend.reduce((s, p) => s + (p.prior ?? 0), 0);
   const lyTrendReady = yoyTrend.some((p) => (p.prior ?? 0) > 0);
 
+  const customersFromBundle = (): number | null => {
+    const fromKpi =
+      kpis?.customers?.value
+      ?? kpis?.distinct_clients?.value;
+    if (fromKpi != null && Number.isFinite(fromKpi)) return Math.round(fromKpi);
+    if (typeof core.customer_count === 'number' && Number.isFinite(core.customer_count)) {
+      return Math.round(core.customer_count);
+    }
+    return null;
+  };
+
   const summary: DashboardResponse['summary'] =
     kpis && (kpis.revenue != null || kpis.transactions != null)
       ? {
@@ -815,10 +826,7 @@ function dashboardFromBundle(
           sales_growth_pct: lyTrendReady ? (kpis.revenue?.growth ?? null) : null,
           bills: kpis.transactions?.value ?? 0,
           quantity: kpis.quantity?.value ?? 0,
-          customers:
-            kpis.customers?.value != null && Number.isFinite(kpis.customers.value)
-              ? Math.round(kpis.customers.value)
-              : null,
+          customers: customersFromBundle(),
         }
       : {
           mtd_sales: yoyTrend.reduce((s, p) => s + p.current, 0),
@@ -826,7 +834,7 @@ function dashboardFromBundle(
           sales_growth_pct: null,
           bills: yoyTrend.reduce((s, p) => s + p.bills, 0),
           quantity: yoyTrend.reduce((s, p) => s + p.quantity, 0),
-          customers: null,
+          customers: customersFromBundle(),
         };
 
   return {

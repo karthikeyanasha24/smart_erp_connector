@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { analytics, type CatalogViewMeta, type ViewQueryResponse } from '../lib/api';
 import { getStaticViewCatalog } from '../data/viewCatalog';
 import { fmtCount } from '../lib/format';
+import { formatTableCell } from '../lib/nlqVisualization';
 import TableExportButtons, { type ExportNotify, ExportToast } from '../components/export/TableExportButtons';
 
 const STATIC_CATALOG = getStaticViewCatalog();
@@ -139,15 +140,8 @@ function RowsSelect({
 }
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
-function fmtCell(v: unknown): string {
-  if (v == null) return '—';
-  if (typeof v === 'number') {
-    if (Number.isInteger(v)) return fmtCount(v);
-    return v.toLocaleString('en-IN', { maximumFractionDigits: 4 });
-  }
-  if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
-  const s = String(v);
-  return s.length > 120 ? `${s.slice(0, 117)}…` : s;
+function fmtCell(v: unknown, col?: string): string {
+  return formatTableCell(v, col, 120);
 }
 
 function escapeCsvCell(s: string) {
@@ -158,7 +152,7 @@ function escapeCsvCell(s: string) {
 function downloadCsv(columns: string[], rows: Record<string, unknown>[], viewName: string, page: number) {
   const header = columns.join(',');
   const body = rows.map((r) =>
-    columns.map((c) => escapeCsvCell(fmtCell(r[c]))).join(','),
+    columns.map((c) => escapeCsvCell(fmtCell(r[c], c))).join(','),
   );
   const csv = [header, ...body].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -683,9 +677,9 @@ export default function DataViews() {
                                   ? isDark ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(0,0,0,0.03)'
                                   : undefined,
                               }}
-                              title={fmtCell(row[col])}
+                              title={fmtCell(row[col], col)}
                             >
-                              {fmtCell(row[col])}
+                              {fmtCell(row[col], col)}
                             </td>
                           ))}
                         </tr>

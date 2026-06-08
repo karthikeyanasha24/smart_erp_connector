@@ -104,7 +104,7 @@ SELECT
     sp.[BranchAlias] AS Store,
     CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,
-    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CustomerId]), 0) AS decimal(18, 2)) AS ATS,
     COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
 FROM {_SALESPERSON} sp WITH (NOLOCK)
 WHERE {_cashmemo_mtd_where("sp")}
@@ -116,7 +116,7 @@ ORDER BY MTDSales DESC
         return _blob(
             "store_mtd_sales_customers_ats",
             sql,
-            "Store-wise MTD sales, invoice count, ATS (sales per bill), and unique customers.",
+            "Store-wise MTD sales, invoice count, ATS (sales per customer), and unique customers.",
             [
                 "Single source: SLS_DATA_WITHOUT_ITEMID (CashmemoDt) — aligned with dashboard analytics.",
                 "Returns no rows when the current month has no posted sales yet.",
@@ -129,7 +129,7 @@ SELECT
     sp.[DepartmentShortName] AS Department,
     CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,
-    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CustomerId]), 0) AS decimal(18, 2)) AS ATS,
     COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
 FROM {_SALESPERSON} sp WITH (NOLOCK)
 WHERE {_cashmemo_mtd_where("sp")}
@@ -151,7 +151,7 @@ SELECT
     sp.[CategoryShortName] AS Category,
     CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,
-    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CustomerId]), 0) AS decimal(18, 2)) AS ATS,
     COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
 FROM {_SALESPERSON} sp WITH (NOLOCK)
 WHERE {_cashmemo_mtd_where("sp")}
@@ -1246,7 +1246,7 @@ SELECT
     sp.[BranchAlias] AS Store,
     CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT sp.[CashmemoNo]) AS UniqueInvoices,
-    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CustomerId]), 0) AS decimal(18, 2)) AS ATS,
     COUNT(DISTINCT sp.[CustomerId]) AS UniqueCustomers
 FROM {_SALESPERSON} sp WITH (NOLOCK)
 WHERE {_cashmemo_mtd_where("sp")}

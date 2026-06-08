@@ -10,6 +10,7 @@ import {
 import { Play, Copy, Trash2, Download, ChevronLeft, ChevronRight, Terminal, Table2, BarChart2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { analytics } from '../lib/api';
+import { formatTableCell, formatChartValue, formatChartAxisValue } from '../lib/nlqVisualization';
 
 // ── Colour palette for chart bars ────────────────────────────────────────────
 const COLOURS = [
@@ -70,13 +71,8 @@ ORDER BY Revenue DESC`,
 const PAGE_SIZE = 50;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtNum(v: string | number | null): string {
-  if (v === null || v === undefined || v === '') return '—';
-  const n = Number(v);
-  if (isNaN(n)) return String(v);
-  if (Math.abs(n) >= 1_00_000) return `₹${(n / 1_00_000).toFixed(2)} L`;
-  if (Math.abs(n) >= 1_000) return n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
-  return n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+function fmtCell(v: unknown, col?: string): string {
+  return formatTableCell(v, col, 100);
 }
 
 function isNumericCol(rows: (string | number | null)[][], colIdx: number): boolean {
@@ -144,6 +140,12 @@ export default function SQLPlayground() {
       name: String(r[labelIdx] ?? ''),
       value: Number(r[valueIdx] ?? 0),
     }));
+  }, [result]);
+
+  const chartValueKey = useMemo(() => {
+    if (!result || result.rows.length === 0) return 'Value';
+    const idx = result.columns.findIndex((_, i) => isNumericCol(result.rows, i));
+    return idx >= 0 ? result.columns[idx] : 'Value';
   }, [result]);
 
   // ── Paginated table rows ───────────────────────────────────────────────────
@@ -311,7 +313,7 @@ export default function SQLPlayground() {
                               color: text,
                               textAlign: isNumericCol(result.rows, ci) ? 'right' : 'left',
                             }}>
-                            {isNumericCol(result.rows, ci) ? fmtNum(cell) : String(cell ?? '—')}
+                            {isNumericCol(result.rows, ci) ? fmtCell(cell, result.columns[ci]) : String(cell ?? '—')}
                           </td>
                         ))}
                       </tr>
@@ -355,21 +357,20 @@ export default function SQLPlayground() {
                     textAnchor={chartData.length > 8 ? 'end' : 'middle'}
                     interval={0} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: muted }}
-                    tickFormatter={(v: number) =>
-                      v >= 1_00_000 ? `${(v / 1_00_000).toFixed(1)}L` : v.toLocaleString('en-IN')} width={52} />
+                    tickFormatter={(v: number) => formatChartAxisValue(v, chartValueKey)} width={52} />
                   <Tooltip
                     contentStyle={{
                       background: isDark ? 'rgba(5,9,24,0.96)' : '#fff',
                       border: '1px solid rgba(88,130,255,0.2)',
                       borderRadius: 10, fontSize: 11,
                     }}
-                    formatter={(v: number) => [fmtNum(v), result.columns.find((_, i) => isNumericCol(result.rows, i)) ?? 'Value']}
+                    formatter={(v: number) => [formatChartValue(v, chartValueKey), chartValueKey]}
                   />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
                     {chartData.map((_, i) => <Cell key={i} fill={COLOURS[i % COLOURS.length]} />)}
                     {chartData.length <= 20 && (
                       <LabelList dataKey="value" position="top"
-                        formatter={(v: number) => v >= 1_00_000 ? `${(v / 1_00_000).toFixed(1)}L` : v.toLocaleString('en-IN')}
+                        formatter={(v: number) => formatChartAxisValue(Number(v), chartValueKey)}
                         style={{ fontSize: 9, fill: muted, fontWeight: 600 }} />
                     )}
                   </Bar>

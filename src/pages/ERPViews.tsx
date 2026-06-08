@@ -13,6 +13,7 @@ import { useTheme } from '../context/ThemeContext';
 import { analytics, type CatalogViewMeta, type ViewQueryResponse } from '../lib/api';
 import { getStaticViewCatalog } from '../data/viewCatalog';
 import { fmtCount } from '../lib/format';
+import { formatTableCell } from '../lib/nlqVisualization';
 
 const stagger = { animate: { transition: { staggerChildren: 0.04 } } };
 const item = {
@@ -24,15 +25,8 @@ const STATIC_CATALOG = getStaticViewCatalog();
 const PAGE_SIZES = [25, 50, 100] as const;
 type PageSize = typeof PAGE_SIZES[number];
 
-function fmtCell(v: unknown): string {
-  if (v == null) return '—';
-  if (typeof v === 'number') {
-    if (Number.isInteger(v)) return fmtCount(v);
-    return v.toLocaleString('en-IN', { maximumFractionDigits: 4 });
-  }
-  if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
-  const s = String(v);
-  return s.length > 100 ? `${s.slice(0, 97)}…` : s;
+function fmtCell(v: unknown, col?: string): string {
+  return formatTableCell(v, col, 100);
 }
 
 function escapeCsvCell(s: string) {
@@ -41,7 +35,7 @@ function escapeCsvCell(s: string) {
 }
 
 function downloadCsv(columns: string[], rows: Record<string, unknown>[], viewName: string, page: number) {
-  const body = rows.map(r => columns.map(c => escapeCsvCell(fmtCell(r[c]))).join(','));
+  const body = rows.map(r => columns.map(c => escapeCsvCell(fmtCell(r[c], c))).join(','));
   const csv = [columns.join(','), ...body].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -358,8 +352,8 @@ function RowBrowser({
                     {columns.map(col => (
                       <td key={col} className="px-3 py-2 max-w-xs truncate"
                         style={{ color: 'var(--text-primary)' }}
-                        title={fmtCell(row[col])}>
-                        {fmtCell(row[col])}
+                        title={fmtCell(row[col], col)}>
+                        {fmtCell(row[col], col)}
                       </td>
                     ))}
                   </motion.tr>

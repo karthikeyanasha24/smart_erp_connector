@@ -169,7 +169,7 @@ SELECT
     s.[BranchAlias],
     CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales,
     COUNT(DISTINCT s.[InvoiceNo]) AS UniqueInvoices,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[InvoiceNo]), 0) AS decimal(18, 2)) AS ATS,
+    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[CustomerId]), 0) AS decimal(18, 2)) AS ATS,
     COUNT(DISTINCT s.[CustomerId]) AS UniqueCustomers
 FROM {_APP} s WITH (NOLOCK)
 WHERE {_mtd_where("s")}

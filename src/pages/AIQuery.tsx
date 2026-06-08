@@ -16,6 +16,7 @@ import { ai, NLQResponse, fetchPublicHealth } from '../lib/api';
 import {
   buildNLQVisualization,
   formatChartValue,
+  formatChartAxisValue,
   type ChartPoint,
   type KPICard,
 } from '../lib/nlqVisualization';
@@ -301,6 +302,15 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
     ? plotData.slice(0, PIE_CHART_MAX)
     : plotData;
 
+  const fmtVal = useMemo(
+    () => (v: number) => formatChartValue(Number(v), valueKey),
+    [valueKey],
+  );
+  const fmtAxis = useMemo(
+    () => (v: number) => formatChartAxisValue(Number(v), valueKey),
+    [valueKey],
+  );
+
   return (
     <div className="mt-3 rounded-xl p-4"
       style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
@@ -344,7 +354,7 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
               >
                 {piePlotData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
               </Pie>
-              <Tooltip formatter={(v: number) => formatChartValue(Number(v))} contentStyle={tooltipStyle} />
+              <Tooltip formatter={(v: number) => fmtVal(Number(v))} contentStyle={tooltipStyle} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
             </PieChart>
           ) : type === 'area' ? (
@@ -357,9 +367,9 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
               <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={52} />
+              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={52} />
               <Tooltip
-                formatter={(v: number) => [formatChartValue(Number(v)), valueKey]}
+                formatter={(v: number) => [fmtVal(Number(v)), valueKey]}
                 labelFormatter={(l) => String(l)}
                 contentStyle={tooltipStyle}
               />
@@ -369,9 +379,9 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
             <LineChart data={plotData} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
               <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={52} />
+              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={52} />
               <Tooltip
-                formatter={(v: number) => [formatChartValue(Number(v)), valueKey]}
+                formatter={(v: number) => [fmtVal(Number(v)), valueKey]}
                 labelFormatter={(l) => String(l)}
                 contentStyle={tooltipStyle}
               />
@@ -395,9 +405,9 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
                 tickFormatter={(v: string) => truncateChartLabel(v, 14)}
                 height={plotData.length > 6 ? 80 : 36}
               />
-              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={formatChartValue} width={56} />
+              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={56} />
               <Tooltip
-                formatter={(v: number) => [formatChartValue(Number(v)), valueKey]}
+                formatter={(v: number) => [fmtVal(Number(v)), valueKey]}
                 labelFormatter={(l) => String(l)}
                 contentStyle={tooltipStyle}
                 cursor={{ fill: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}
@@ -407,7 +417,7 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
                   <LabelList
                     dataKey="value"
                     position="top"
-                    formatter={(v: number) => formatChartValue(Number(v))}
+                    formatter={(v: number) => fmtVal(Number(v))}
                     style={{ fontSize: 9, fill: 'var(--text-secondary)', fontWeight: 600 }}
                   />
                 )}
