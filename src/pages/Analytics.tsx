@@ -135,26 +135,30 @@ function PieLegend({ items, isDark }: { items: { name: string; value: number }[]
   );
 }
 
-// ─── Bar label: directly above own bar, no artificial stagger ────────────────
-// Each label sits 4px above its bar top, centered on the bar.
-// Vertical separation comes naturally from bar height differences.
-// Horizontal separation comes from bars being side-by-side.
-// No x-offset, no stagger — clean and consistent.
+// ─── Compact label formatter ─────────────────────────────────────────────────
+// Integer Lakhs for ≥100L keeps text short enough to fit within bar width.
+// "12003L" (6 chars @ 8px ≈ 30px) fits a ~30px bar without overflow → no overlap.
+function fmtBarLabel(rawRupees: number): string {
+  const l = rawRupees / 100000;
+  if (l >= 100) return `${Math.round(l)}L`;
+  if (l >= 1)   return `${l.toFixed(1)}L`;
+  return `${Math.round(l * 100)}K`;
+}
+
+// ─── Bar label: both Current + LY, compact integer format ────────────────────
+// 8px font + integer Lakhs keeps each label within bar width → never overflows
+// onto the adjacent bar → both bars can show their label without collision.
 function SmartBarLabel({ x, y, width, value, fill }: any) {
-  if (!value || value === '0.0L') return null;
+  if (value == null || value === 0) return null;
+  const label = fmtBarLabel(Number(value));
+  if (label === '0L') return null;
   const cx = Number(x ?? 0) + Number(width ?? 0) / 2;
-  const ty = Number(y ?? 0) - 4;
+  const ty = Number(y ?? 0) - 5;
   return (
-    <text
-      x={cx} y={ty}
-      textAnchor="middle"
-      dominantBaseline="auto"
-      style={{
-        fontSize: 9.5, fontWeight: 700,
-        fill: fill ?? 'var(--text-muted)',
-        pointerEvents: 'none',
-      }}
-    >{String(value)}</text>
+    <text x={cx} y={ty}
+      textAnchor="middle" dominantBaseline="auto"
+      style={{ fontSize: 8, fontWeight: 700, fill: fill ?? 'var(--text-muted)', pointerEvents: 'none' }}
+    >{label}</text>
   );
 }
 
@@ -940,7 +944,7 @@ export default function Analytics() {
               const xBottom = manyBars ? 44 : 4;
               return (
             <BarChart data={chartData}
-              margin={{ top: showBarLabels ? 42 : 10, right: 12, left: 4, bottom: xBottom }}
+              margin={{ top: showBarLabels ? 24 : 10, right: 12, left: 4, bottom: xBottom }}
               barCategoryGap="32%" barGap={4}>
               <CartesianGrid strokeDasharray="3 3"
                 stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} strokeDasharray="4 6" />
@@ -954,13 +958,9 @@ export default function Analytics() {
                 cursor={{ fill: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', radius: 4 }} />
               <Bar dataKey="current" name="Current" fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={36}>
                 {showBarLabels && (
-                  <LabelList
-                    dataKey="current"
+                  <LabelList dataKey="current"
                     content={(props: any) => (
-                      <SmartBarLabel {...props}
-                        value={props.value != null ? fmtLakhsAxis(Number(props.value)) : null}
-                        fill="#5882ff"
-                      />
+                      <SmartBarLabel {...props} value={props.value} fill="#5882ff" />
                     )}
                   />
                 )}
@@ -969,13 +969,10 @@ export default function Analytics() {
                 <Bar dataKey="prior" name="Last Year"
                   fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={36}>
                   {showBarLabels && (
-                    <LabelList
-                      dataKey="prior"
+                    <LabelList dataKey="prior"
                       content={(props: any) => (
-                        <SmartBarLabel {...props}
-                          value={props.value != null ? fmtLakhsAxis(Number(props.value)) : null}
-                          fill={isDark ? '#94a3b8' : '#64748b'}
-                        />
+                        <SmartBarLabel {...props} value={props.value}
+                          fill={isDark ? '#94a3b8' : '#64748b'} />
                       )}
                     />
                   )}
