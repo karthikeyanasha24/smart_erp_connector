@@ -136,8 +136,6 @@ function PieLegend({ items, isDark }: { items: { name: string; value: number }[]
 }
 
 // ─── Compact label formatter ─────────────────────────────────────────────────
-// Integer Lakhs for ≥100L keeps text short enough to fit within bar width.
-// "12003L" (6 chars @ 8px ≈ 30px) fits a ~30px bar without overflow → no overlap.
 function fmtBarLabel(rawRupees: number): string {
   const l = rawRupees / 100000;
   if (l >= 100) return `${Math.round(l)}L`;
@@ -145,18 +143,30 @@ function fmtBarLabel(rawRupees: number): string {
   return `${Math.round(l * 100)}K`;
 }
 
-// ─── Bar label: both Current + LY, compact integer format ────────────────────
-// 8px font + integer Lakhs keeps each label within bar width → never overflows
-// onto the adjacent bar → both bars can show their label without collision.
-function SmartBarLabel({ x, y, width, value, fill }: any) {
-  if (value == null || value === 0) return null;
+// ─── Collision-aware bar label ────────────────────────────────────────────────
+// Recharts renders all of Bar-A before Bar-B (across all indices).
+// We cache Bar-A's label y-positions; when Bar-B renders, if the gap < 13px
+// we push Bar-B's label up so both are always clearly separated.
+// Pass barKey="current"|"prior" and idx={props.index} from each LabelList.
+const _lblY = new Map<string, number>();
+function SmartBarLabel({ x, y, width, value, fill, barKey = 'a', idx = 0 }: any) {
+  if (value == null || Number(value) === 0) return null;
   const label = fmtBarLabel(Number(value));
   if (label === '0L') return null;
-  const cx = Number(x ?? 0) + Number(width ?? 0) / 2;
-  const ty = Number(y ?? 0) - 5;
+
+  const cx  = Number(x ?? 0) + Number(width ?? 0) / 2;
+  const otherKey = `${idx}:${barKey === 'current' ? 'prior' : 'current'}`;
+  let ty = Number(y ?? 0) - 5;
+
+  const otherTy = _lblY.get(otherKey);
+  if (otherTy !== undefined && Math.abs(ty - otherTy) < 13) {
+    // Push this label above the other one with a 13px clear gap
+    ty = Math.min(ty, otherTy) - 13;
+  }
+  _lblY.set(`${idx}:${barKey}`, ty);
+
   return (
-    <text x={cx} y={ty}
-      textAnchor="middle" dominantBaseline="auto"
+    <text x={cx} y={ty} textAnchor="middle" dominantBaseline="auto"
       style={{ fontSize: 8, fontWeight: 700, fill: fill ?? 'var(--text-muted)', pointerEvents: 'none' }}
     >{label}</text>
   );
@@ -516,7 +526,7 @@ export default function Analytics() {
     if (type === 'bar') return (
       <ResponsiveContainer width="100%" height={260}>
         <BarChart data={daywiseAreaData} barCategoryGap="28%" barGap={3}
-          margin={{ top: 10, right: 8, left: 0, bottom: 4 }}>
+          margin={{ top: daywiseAreaData.length <= 14 ? 26 : 10, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
             tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
@@ -526,17 +536,23 @@ export default function Analytics() {
           <Bar dataKey="prior" name="Last Year"
             fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={28}>
             {daywiseAreaData.length <= 14 && (
-              <LabelList dataKey="prior" position="top"
-                formatter={(v: number) => fmtLakhsAxis(Number(v))}
-                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+              <LabelList dataKey="prior"
+                content={(props: any) => (
+                  <SmartBarLabel {...props} value={props.value}
+                    fill={isDark ? '#94a3b8' : '#64748b'} barKey="prior" idx={props.index} />
+                )}
+              />
             )}
           </Bar>
           <Bar dataKey="current" name="Current"
             fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={28}>
             {daywiseAreaData.length <= 14 && (
-              <LabelList dataKey="current" position="top"
-                formatter={(v: number) => fmtLakhsAxis(Number(v))}
-                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+              <LabelList dataKey="current"
+                content={(props: any) => (
+                  <SmartBarLabel {...props} value={props.value}
+                    fill="#5882ff" barKey="current" idx={props.index} />
+                )}
+              />
             )}
           </Bar>
         </BarChart>
@@ -960,7 +976,8 @@ export default function Analytics() {
                 {showBarLabels && (
                   <LabelList dataKey="current"
                     content={(props: any) => (
-                      <SmartBarLabel {...props} value={props.value} fill="#5882ff" />
+                      <SmartBarLabel {...props} value={props.value}
+                        fill="#5882ff" barKey="current" idx={props.index} />
                     )}
                   />
                 )}
@@ -972,7 +989,7 @@ export default function Analytics() {
                     <LabelList dataKey="prior"
                       content={(props: any) => (
                         <SmartBarLabel {...props} value={props.value}
-                          fill={isDark ? '#94a3b8' : '#64748b'} />
+                          fill={isDark ? '#94a3b8' : '#64748b'} barKey="prior" idx={props.index} />
                       )}
                     />
                   )}
