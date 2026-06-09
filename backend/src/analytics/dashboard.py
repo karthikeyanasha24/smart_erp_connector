@@ -21,15 +21,14 @@ from src.utils.date_utils import (
     get_prior_year_range,
     trend_granularity,
     trend_granularity_for_custom,
-    custom_range_span_days,
     custom_dashboard_cache_key,
     period_cache_key,
     today_ist,
     DateRange,
 )
 
-# Skip COUNT(DISTINCT CustomerId) on long custom ranges — same rationale as bundle _LONG_PERIODS.
-_CUSTOM_SKIP_CUSTOMERS_DAYS = 45
+# Prefix for all custom-range dashboard cache keys (see custom_dashboard_cache_key).
+CUSTOM_DASHBOARD_CACHE_PREFIX = "dashboard:v3:custom"
 
 
 def _safe_float(val: Any) -> float:
@@ -181,11 +180,22 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
     bills_expr = bills_in_window(curr_win)
 
     if granularity == "month":
-        period_expr = f"FORMAT([{date_col}], 'yyyy-MM')"
-        label_expr = f"FORMAT([{date_col}], 'MMM yyyy')"
+        # DATENAME/DATEPART are 10-50x faster than FORMAT() on large row counts.
+        # FORMAT uses .NET runtime per-row; avoid it for aggregate trend queries.
+        period_expr = (
+            f"DATENAME(year, [{date_col}]) + '-' + "
+            f"RIGHT('0' + CAST(MONTH([{date_col}]) AS VARCHAR(2)), 2)"
+        )
+        label_expr = (
+            f"LEFT(DATENAME(month, [{date_col}]), 3) + ' ' + "
+            f"DATENAME(year, [{date_col}])"
+        )
     else:
         period_expr = f"CAST([{date_col}] AS DATE)"
-        label_expr = f"FORMAT(CAST([{date_col}] AS DATE), 'dd-MMM')"
+        label_expr = (
+            f"RIGHT('0' + CAST(DATEPART(day, [{date_col}]) AS VARCHAR(2)), 2) + '-' + "
+            f"LEFT(DATENAME(month, [{date_col}]), 3)"
+        )
 
     sql = f"""
         SELECT
@@ -210,16 +220,30 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
             "lyEnd": ly_dr.end,
         },
         nolock=True,
-        recompile=False,
+        recompile=None,  # let cfg.ANALYTICS_RECOMPILE decide (True → OPTION RECOMPILE avoids bad cached plans for large ranges)
     )
 
+    # Build ly_map: maps each CURRENT-period key → its prior-year revenue.
+    # For monthly granularity we shift the row's key forward +1 year so the
+    # current bar (e.g. '2025-04') can look itself up directly.
+    #
+    # Why year-shifting instead of month-number keys ('04'):
+    #   • Short ranges (<12m):  '2025-06' pure-LY row → ly_map['2026-06'] = Jun-25 ✓
+    #   • Long ranges (>12m):   overlap rows exist (curr>0 AND ly>0, same data).
+    #     '2024-04' → ly_map['2025-04'] = Apr-24 (LY for Apr-25 bar)  ✓
+    #     '2025-04' → ly_map['2026-04'] = Apr-25 (LY for Apr-26 bar)  ✓
+    #     Month-number keys would collapse both to '04', making one wrong.
     ly_map: Dict[str, float] = {}
     for r in result["records"]:
         key = _period_key(r.get("PeriodKey"))
         ly_val = _safe_float(r.get("PriorRevenue"))
         if ly_val > 0:
             if granularity == "month" and len(key) >= 7:
-                ly_map[key[5:7]] = ly_val
+                try:
+                    next_year = int(key[:4]) + 1
+                    ly_map[f"{next_year}-{key[5:7]}"] = ly_val
+                except (ValueError, IndexError):
+                    pass  # malformed key — skip
             else:
                 ly_map[key] = ly_val
 
@@ -232,7 +256,7 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
         key = _period_key(r.get("PeriodKey"))
         label = str(r.get("Label", key))
         if granularity == "month" and len(key) >= 7:
-            prior = ly_map.get(key[5:7], 0)
+            prior = ly_map.get(key, 0)  # full YYYY-MM key (ly_map is year-shifted)
         elif key:
             try:
                 prior = ly_map.get(_prior_year_day_key(key), 0)
@@ -299,9 +323,9 @@ async def get_dashboard(
             effective_period = "today"   # alias: mtd == today on the 1st
 
     if period == "custom" and start_date and end_date:
-        cache_key = custom_dashboard_cache_key("dashboard:v3", start_date, end_date)
+        cache_key = custom_dashboard_cache_key("dashboard:v4", start_date, end_date)
     elif effective_period != "custom":
-        cache_key = period_cache_key("dashboard:v3", effective_period)
+        cache_key = period_cache_key("dashboard:v4", effective_period)
     else:
         cache_key = None
 
@@ -325,20 +349,13 @@ async def get_dashboard(
 
         if period == "custom" and start_date and end_date:
             gran = trend_granularity_for_custom(start_date, end_date)
-            skip_customers = custom_range_span_days(start_date, end_date) > _CUSTOM_SKIP_CUSTOMERS_DAYS
         else:
             gran = trend_granularity(period if period != "custom" else "mtd")
-            skip_customers = False
         top_n = cfg.ANALYTICS_TOP_N_MAX
-
-        async def _customers_or_skip() -> Optional[int]:
-            if skip_customers:
-                return None
-            return await _query_customers(dr)
 
         summary, customers, trend, categories, branches = await asyncio.gather(
             _query_summary(dr, ly_dr),
-            _customers_or_skip(),
+            _query_customers(dr),
             _query_trend(dr, ly_dr, gran),
             _query_contribution(dr, "category", top_n),
             _query_contribution(dr, "branch", top_n),
@@ -396,7 +413,7 @@ async def get_dashboard(
                         cache.set(cache_key, fresh)
                         # Also write alias key when effective_period differs (day-1 mtd/today sync)
                         if effective_period != period:
-                            cache.set(period_cache_key("dashboard:v3", period), fresh)
+                            cache.set(period_cache_key("dashboard:v4", period), fresh)
                         logger.info("🔄 dashboard bg-refresh done", period=period)
                     except Exception as exc:
                         logger.warning("🔄 dashboard bg-refresh failed", period=period, error=str(exc))
@@ -405,7 +422,7 @@ async def get_dashboard(
     elif cache_key and force_refresh:
         cache.delete(cache_key)
         if effective_period != period:
-            cache.delete(period_cache_key("dashboard:v3", period))
+            cache.delete(period_cache_key("dashboard:v4", period))
         logger.info("🔄 dashboard force-refresh", period=period)
 
     logger.info("🔍 dashboard requested", period=period)
@@ -414,5 +431,5 @@ async def get_dashboard(
         cache.set(cache_key, result)
         # Also populate the original period key when aliased (mtd on day 1 → also writes today)
         if effective_period != period:
-            cache.set(period_cache_key("dashboard:v3", period), result)
+            cache.set(period_cache_key("dashboard:v4", period), result)
     return result

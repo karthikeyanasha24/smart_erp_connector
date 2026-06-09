@@ -212,11 +212,17 @@ async def _prime_breakdown_bundle(period: str) -> None:
         return await get_department_chart(period, n)
 
     # Lean bundle first (matches test/breakdown_fetch.py -- 3 SQL queries).
-    branches, trend, categories = await asyncio.gather(
-        run_warmup_sql(_branches()),
-        run_warmup_sql(_trend()),
-        run_warmup_sql(_categories()),
-    )
+    # CancelledError guard: uvicorn hot-reload cancels the gather mid-flight, which leaves
+    # inner coroutines never-awaited and logs RuntimeWarning. Shield the gather so
+    # cancellation is handled cleanly.
+    try:
+        branches, trend, categories = await asyncio.gather(
+            run_warmup_sql(_branches()),
+            run_warmup_sql(_trend()),
+            run_warmup_sql(_categories()),
+        )
+    except asyncio.CancelledError:
+        return
     lean = {
         "success": True,
         "period": period,
@@ -228,10 +234,13 @@ async def _prime_breakdown_bundle(period: str) -> None:
     cache.set(f"bundle:v2:{period}:{n}:d0:k0", lean)
     prime_chart_caches_from_bundle(period, lean, top_n=n)
 
-    departments, kpis = await asyncio.gather(
-        run_warmup_sql(_departments()),
-        run_warmup_sql(_kpis()),
-    )
+    try:
+        departments, kpis = await asyncio.gather(
+            run_warmup_sql(_departments()),
+            run_warmup_sql(_kpis()),
+        )
+    except asyncio.CancelledError:
+        return
     with_depts = {**lean, "departments": departments}
     full = {**with_depts, "kpis": kpis}
     cache.set(f"bundle:v2:{period}:{n}:d1:k0", with_depts)

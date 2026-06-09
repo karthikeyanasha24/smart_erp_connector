@@ -588,6 +588,12 @@ export const analytics = {
       '/analytics/sql',
       { method: 'POST', body: JSON.stringify({ sql, limit }), timeoutMs: 120_000 }
     ),
+
+  clearCustomCache: () =>
+    apiFetch<{ success: boolean; deleted: number; message: string }>(
+      '/analytics/cache/custom',
+      { method: 'DELETE' }
+    ),
 };
 
 // ── AI / NLQ ──────────────────────────────────────────────────────────────────

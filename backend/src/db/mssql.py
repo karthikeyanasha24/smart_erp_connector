@@ -419,15 +419,29 @@ async def execute_query(
             raise RuntimeError("SQL Server not available after 180s — check network/VPN")
 
     loop = asyncio.get_event_loop()
+    effective_timeout_s = (timeout_ms or cfg.DB_REQUEST_TIMEOUT_MS) / 1000
 
-    records, duration = await loop.run_in_executor(
-        None,
-        _bind_and_execute,
-        sql,
-        params,
-        use_nolock,
-        use_recompile,
-    )
+    try:
+        records, duration = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                _bind_and_execute,
+                sql,
+                params,
+                use_nolock,
+                use_recompile,
+            ),
+            timeout=effective_timeout_s,
+        )
+    except asyncio.TimeoutError:
+        # NOTE: asyncio.wait_for cancels the asyncio Future but NOT the underlying thread.
+        # The SQL query continues running in the background until the legacy ODBC driver
+        # eventually fires HYT00 (~600s). This is a known ThreadPoolExecutor limitation.
+        # Primary fix: avoid FORMAT() in SQL — replace with DATENAME/DATEPART which are
+        # 10-50x faster and prevent timeout in the first place.
+        raise RuntimeError(
+            f"Query timed out after {effective_timeout_s:.0f}s (DB_REQUEST_TIMEOUT_MS={cfg.DB_REQUEST_TIMEOUT_MS})"
+        )
 
     return {"records": records, "duration": duration}
 

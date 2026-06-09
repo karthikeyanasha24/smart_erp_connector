@@ -109,7 +109,7 @@ function SidebarContent({
           </AnimatePresence>
         </div>
 
-        {/* Close button on mobile drawer */}
+        {/* Close button on mobile drawer only */}
         {onClose && (
           <button
             type="button"
@@ -123,23 +123,7 @@ function SidebarContent({
             <X size={15} />
           </button>
         )}
-
-        {/* Desktop collapse toggle */}
-        {!onClose && (
-          <motion.button
-            className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center z-10"
-            style={{
-              background: isDark ? '#1e293b' : '#f1f5f9',
-              border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
-              color: 'var(--text-tertiary)',
-            }}
-            onClick={() => {/* handled by parent */}}
-            whileHover={{ scale: 1.1, color: '#5882ff' }}
-            whileTap={{ scale: 0.9 }}
-          >
-            {expanded ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-          </motion.button>
-        )}
+        {/* Desktop collapse toggle is rendered by the parent Sidebar component */}
       </div>
 
       {/* Live status */}

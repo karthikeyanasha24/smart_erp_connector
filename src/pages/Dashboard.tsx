@@ -372,11 +372,13 @@ export default function Dashboard() {
     ?? todayKpis?.customers?.value
     ?? null;
   const mtdCustomerPending =
-    (mS?.mtd_sales ?? 0) > 0
+    mLoading
+    && (mS?.mtd_sales ?? 0) > 0
     && (mS?.bills ?? 0) > 0
     && mtdCustomerCount == null;
   const todayCustomerPending =
-    (tS?.mtd_sales ?? 0) > 0
+    todayLoading
+    && (tS?.mtd_sales ?? 0) > 0
     && (tS?.bills ?? 0) > 0
     && todayCustomerCount == null;
   const mtdCustomerDisplay = formatCustomerKpi(mtdCustomerCount, {

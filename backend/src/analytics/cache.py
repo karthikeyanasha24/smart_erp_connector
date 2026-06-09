@@ -169,6 +169,28 @@ class AnalyticsCache:
             del self._store[k]
         return len(to_delete)
 
+    async def invalidate_prefix_pg(self, prefix: str) -> int:
+        """Delete all keys with prefix from both in-memory store and PostgreSQL."""
+        deleted_mem = self.invalidate_prefix(prefix)
+        deleted_pg = 0
+        from src.config import cfg as _cfg
+        if _cfg.rbac_url:
+            from src.db.postgres import pg_execute
+            try:
+                status = await pg_execute(
+                    "DELETE FROM analytics_cache WHERE cache_key LIKE $1",
+                    prefix + "%",
+                )
+                if status:
+                    # asyncpg returns "DELETE N"
+                    parts = str(status).split()
+                    if len(parts) >= 2 and parts[-1].isdigit():
+                        deleted_pg = int(parts[-1])
+                logger.info("Cache PG prefix delete", prefix=prefix, deleted_pg=deleted_pg)
+            except Exception as exc:
+                logger.warning("Cache PG prefix delete failed (non-fatal)", prefix=prefix, error=str(exc))
+        return deleted_mem + deleted_pg
+
     def clear(self) -> int:
         n = len(self._store)
         self._store.clear()

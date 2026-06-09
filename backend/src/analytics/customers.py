@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.config import cfg
 from src.db.mssql import execute_query
-from src.utils.date_utils import resolve_date_range
+from src.utils.date_utils import resolve_date_range, resolve_custom_range
 from src.utils.sql_ref import sql_table
 from src.utils.logger import logger
 
@@ -29,6 +29,23 @@ async def get_customer_count(period: str) -> Optional[int]:
         return None
 
     dr = resolve_date_range(period)
+    return await _count_customers_in_range(dr.start, dr.end, period=period)
+
+
+async def get_custom_customer_count(start_date: str, end_date: str) -> Optional[int]:
+    """Customer count for a custom YYYY-MM-DD range."""
+    if cfg.ANALYTICS_SKIP_CUSTOMER_COUNT:
+        return None
+    dr = resolve_custom_range(start_date, end_date)
+    return await _count_customers_in_range(dr.start, dr.end, period="custom")
+
+
+async def _count_customers_in_range(
+    start: str,
+    end: str,
+    *,
+    period: str,
+) -> Optional[int]:
     c = cfg
     table = sql_table(c.SALES_AI_TABLE)
     date_col = c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN
@@ -42,7 +59,7 @@ async def get_customer_count(period: str) -> Optional[int]:
     try:
         result = await execute_query(
             sql,
-            params={"startDate": dr.start, "endDate": dr.end},
+            params={"startDate": start, "endDate": end},
             nolock=True,
             recompile=False,
         )
@@ -60,7 +77,7 @@ async def get_customer_count(period: str) -> Optional[int]:
             "customers counted (fast view)",
             period=period,
             customers=cnt,
-            date_range=f"{dr.start} → {dr.end}",
+            date_range=f"{start} → {end}",
         )
         return cnt
     except Exception as exc:

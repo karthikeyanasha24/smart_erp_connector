@@ -12,6 +12,7 @@ GET /analytics/bundle               — Fast parallel split (branches+trend+cate
 GET /analytics/branches/{alias}     — Branch detail + trend
 GET /analytics/health               — DB health check
 POST /analytics/cache/clear         — Clear cache (admin)
+DELETE /analytics/cache/custom      — Clear custom-range cache entries only
 GET /analytics/cache/stats          — Cache stats (admin)
 GET /analytics/views                — List all ERP views from semantic catalog
 GET /analytics/views/query          — Paginate rows from a whitelisted ERP view
@@ -36,7 +37,7 @@ from src.analytics.charts import (
     get_branch_detail,
 )
 from src.analytics.products_catalog import fetch_product_catalog, fetch_top_products
-from src.analytics.customers import get_customer_count
+from src.analytics.customers import get_customer_count, get_custom_customer_count
 from src.analytics.transactions import get_transactions, get_transaction_summary
 from src.analytics.view_explorer import fetch_view_page, list_catalog_views
 from src.analytics.concurrency import run_analytics_sql
@@ -97,6 +98,31 @@ async def sales_dashboard(
         logger.error("Dashboard fetch failed", period=period, error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
 
+
+@router.get("/customer-count")
+async def customer_count_endpoint(
+    period: str = Query(default="mtd"),
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    user: TokenPayload = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Fast COUNT(DISTINCT CustomerId) — used to backfill custom-range analytics KPIs."""
+    if period == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="custom period requires start_date and end_date")
+        try:
+            count = await run_analytics_sql(get_custom_customer_count(start_date, end_date))
+            return {"success": True, "period": period, "customer_count": count}
+        except Exception as exc:
+            logger.error("Custom customer count failed", error=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+    _validate_period(period)
+    try:
+        count = await run_analytics_sql(get_customer_count(period))
+        return {"success": True, "period": period, "customer_count": count}
+    except Exception as exc:
+        logger.error("Customer count failed", period=period, error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # ─── KPIs ─────────────────────────────────────────────────────────────────────
@@ -471,6 +497,25 @@ async def branch_detail(
 ) -> Dict[str, Any]:
     data = await get_branch_detail(branch_alias, period)
     return {"success": True, **data}
+
+
+# ─── Cache Management ─────────────────────────────────────────────────────────
+
+@router.delete("/cache/custom")
+async def clear_custom_cache(
+    user: TokenPayload = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Delete all custom-range dashboard cache entries from memory + PostgreSQL."""
+    from src.analytics.cache import cache as _cache
+    from src.analytics.dashboard import CUSTOM_DASHBOARD_CACHE_PREFIX
+
+    deleted = await _cache.invalidate_prefix_pg(CUSTOM_DASHBOARD_CACHE_PREFIX)
+    logger.info("Custom analytics cache cleared", deleted=deleted, user=user.email)
+    return {
+        "success": True,
+        "deleted": deleted,
+        "message": f"Cleared {deleted} custom cache entr{'y' if deleted == 1 else 'ies'}",
+    }
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────

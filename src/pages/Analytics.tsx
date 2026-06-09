@@ -8,11 +8,12 @@ import {
 import {
   RefreshCw, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
   TrendingUp, TrendingDown, ShoppingBag, Users, Receipt, BarChart2, CalendarRange,
-  FileText, Truck, UserCheck,
+  FileText, Truck, UserCheck, Trash2,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady, formatCustomerKpi } from '../hooks/useAnalytics';
+import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady, formatCustomerKpi, clearCustomAnalyticsClientCache } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtCountAxis, fmtLakhsAxis, formatChartLabel } from '../lib/format';
+import { analytics as analyticsApi } from '../lib/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -134,12 +135,39 @@ function PieLegend({ items, isDark }: { items: { name: string; value: number }[]
   );
 }
 
+// ─── Bar label: directly above own bar, no artificial stagger ────────────────
+// Each label sits 4px above its bar top, centered on the bar.
+// Vertical separation comes naturally from bar height differences.
+// Horizontal separation comes from bars being side-by-side.
+// No x-offset, no stagger — clean and consistent.
+function SmartBarLabel({ x, y, width, value, fill }: any) {
+  if (!value || value === '0.0L') return null;
+  const cx = Number(x ?? 0) + Number(width ?? 0) / 2;
+  const ty = Number(y ?? 0) - 4;
+  return (
+    <text
+      x={cx} y={ty}
+      textAnchor="middle"
+      dominantBaseline="auto"
+      style={{
+        fontSize: 9.5, fontWeight: 700,
+        fill: fill ?? 'var(--text-muted)',
+        pointerEvents: 'none',
+      }}
+    >{String(value)}</text>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Analytics() {
   const { isDark } = useTheme();
   const [period, setPeriod] = useState('mtd');
+  // Committed dates drive the actual query; pending update on every keystroke.
+  // Clicking Apply copies pending → committed, firing a single fetch.
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [pendingStart, setPendingStart] = useState('');
+  const [pendingEnd, setPendingEnd] = useState('');
   const [expandBranches, setExpandBranches] = useState(false);
   const [expandCategories, setExpandCategories] = useState(false);
   const [activePieIndex, setActivePieIndex] = useState<number>(0);
@@ -162,6 +190,35 @@ export default function Analytics() {
     refetch();
     setRefreshSpinning(true);
     setTimeout(() => setRefreshSpinning(false), 1200);
+  }, [refetch]);
+
+  // Apply button — copy pending → committed to fire the query
+  const customDirty = period === 'custom' && (pendingStart !== customStart || pendingEnd !== customEnd);
+  const canApplyCustom = !!pendingStart && !!pendingEnd && pendingStart <= pendingEnd;
+  const applyCustom = useCallback(() => {
+    if (!canApplyCustom) return;
+    setCustomStart(pendingStart);
+    setCustomEnd(pendingEnd);
+  }, [canApplyCustom, pendingStart, pendingEnd]);
+
+  // Clear custom cache — wipes both client SWR cache and server PostgreSQL cache,
+  // then refetches fresh data from SQL Server.
+  const [clearingCache, setClearingCache] = useState(false);
+  const [clearCacheMsg, setClearCacheMsg] = useState<string | null>(null);
+  const handleClearCustomCache = useCallback(async () => {
+    setClearingCache(true);
+    setClearCacheMsg(null);
+    try {
+      clearCustomAnalyticsClientCache();
+      const res = await analyticsApi.clearCustomCache();
+      setClearCacheMsg(res.deleted > 0 ? `Cleared ${res.deleted} entr${res.deleted === 1 ? 'y' : 'ies'}` : 'Cache empty');
+      refetch();
+    } catch {
+      setClearCacheMsg('Clear failed');
+    } finally {
+      setClearingCache(false);
+      setTimeout(() => setClearCacheMsg(null), 3000);
+    }
   }, [refetch]);
 
   const uiLoading = loading && !data && !waitingForCustomDates;
@@ -603,21 +660,58 @@ export default function Analytics() {
 
         {period === 'custom' && (
           <div className="flex flex-wrap gap-2 items-center">
-            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+            <input
+              type="date" value={pendingStart}
+              onChange={(e) => setPendingStart(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
               className="px-3 py-1.5 rounded-xl text-xs outline-none"
               style={{
                 background: isDark ? 'rgba(255,255,255,0.05)' : 'white',
                 border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.15)',
                 color: 'var(--text-primary)',
-              }} />
+              }}
+            />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>to</span>
-            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+            <input
+              type="date" value={pendingEnd}
+              onChange={(e) => setPendingEnd(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applyCustom()}
               className="px-3 py-1.5 rounded-xl text-xs outline-none"
               style={{
                 background: isDark ? 'rgba(255,255,255,0.05)' : 'white',
                 border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.15)',
                 color: 'var(--text-primary)',
-              }} />
+              }}
+            />
+            <button
+              onClick={applyCustom} disabled={!canApplyCustom}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+              style={{
+                background: canApplyCustom
+                  ? (customDirty ? '#5882ff' : (isDark ? 'rgba(88,130,255,0.18)' : 'rgba(88,130,255,0.12)'))
+                  : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
+                color: canApplyCustom ? (customDirty ? '#fff' : '#5882ff') : 'var(--text-muted)',
+                border: `1px solid ${canApplyCustom ? 'rgba(88,130,255,0.4)' : 'transparent'}`,
+                cursor: canApplyCustom ? 'pointer' : 'not-allowed',
+              }}
+            >{customDirty ? '▶ Apply' : '✓ Applied'}</button>
+            <button
+              type="button" onClick={handleClearCustomCache} disabled={clearingCache}
+              title="Clear cached result for this custom range and refetch fresh data"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
+              style={{
+                background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+                color: clearCacheMsg
+                  ? (clearCacheMsg.startsWith('Clear') ? '#f87171' : '#34d399')
+                  : 'var(--text-muted)',
+                cursor: clearingCache ? 'wait' : 'pointer',
+                opacity: clearingCache ? 0.6 : 1,
+              }}
+            >
+              <Trash2 size={11} className={clearingCache ? 'animate-pulse' : ''} />
+              {clearCacheMsg ?? 'Clear Cache'}
+            </button>
           </div>
         )}
       </div>
@@ -838,15 +932,22 @@ export default function Analytics() {
             No data for this period
           </p>
         ) : (
-          <ResponsiveContainer width="100%" height={320}>
+          <ResponsiveContainer width="100%" height={360}>
+            {(() => {
+              const manyBars = chartData.length > 8;
+              const xAngle = manyBars ? -38 : 0;
+              const xAnchor = manyBars ? ('end' as const) : ('middle' as const);
+              const xBottom = manyBars ? 44 : 4;
+              return (
             <BarChart data={chartData}
-              margin={{ top: showBarLabels ? 28 : 10, right: 12, left: 4, bottom: 4 }}
-              barCategoryGap="28%" barGap={3}>
+              margin={{ top: showBarLabels ? 42 : 10, right: 12, left: 4, bottom: xBottom }}
+              barCategoryGap="32%" barGap={4}>
               <CartesianGrid strokeDasharray="3 3"
-                stroke={isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                axisLine={false} tickLine={false}
-                interval={data?.granularity === 'day' && chartData.length > 20 ? 'preserveStartEnd' : 0} />
+                stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} strokeDasharray="4 6" />
+              <XAxis dataKey="label"
+                tick={{ fontSize: 10, fill: 'var(--text-muted)', angle: xAngle, textAnchor: xAnchor }}
+                axisLine={false} tickLine={false} interval={0}
+                height={manyBars ? 52 : 25} />
               <YAxis tickFormatter={fmtLakhsAxis} tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
                 axisLine={false} tickLine={false} width={52} />
               <Tooltip content={<ChartTooltip />}
@@ -855,9 +956,12 @@ export default function Analytics() {
                 {showBarLabels && (
                   <LabelList
                     dataKey="current"
-                    position="top"
-                    formatter={(v: number) => fmtLakhsAxis(Number(v))}
-                    style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }}
+                    content={(props: any) => (
+                      <SmartBarLabel {...props}
+                        value={props.value != null ? fmtLakhsAxis(Number(props.value)) : null}
+                        fill="#5882ff"
+                      />
+                    )}
                   />
                 )}
               </Bar>
@@ -867,14 +971,19 @@ export default function Analytics() {
                   {showBarLabels && (
                     <LabelList
                       dataKey="prior"
-                      position="top"
-                      formatter={(v: number) => fmtLakhsAxis(Number(v))}
-                      style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }}
+                      content={(props: any) => (
+                        <SmartBarLabel {...props}
+                          value={props.value != null ? fmtLakhsAxis(Number(props.value)) : null}
+                          fill={isDark ? '#94a3b8' : '#64748b'}
+                        />
+                      )}
                     />
                   )}
                 </Bar>
               )}
             </BarChart>
+              );
+            })()}
           </ResponsiveContainer>
         )}
       </Card>

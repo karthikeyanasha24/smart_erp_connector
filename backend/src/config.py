@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     DB_USER: str = ""
     DB_PASSWORD: str = ""
     DB_CONNECT_TIMEOUT_MS: int = 60000
-    DB_REQUEST_TIMEOUT_MS: int = 480000
+    DB_REQUEST_TIMEOUT_MS: int = 300000
     DB_POOL_MAX: int = 20
     DB_POOL_ACQUIRE_TIMEOUT_MS: int = 180000
 

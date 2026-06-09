@@ -2199,3 +2199,22 @@ export function useBackendHealth() {
   const isConnected = data ? (data as Record<string, unknown>).status === 'healthy' : false;
   return { isConnected, loading, health: data };
 }
+
+/** Remove browser + in-memory SWR cache for Analytics custom date ranges only.
+ *  Called by the "Clear Cache" button before the server-side DELETE so the UI
+ *  always refetches fresh data after clearing.
+ */
+export function clearCustomAnalyticsClientCache(): number {
+  let n = 0;
+  const isCustomKey = (key: string) =>
+    key.startsWith('analytics-page:custom:') ||
+    key.includes(':custom:') ||
+    key.includes('dashboard:v4:custom');
+  for (const key of Array.from(_store.keys())) {
+    if (isCustomKey(key)) {
+      purgeStaleClientCache(key);
+      n++;
+    }
+  }
+  return n;
+}

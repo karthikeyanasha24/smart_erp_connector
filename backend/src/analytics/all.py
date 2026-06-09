@@ -20,6 +20,7 @@ from src.utils.date_utils import (
     resolve_custom_range,
     resolve_date_range,
     trend_granularity,
+    trend_granularity_for_custom,
 )
 from src.utils.logger import logger
 from src.utils.sql_ref import sql_table
@@ -960,24 +961,17 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
         OPTION (RECOMPILE)
     """
 
-    curr_res = await execute_query(
-        sql_curr,
-        params={"startDate": dr.start, "endDate": dr.end},
-        nolock=False,
-        recompile=False,
-    )
-    ly_res = await execute_query(
-        sql_ly,
-        params={"lyStart": ly_dr.start, "lyEnd": ly_dr.end},
-        nolock=False,
-        recompile=False,
+    curr_res, ly_res = await asyncio.gather(
+        execute_query(sql_curr, params={"startDate": dr.start, "endDate": dr.end}, nolock=False, recompile=False),
+        execute_query(sql_ly, params={"lyStart": ly_dr.start, "lyEnd": ly_dr.end}, nolock=False, recompile=False),
     )
 
     ly_map: Dict[str, float] = {}
     for r in ly_res["records"]:
         key = str(r.get("PeriodKey", ""))[:10]
         if granularity == "month" and len(key) >= 7:
-            ly_map[key[5:7]] = _safe_float(r.get("Revenue"))
+            # Store by full "yyyy-MM" so multi-year ranges don't collide on month number alone
+            ly_map[key[:7]] = _safe_float(r.get("Revenue"))
         else:
             try:
                 d = dt.fromisoformat(key)
@@ -990,7 +984,12 @@ async def _query_trend(dr: DateRange, ly_dr: DateRange, granularity: str) -> Lis
         key = str(r.get("PeriodKey", ""))[:10]
         label = str(r.get("Label", key))
         if granularity == "month" and len(key) >= 7:
-            prior = ly_map.get(key[5:7], 0)
+            # Shift current month back 1 year to look up the LY bucket
+            try:
+                y, m = int(key[:4]), int(key[5:7])
+                prior = ly_map.get(f"{y - 1:04d}-{m:02d}", 0)
+            except ValueError:
+                prior = 0
         else:
             try:
                 d = dt.fromisoformat(key)
@@ -1046,10 +1045,8 @@ async def get_dashboard(
     end_date: Optional[str] = None,
 ) -> Dict[str, Any]:
 
-    logger.info("🔍 dashboard requested", period=period, cache_key=cache_key)
-
     async def _fetch() -> Dict[str, Any]:
-        logger.info("💾 cache miss — querying SQL Server", period=period)
+        logger.info("💾 querying SQL Server", period=period)
         dr = _period_range(period, start_date, end_date)
         ly_dr = get_prior_year_range(
             "custom" if period == "custom" else period,
@@ -1065,12 +1062,14 @@ async def get_dashboard(
                 "ly_custom",
             )
 
-        gran = trend_granularity(period if period != "custom" else "mtd")
-        summary = await _query_summary(dr, ly_dr)
-        customers = await _query_customers(dr)
-        trend = await _query_trend(dr, ly_dr, gran)
-        categories = await _query_contribution(dr, "category", cfg.ANALYTICS_TOP_N_MAX)
-        branches = await _query_contribution(dr, "branch", cfg.ANALYTICS_TOP_N_MAX)
+        gran = trend_granularity_for_custom(start_date or "", end_date or "") if period == "custom" else trend_granularity(period)
+        summary, customers, trend, categories, branches = await asyncio.gather(
+            _query_summary(dr, ly_dr),
+            _query_customers(dr),
+            _query_trend(dr, ly_dr, gran),
+            _query_contribution(dr, "category", cfg.ANALYTICS_TOP_N_MAX),
+            _query_contribution(dr, "branch", cfg.ANALYTICS_TOP_N_MAX),
+        )
 
         trend_sum = sum(p["current"] for p in trend)
         checksum_match = abs(trend_sum - summary["mtd_sales"]) < max(1, summary["mtd_sales"] * 0.001)
@@ -1111,7 +1110,15 @@ async def get_dashboard(
             },
         }
 
-    return await _fetch()
+    # Custom ranges are never cached (date params vary freely)
+    if period == "custom":
+        logger.info("🔍 dashboard requested (custom)", start=start_date, end=end_date)
+        return await _fetch()
+
+    # Standard periods: serve from in-memory cache; warmup + stale-revalidate handled automatically
+    _ck = f"dashboard:{period}"
+    logger.info("🔍 dashboard requested", period=period)
+    return await cache.get_or_fetch(_ck, _fetch)
 
 
 # =============================================================================
