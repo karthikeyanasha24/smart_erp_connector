@@ -279,11 +279,12 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
   const { isDark } = useTheme();
   if (!data.length) return null;
 
-  const sorted = useMemo(
-    () => [...data].sort((a, b) => b.value - a.value),
-    [data],
+  // Rankings (bar/pie) sort by value; time series (line/area) must keep the
+  // chronological order built by nlqVisualization — never re-sort by value.
+  const plotData = useMemo(
+    () => (type === 'bar' || type === 'pie' ? [...data].sort((a, b) => b.value - a.value) : data),
+    [data, type],
   );
-  const plotData = sorted;
 
   const tick = { fill: 'var(--text-muted)', fontSize: 10 };
   const gridStroke = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';

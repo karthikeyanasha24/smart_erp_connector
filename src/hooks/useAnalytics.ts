@@ -1626,6 +1626,9 @@ function periodIsCustom(period: string): boolean {
   return period === 'custom';
 }
 
+/** Custom dept queries can take minutes — only auto-retry the backfill once per range per session. */
+const customDeptBackfillAttempted = new Set<string>();
+
 /**
  * True when the page has enough data to render KPI cards + charts.
  * Intentionally does NOT block on LY data — the chart renders with current-year
@@ -1877,6 +1880,7 @@ export interface AnalyticsPageResult {
   chartLoading: boolean;
   error: string | null;
   refetch: () => void;
+  refetchForce: () => void;
 }
 
 /** Analytics.tsx — /analytics/bundle (fast) + optional dashboard YoY for MTD/today. */
@@ -1914,7 +1918,7 @@ export function useAnalyticsPage(
     setChartLoading(false);
   }
 
-  const run = useCallback(async (silent = false) => {
+  const run = useCallback(async (silent = false, forceRefresh = false) => {
     if (!silent) setLoading(true);
     setError(null);
     const needsYoy = PERIODS_WITH_YOY_DASHBOARD.has(period);
@@ -1946,11 +1950,20 @@ export function useAnalyticsPage(
     try {
       if (period === 'custom') {
         setChartLoading(false);
-        const dash = await analytics.dashboard(period, startDate, endDate);
-        const built = buildAnalyticsPageData(null, dash, period);
+        const deptPromise =
+          startDate && endDate
+            ? analytics.departments('custom', API_TOP_N_MAX, startDate, endDate).catch(() => null)
+            : Promise.resolve(null);
+        const dash = await analytics.dashboard(period, startDate, endDate, forceRefresh);
+        let built = buildAnalyticsPageData(null, dash, period);
+        const deptRes = await deptPromise;
+        if (deptRes?.departments?.length) {
+          built = mergeDepartmentPoints(built, deptRes.departments);
+        }
         setData(built);
         setDataCacheKey(cacheKey);
         cacheSet(cacheKey, built);
+        if (!silent) setLoading(false);
         return;
       }
 
@@ -1986,13 +1999,28 @@ export function useAnalyticsPage(
 
   // If bundle/snapshot omitted departments, fetch them directly (MTD logs showed no /departments call).
   useEffect(() => {
-    if (period === '__hold__' || period === 'custom' || !data) return;
-    if (!needsDepartmentBackfill(data)) return;
+    if (period === '__hold__' || !data) return;
+    if (periodIsCustom(period)) {
+      // Custom: run() already tried once; retry here only when the page has other
+      // breakdowns but no departments (e.g. first attempt timed out), once per range.
+      if (!startDate || !endDate) return;
+      const hasOther = (data.branches?.length ?? 0) > 0 || (data.categories?.length ?? 0) > 0;
+      if (!hasOther || (data.departments?.length ?? 0) > 0) return;
+      if (customDeptBackfillAttempted.has(cacheKey)) return;
+      customDeptBackfillAttempted.add(cacheKey);
+    } else if (!needsDepartmentBackfill(data)) {
+      return;
+    }
 
     let cancelled = false;
     setChartLoading(true);
     void analytics
-      .departments(period, API_TOP_N_MAX)
+      .departments(
+        period,
+        API_TOP_N_MAX,
+        period === 'custom' ? startDate : undefined,
+        period === 'custom' ? endDate : undefined,
+      )
       .then((res) => {
         if (cancelled || !(res.departments?.length)) return;
         const merged = mergeDepartmentPoints(data, res.departments);
@@ -2010,7 +2038,7 @@ export function useAnalyticsPage(
     return () => {
       cancelled = true;
     };
-  }, [period, cacheKey, data]);
+  }, [period, cacheKey, data, startDate, endDate]);
 
   // Background dashboard merge (customers, LY, checksum) — keep UI in sync after lean bundle paint.
   useEffect(() => {
@@ -2068,7 +2096,8 @@ export function useAnalyticsPage(
     loading,
     chartLoading,
     error,
-    refetch: useCallback(() => run(false), [run]),
+    refetch: useCallback(() => run(false, false), [run]),
+    refetchForce: useCallback(() => run(false, true), [run]),
   };
 }
 

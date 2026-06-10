@@ -8,7 +8,7 @@ import {
 import {
   RefreshCw, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
   TrendingUp, TrendingDown, ShoppingBag, Users, Receipt, BarChart2, CalendarRange,
-  FileText, Truck, UserCheck, Trash2,
+  Truck, Trash2,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady, formatCustomerKpi, clearCustomAnalyticsClientCache } from '../hooks/useAnalytics';
@@ -84,6 +84,30 @@ function Card({ children, className = '' }: { children: React.ReactNode; classNa
   );
 }
 
+function useChartHeight(mobile: number, desktop: number): number {
+  const [h, setH] = useState(desktop);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const update = () => setH(mq.matches ? mobile : desktop);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, [mobile, desktop]);
+  return h;
+}
+
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const update = () => setMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return mobile;
+}
+
 // ─── Chart tooltip (bars, areas, lines) ───────────────────────────────────────
 function ChartTooltip({ active, payload, label }: any) {
   const { isDark } = useTheme();
@@ -111,9 +135,9 @@ function ChartTooltip({ active, payload, label }: any) {
 }
 
 // ─── Pie side-legend ──────────────────────────────────────────────────────────
-function PieLegend({ items, isDark }: { items: { name: string; value: number }[]; isDark: boolean }) {
+function PieLegend({ items, isDark, className = '' }: { items: { name: string; value: number }[]; isDark: boolean; className?: string }) {
   return (
-    <div style={{ flex: 1, overflowY: 'auto', maxHeight: 200, alignSelf: 'center' }}>
+    <div className={`w-full overflow-y-auto ${className}`} style={{ maxHeight: 200 }}>
       {items.map((item, i) => (
         <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 4px' }}>
           <div style={{
@@ -175,6 +199,14 @@ function SmartBarLabel({ x, y, width, value, fill, barKey = 'a', idx = 0 }: any)
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Analytics() {
   const { isDark } = useTheme();
+  const isMobile = useIsMobile();
+  const yoyChartHeight = useChartHeight(240, 360);
+  const breakdownBarHeight = useChartHeight(220, 280);
+  const breakdownLineHeight = useChartHeight(180, 240);
+  const daywiseBarHeight = useChartHeight(220, 260);
+  const daywiseLineHeight = useChartHeight(160, 200);
+  const pieChartSize = isMobile ? 168 : 200;
+  const categoryPieSize = isMobile ? 190 : 220;
   const [period, setPeriod] = useState('mtd');
   // Committed dates drive the actual query; pending update on every keystroke.
   // Clicking Apply copies pending → committed, firing a single fetch.
@@ -191,7 +223,7 @@ export default function Analytics() {
   const startDate = period === 'custom' && canFetchCustom ? customStart : undefined;
   const endDate   = period === 'custom' && canFetchCustom ? customEnd   : undefined;
 
-  const { data, loading, chartLoading, error, refetch } = useAnalyticsPage(
+  const { data, loading, chartLoading, error, refetchForce } = useAnalyticsPage(
     canFetchCustom ? period : '__hold__',
     startDate,
     endDate,
@@ -201,10 +233,10 @@ export default function Analytics() {
   // data is already cached (SWR silent-revalidate keeps `loading` false in that case).
   const [refreshSpinning, setRefreshSpinning] = useState(false);
   const handleRefresh = useCallback(() => {
-    refetch();
+    refetchForce();
     setRefreshSpinning(true);
     setTimeout(() => setRefreshSpinning(false), 1200);
-  }, [refetch]);
+  }, [refetchForce]);
 
   // Apply button — copy pending → committed to fire the query
   const customDirty = period === 'custom' && (pendingStart !== customStart || pendingEnd !== customEnd);
@@ -227,14 +259,14 @@ export default function Analytics() {
       clearCustomAnalyticsClientCache();
       const res = await analyticsApi.clearCustomCache();
       setClearCacheMsg(res.deleted > 0 ? `Cleared ${res.deleted} entr${res.deleted === 1 ? 'y' : 'ies'}` : 'Cache empty');
-      refetch();
+      refetchForce();
     } catch {
       setClearCacheMsg('Clear failed');
     } finally {
       setClearingCache(false);
       setTimeout(() => setClearCacheMsg(null), 3000);
     }
-  }, [refetch]);
+  }, [refetchForce]);
 
   const uiLoading = loading && !data && !waitingForCustomDates;
   // For custom range, show a descriptive "fetching..." message while loading.
@@ -302,7 +334,8 @@ export default function Analytics() {
     ? fmtLakhs(s?.ly_sales ?? 0)
     : (uiLoading || chartLoading ? 'Loading…' : '—');
   const customerPending =
-    (s?.mtd_sales ?? 0) > 0
+    !dashMerged
+    && (s?.mtd_sales ?? 0) > 0
     && (s?.bills ?? 0) > 0
     && s?.customers == null;
   const customerKpiDisplay = formatCustomerKpi(s?.customers, {
@@ -322,17 +355,29 @@ export default function Analytics() {
       icon: KPI_ICONS[3], color: KPI_COLORS[3] },
   ] : [];
 
-  // PowerBI-equivalent extras (loaded with bundle via include_kpis=true)
+  // Suppliers only — bills/customers already shown in main KPI row above.
   const extras = data?.kpis;
-  const extraCards = extras ? [
-    { label: 'Unique Invoices',    value: fmtCount(extras.unique_invoices?.value ?? null),    sub: 'Distinct invoices',   icon: FileText,   color: '#66BB6A' },
-    { label: 'Distinct Clients',   value: fmtCount(extras.distinct_clients?.value ?? null),   sub: 'Unique buyers',       icon: UserCheck,  color: '#29B6F6' },
-    { label: 'Distinct Suppliers', value: fmtCount(extras.distinct_suppliers?.value ?? null), sub: 'Active suppliers',    icon: Truck,      color: '#FFA726' },
-  ] : [];
+  const extraCards =
+    extras?.distinct_suppliers?.value != null
+      ? [{
+          label: 'Distinct Suppliers',
+          value: fmtCount(extras.distinct_suppliers.value),
+          sub: 'Active suppliers',
+          icon: Truck,
+          color: '#FFA726',
+        }]
+      : [];
 
   const onPieEnter = useCallback((_: any, index: number) => setActivePieIndex(index), []);
 
-  const showBarLabels = chartData.length <= 31;
+  // Custom ranges keep day-level granularity up to 31 days (see
+  // trend_granularity_for_custom), and users picking a custom range expect
+  // labels on every bar regardless of count — so use the relaxed (31) cap
+  // for custom periods even when gran === 'day'.
+  const labelCap = (gran === 'month' || period === 'custom') ? 31 : 14;
+  const showBarLabels = chartData.length <= labelCap;
+  const daywiseLabelMax = labelCap;
+  const periodUnit = gran === 'month' ? 'months' : 'days';
 
   // Show a subtle "loading LY data" badge for YoY periods until prior values arrive.
   const lyLoadingBadge =
@@ -384,6 +429,17 @@ export default function Analytics() {
     [departmentRows]);
 
   // ── Breakdown renderChart helpers ──────────────────────────────────────────
+  /** Wrap a chart in a horizontal-scroll container once it has more bars/points
+   *  than comfortably fit on a narrow screen, instead of letting Recharts
+   *  squash everything down. */
+  function withHScroll(node: React.ReactNode, itemCount: number, slotPx = 56, threshold = 10): React.ReactNode {
+    if (itemCount <= threshold) return node;
+    return (
+      <div className="w-full overflow-x-auto overflow-y-hidden -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ minWidth: itemCount * slotPx }}>{node}</div>
+      </div>
+    );
+  }
   const tooltipStyle = {
     background: isDark ? 'rgba(8,15,26,0.97)' : 'rgba(255,255,255,0.98)',
     border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
@@ -403,8 +459,8 @@ export default function Analytics() {
     const ta = many ? ('end' as const) : ('middle' as const);
     const mbottom = many ? 58 : 20;
 
-    if (type === 'bar') return (
-      <ResponsiveContainer width="100%" height={280}>
+    if (type === 'bar') return withHScroll(
+      <ResponsiveContainer width="100%" height={breakdownBarHeight}>
         <BarChart data={items} barCategoryGap="28%"
           margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
@@ -422,11 +478,12 @@ export default function Analytics() {
             )}
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer>,
+      items.length,
     );
 
-    if (type === 'line') return (
-      <ResponsiveContainer width="100%" height={240}>
+    if (type === 'line') return withHScroll(
+      <ResponsiveContainer width="100%" height={breakdownLineHeight}>
         <LineChart data={items} margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
@@ -445,24 +502,29 @@ export default function Analytics() {
             )}
           </Line>
         </LineChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer>,
+      items.length,
     );
 
-    if (type === 'pie') return (
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <PieChart width={200} height={200}>
-          <Pie data={items} dataKey="value" nameKey="name"
-            cx="50%" cy="50%" innerRadius={55} outerRadius={85}
-            paddingAngle={2} strokeWidth={0}>
-            {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-          </Pie>
-          <Tooltip
-            formatter={(v: number, name) => [fmtLakhs(Number(v)), String(name)]}
-            contentStyle={tooltipStyle} />
-        </PieChart>
-        <PieLegend items={items} isDark={isDark} />
-      </div>
-    );
+    if (type === 'pie') {
+      const innerR = isMobile ? 46 : 55;
+      const outerR = isMobile ? 72 : 85;
+      return (
+        <div className={`flex items-center gap-3 md:gap-4 ${isMobile ? 'flex-col' : 'flex-row'}`}>
+          <PieChart width={pieChartSize} height={pieChartSize} className="mx-auto shrink-0">
+            <Pie data={items} dataKey="value" nameKey="name"
+              cx="50%" cy="50%" innerRadius={innerR} outerRadius={outerR}
+              paddingAngle={2} strokeWidth={0}>
+              {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+            </Pie>
+            <Tooltip
+              formatter={(v: number, name) => [fmtLakhs(Number(v)), String(name)]}
+              contentStyle={tooltipStyle} />
+          </PieChart>
+          <PieLegend items={items} isDark={isDark} className={isMobile ? 'max-h-[180px]' : 'flex-1 min-w-0'} />
+        </div>
+      );
+    }
     return undefined;
   }
 
@@ -472,8 +534,8 @@ export default function Analytics() {
     const interval = daywiseBillsData.length > 20 ? ('preserveStartEnd' as const) : 0;
     const showLabels = daywiseBillsData.length <= 31;
 
-    if (type === 'bar') return (
-      <ResponsiveContainer width="100%" height={260}>
+    if (type === 'bar') return withHScroll(
+      <ResponsiveContainer width="100%" height={daywiseBarHeight}>
         <BarChart data={daywiseBillsData} barCategoryGap="28%" margin={{ top: showLabels ? 22 : 10, right: 8, left: 2, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
@@ -492,11 +554,12 @@ export default function Analytics() {
             )}
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer>,
+      daywiseBillsData.length, 40, 14,
     );
 
-    if (type === 'line') return (
-      <ResponsiveContainer width="100%" height={200}>
+    if (type === 'line') return withHScroll(
+      <ResponsiveContainer width="100%" height={daywiseLineHeight}>
         <LineChart data={daywiseBillsData} margin={{ top: 8, right: 8, left: 2, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
@@ -509,7 +572,8 @@ export default function Analytics() {
           <Line type="monotone" dataKey="bills" name="Bills" stroke="#26C6DA" strokeWidth={2}
             dot={daywiseBillsData.length <= 12 ? { fill: '#26C6DA', r: 3, strokeWidth: 0 } : false} />
         </LineChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer>,
+      daywiseBillsData.length, 40, 20,
     );
 
     if (type === 'pie') {
@@ -524,10 +588,12 @@ export default function Analytics() {
     if (!daywiseAreaData.length) return undefined;
     const interval = daywiseAreaData.length > 20 ? ('preserveStartEnd' as const) : 0;
 
-    if (type === 'bar') return (
-      <ResponsiveContainer width="100%" height={260}>
+    if (type === 'bar') {
+      _lblY.clear();
+      return withHScroll(
+      <ResponsiveContainer width="100%" height={daywiseBarHeight}>
         <BarChart data={daywiseAreaData} barCategoryGap="28%" barGap={3}
-          margin={{ top: daywiseAreaData.length <= 14 ? 26 : 10, right: 8, left: 0, bottom: 4 }}>
+          margin={{ top: daywiseAreaData.length <= daywiseLabelMax ? 26 : 10, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
             tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
@@ -536,7 +602,7 @@ export default function Analytics() {
           <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
           <Bar dataKey="prior" name="Last Year"
             fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={28}>
-            {daywiseAreaData.length <= 14 && (
+            {daywiseAreaData.length <= daywiseLabelMax && (
               <LabelList dataKey="prior"
                 content={(props: any) => (
                   <SmartBarLabel {...props} value={props.value}
@@ -547,7 +613,7 @@ export default function Analytics() {
           </Bar>
           <Bar dataKey="current" name="Current"
             fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={28}>
-            {daywiseAreaData.length <= 14 && (
+            {daywiseAreaData.length <= daywiseLabelMax && (
               <LabelList dataKey="current"
                 content={(props: any) => (
                   <SmartBarLabel {...props} value={props.value}
@@ -557,8 +623,10 @@ export default function Analytics() {
             )}
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
-    );
+      </ResponsiveContainer>,
+      daywiseAreaData.length, 48, 14,
+      );
+    }
 
     if (type === 'line') return (
       <div>
@@ -570,44 +638,47 @@ export default function Analytics() {
             </div>
           ))}
         </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={daywiseAreaData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
-            <defs>
-              <linearGradient id="dgCurr" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#5882ff" stopOpacity={0.28} />
-                <stop offset="95%" stopColor="#5882ff" stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="dgPrior" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.18} />
-                <stop offset="95%" stopColor="#94a3b8" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-            <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
-              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-            <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
-              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
-            <Tooltip content={<ChartTooltip />} />
-            <Area type="monotone" dataKey="prior" name="Last Year"
-              stroke="#94a3b8" strokeWidth={1.5} fill="url(#dgPrior)"
-              dot={daywiseAreaData.length <= 12 ? { fill: '#94a3b8', r: 3, strokeWidth: 0 } : false}
-              activeDot={{ r: 4 }} />
-            <Area type="monotone" dataKey="current" name="Current"
-              stroke="#5882ff" strokeWidth={2} fill="url(#dgCurr)"
-              dot={daywiseAreaData.length <= 12 ? { fill: '#5882ff', r: 3, strokeWidth: 0 } : false}
-              activeDot={{ r: 5 }} />
-          </AreaChart>
-        </ResponsiveContainer>
+        {withHScroll(
+          <ResponsiveContainer width="100%" height={daywiseLineHeight}>
+            <AreaChart data={daywiseAreaData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+              <defs>
+                <linearGradient id="dgCurr" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#5882ff" stopOpacity={0.28} />
+                  <stop offset="95%" stopColor="#5882ff" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="dgPrior" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="#94a3b8" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+              <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+              <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
+              <Tooltip content={<ChartTooltip />} />
+              <Area type="monotone" dataKey="prior" name="Last Year"
+                stroke="#94a3b8" strokeWidth={1.5} fill="url(#dgPrior)"
+                dot={daywiseAreaData.length <= 12 ? { fill: '#94a3b8', r: 3, strokeWidth: 0 } : false}
+                activeDot={{ r: 4 }} />
+              <Area type="monotone" dataKey="current" name="Current"
+                stroke="#5882ff" strokeWidth={2} fill="url(#dgCurr)"
+                dot={daywiseAreaData.length <= 12 ? { fill: '#5882ff', r: 3, strokeWidth: 0 } : false}
+                activeDot={{ r: 5 }} />
+            </AreaChart>
+          </ResponsiveContainer>,
+          daywiseAreaData.length, 48, 20,
+        )}
       </div>
     );
 
     if (type === 'pie') {
       const topDays = daywiseAreaData.slice(0, 10).map(d => ({ name: d.label, value: d.current }));
       return (
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <PieChart width={200} height={200}>
+        <div className={`flex items-center gap-3 md:gap-4 ${isMobile ? 'flex-col' : 'flex-row'}`}>
+          <PieChart width={pieChartSize} height={pieChartSize} className="mx-auto shrink-0">
             <Pie data={topDays} dataKey="value" nameKey="name"
-              cx="50%" cy="50%" innerRadius={55} outerRadius={85}
+              cx="50%" cy="50%" innerRadius={isMobile ? 46 : 55} outerRadius={isMobile ? 72 : 85}
               paddingAngle={2} strokeWidth={0}>
               {topDays.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
             </Pie>
@@ -615,7 +686,7 @@ export default function Analytics() {
               formatter={(v: number, name) => [fmtLakhs(Number(v)), String(name)]}
               contentStyle={tooltipStyle} />
           </PieChart>
-          <PieLegend items={topDays} isDark={isDark} />
+          <PieLegend items={topDays} isDark={isDark} className={isMobile ? 'max-h-[180px]' : 'flex-1 min-w-0'} />
         </div>
       );
     }
@@ -626,8 +697,8 @@ export default function Analytics() {
     <div className="space-y-5">
 
       {/* ── Header ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold" style={{
             background: isDark
               ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)'
@@ -644,7 +715,7 @@ export default function Analytics() {
           ) : null}
         </div>
         <button type="button" onClick={handleRefresh}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+          className="flex shrink-0 items-center justify-center gap-2 self-start px-3 py-2 rounded-xl text-xs font-medium transition-all sm:self-auto"
           style={{
             background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
             border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
@@ -655,8 +726,8 @@ export default function Analytics() {
       </div>
 
       {/* ── Period tabs ── */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="flex items-center gap-1 p-1 rounded-xl overflow-x-auto scrollbar-none"
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto p-1 rounded-xl scrollbar-none w-full sm:w-auto"
           style={{
             background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
             border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)',
@@ -666,7 +737,7 @@ export default function Analytics() {
               onMouseEnter={() => void prefetchAnalyticsPage(t.period)}
               onFocus={() => void prefetchAnalyticsPage(t.period)}
               onClick={() => setPeriod(t.period)}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              className="shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
               style={{
                 background: period === t.period
                   ? isDark ? 'rgba(88,130,255,0.18)' : 'rgba(88,130,255,0.12)'
@@ -820,9 +891,13 @@ export default function Analytics() {
         </div>
       )}
       {/* ── KPI cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className={`grid gap-3 ${
+        extraCards.length > 0
+          ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5'
+          : 'grid-cols-2 lg:grid-cols-4'
+      }`}>
         {uiLoading ? (
-          [...Array(4)].map((_, i) => (
+          [...Array(extraCards.length > 0 ? 5 : 4)].map((_, i) => (
             <Card key={i} className="p-4">
               <div className="animate-pulse space-y-2">
                 <div className="h-2.5 rounded w-1/2" style={{ background: 'rgba(128,128,128,0.12)' }} />
@@ -832,35 +907,36 @@ export default function Analytics() {
             </Card>
           ))
         ) : kpiCards.length > 0 ? (
-          kpiCards.map((k, i) => {
+          <>
+          {kpiCards.map((k, i) => {
             const Icon = k.icon;
             return (
               <motion.div key={k.label}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.07, type: 'spring', stiffness: 280, damping: 26 }}>
-                <Card className="p-4 relative overflow-hidden">
+                <Card className="p-3 sm:p-4 relative overflow-hidden">
                   <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
                     style={{ background: `linear-gradient(90deg, transparent, ${k.color}, transparent)` }} />
                   <div className="absolute top-0 right-0 w-24 h-24 pointer-events-none rounded-full"
                     style={{ background: `radial-gradient(circle, ${k.color}18 0%, transparent 70%)`, transform: 'translate(30%,-30%)' }} />
                   <div className="flex items-start justify-between mb-2">
-                    <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{k.label}</p>
+                    <p className="text-[11px] sm:text-xs font-medium leading-snug pr-1" style={{ color: 'var(--text-muted)' }}>{k.label}</p>
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
                       style={{ background: `${k.color}18`, border: `1px solid ${k.color}30` }}>
                       <Icon size={13} style={{ color: k.color }} />
                     </div>
                   </div>
-                  <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                  <p className="text-lg sm:text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
                     {k.value}
                   </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{k.sub}</p>
+                  <p className="text-[11px] sm:text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{k.sub}</p>
                   {'growth' in k && k.growth != null && (
                     <div className="flex items-center gap-1 mt-1.5">
                       {k.growth >= 0
                         ? <TrendingUp size={11} style={{ color: '#00e67a' }} />
                         : <TrendingDown size={11} style={{ color: '#f87171' }} />}
-                      <p className="text-xs font-semibold"
+                      <p className="text-[11px] sm:text-xs font-semibold"
                         style={{ color: k.growth >= 0 ? '#00e67a' : '#f87171' }}>
                         {k.growth >= 0 ? '+' : ''}{k.growth}% vs LY
                       </p>
@@ -869,7 +945,35 @@ export default function Analytics() {
                 </Card>
               </motion.div>
             );
-          })
+          })}
+          {extraCards.map((k, i) => {
+            const Icon = k.icon;
+            return (
+              <motion.div key={k.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: (kpiCards.length + i) * 0.06, type: 'spring', stiffness: 280, damping: 26 }}>
+                <Card className="p-3 sm:p-4 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
+                    style={{ background: `linear-gradient(90deg, transparent, ${k.color}, transparent)` }} />
+                  <div className="absolute top-0 right-0 w-20 h-20 pointer-events-none rounded-full"
+                    style={{ background: `radial-gradient(circle, ${k.color}18 0%, transparent 70%)`, transform: 'translate(30%,-30%)' }} />
+                  <div className="flex items-start justify-between mb-2">
+                    <p className="text-[11px] sm:text-xs font-medium leading-snug pr-1" style={{ color: 'var(--text-muted)' }}>{k.label}</p>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: `${k.color}18`, border: `1px solid ${k.color}30` }}>
+                      <Icon size={13} style={{ color: k.color }} />
+                    </div>
+                  </div>
+                  <p className="text-lg sm:text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                    {k.value ?? '—'}
+                  </p>
+                  <p className="text-[11px] sm:text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{k.sub}</p>
+                </Card>
+              </motion.div>
+            );
+          })}
+          </>
         ) : (
           !isError && (
             <div className="col-span-4 text-center py-4 text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -878,39 +982,6 @@ export default function Analytics() {
           )
         )}
       </div>
-
-      {/* ── PowerBI-equivalent extras row ── */}
-      {extraCards.length > 0 && (
-        <div className="grid grid-cols-3 gap-4">
-          {extraCards.map((k, i) => {
-            const Icon = k.icon;
-            return (
-              <motion.div key={k.label}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.06, type: 'spring', stiffness: 280, damping: 26 }}>
-                <Card className="p-4 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
-                    style={{ background: `linear-gradient(90deg, transparent, ${k.color}, transparent)` }} />
-                  <div className="absolute top-0 right-0 w-20 h-20 pointer-events-none rounded-full"
-                    style={{ background: `radial-gradient(circle, ${k.color}18 0%, transparent 70%)`, transform: 'translate(30%,-30%)' }} />
-                  <div className="flex items-start justify-between mb-2">
-                    <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{k.label}</p>
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                      style={{ background: `${k.color}18`, border: `1px solid ${k.color}30` }}>
-                      <Icon size={13} style={{ color: k.color }} />
-                    </div>
-                  </div>
-                  <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                    {k.value ?? '—'}
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{k.sub}</p>
-                </Card>
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
 
       {/* ── Checksum strip ── */}
       {data?.checksum && !chartLoading && (
@@ -929,12 +1000,12 @@ export default function Analytics() {
       )}
 
       {/* ── YoY Bar chart ── */}
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-1">
+      <Card className="p-3 sm:p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1">
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
             {hasLyData ? 'Sales — Current vs Same Period Last Year' : 'Sales — Current Period'}
           </h2>
-          <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-2 rounded-sm" style={{ background: '#5882ff' }} />Current
             </div>
@@ -959,15 +1030,16 @@ export default function Analytics() {
             : `${data?.granularity === 'month' ? 'Month-wise' : 'Day-wise'} · ${hasLyData ? 'YoY comparison · ' : ''}Labels in Lakhs`}
         </p>
         {chartLoading ? (
-          <div className="h-72 animate-pulse rounded-xl"
-            style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }} />
+          <div className="animate-pulse rounded-xl"
+            style={{ height: yoyChartHeight, background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }} />
         ) : chartData.length === 0 ? (
           <p className="text-sm py-16 text-center" style={{ color: 'var(--text-muted)' }}>
             No data for this period
           </p>
-        ) : (
-          <ResponsiveContainer width="100%" height={360}>
+        ) : withHScroll(
+          <ResponsiveContainer width="100%" height={yoyChartHeight}>
             {(() => {
+              _lblY.clear();
               const manyBars = chartData.length > 8;
               const xAngle = manyBars ? -38 : 0;
               const xAnchor = manyBars ? ('end' as const) : ('middle' as const);
@@ -976,8 +1048,8 @@ export default function Analytics() {
             <BarChart data={chartData}
               margin={{ top: showBarLabels ? 24 : 10, right: 12, left: 4, bottom: xBottom }}
               barCategoryGap="32%" barGap={4}>
-              <CartesianGrid strokeDasharray="3 3"
-                stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} strokeDasharray="4 6" />
+              <CartesianGrid strokeDasharray="4 6"
+                stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} />
               <XAxis dataKey="label"
                 tick={{ fontSize: 10, fill: 'var(--text-muted)', angle: xAngle, textAnchor: xAnchor }}
                 axisLine={false} tickLine={false} interval={0}
@@ -1012,17 +1084,18 @@ export default function Analytics() {
             </BarChart>
               );
             })()}
-          </ResponsiveContainer>
+          </ResponsiveContainer>,
+          chartData.length, 56, 8,
         )}
       </Card>
 
       {/* ── Pie + Branch list ── */}
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
         {/* Donut — Category % Contribution */}
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
+        <Card className="p-3 sm:p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-4">
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Category % Contribution
               </h2>
@@ -1031,7 +1104,7 @@ export default function Analytics() {
               </p>
             </div>
             <button type="button" onClick={() => setExpandCategories(!expandCategories)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-all"
+              className="flex shrink-0 items-center gap-1 self-start text-xs px-2.5 py-1 rounded-lg transition-all"
               style={{
                 background: isDark ? 'rgba(88,130,255,0.1)' : 'rgba(88,130,255,0.08)',
                 border: '1px solid rgba(88,130,255,0.2)', color: '#5882ff',
@@ -1046,20 +1119,19 @@ export default function Analytics() {
               {uiLoading ? 'Loading…' : 'No category data'}
             </p>
           ) : (
-            /* Side-by-side: donut (left) + legend (right) */
-            <div style={{ display: 'flex', gap: 20, alignItems: 'center', minHeight: 240 }}>
+            <div className={`flex gap-4 md:gap-5 items-center min-h-[220px] ${isMobile ? 'flex-col' : 'flex-row'}`}>
 
               {/* Donut */}
-              <div style={{ flexShrink: 0 }}>
-                <PieChart width={220} height={220}>
+              <div className="shrink-0 mx-auto md:mx-0">
+                <PieChart width={categoryPieSize} height={categoryPieSize}>
                   <Pie
                     data={pieData}
                     dataKey="percentage"
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    innerRadius={66}
-                    outerRadius={98}
+                    innerRadius={isMobile ? 54 : 66}
+                    outerRadius={isMobile ? 80 : 98}
                     paddingAngle={2}
                     strokeWidth={0}
                     activeIndex={activePieIndex}
@@ -1085,7 +1157,7 @@ export default function Analytics() {
               </div>
 
               {/* Legend */}
-              <div style={{ flex: 1, overflowY: 'auto', maxHeight: 230 }}>
+              <div className="w-full md:flex-1 overflow-y-auto max-h-[240px] md:max-h-[230px]">
                 {pieData.map((cat, i) => {
                   const color = PIE_COLORS[i % PIE_COLORS.length];
                   const isActive = i === activePieIndex;
@@ -1138,16 +1210,16 @@ export default function Analytics() {
         </Card>
 
         {/* Store-wise sales list */}
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
+        <Card className="p-3 sm:p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-4">
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Store-wise Sales</h2>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                 {allBranches.length} stores · ranked by revenue
               </p>
             </div>
             <button type="button" onClick={() => setExpandBranches(!expandBranches)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-all"
+              className="flex shrink-0 items-center gap-1 self-start text-xs px-2.5 py-1 rounded-lg transition-all"
               style={{
                 background: isDark ? 'rgba(88,130,255,0.1)' : 'rgba(88,130,255,0.08)',
                 border: '1px solid rgba(88,130,255,0.2)', color: '#5882ff',
@@ -1165,12 +1237,43 @@ export default function Analytics() {
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
-              {branchList.length === 0 ? (
+          ) : branchList.length === 0 ? (
                 <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No branch data</p>
               ) : (
-                <table className="w-full text-xs border-collapse">
+                <>
+                {/* Mobile: card list */}
+                <div className="space-y-2.5 max-h-[280px] overflow-y-auto sm:hidden">
+                  {branchList.map((b, i) => {
+                    const pct = Number(b.percentage ?? 0);
+                    const maxPct = Number(branchList[0]?.percentage ?? 1);
+                    return (
+                      <div key={b.name + i} className="rounded-xl border px-3 py-2.5"
+                        style={{
+                          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+                          background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                        }}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>#{i + 1}</p>
+                            <p className="truncate text-xs font-medium mt-0.5" style={{ color: 'var(--text-primary)' }}>{b.name}</p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-xs font-semibold tabular-nums" style={{ color: '#5882ff' }}>{fmtLakhs(b.revenue)}</p>
+                            <p className="text-[10px] tabular-nums mt-0.5" style={{ color: 'var(--text-secondary)' }}>{pct.toFixed(2)}%</p>
+                          </div>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full overflow-hidden"
+                          style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
+                          <div className="h-full rounded-full"
+                            style={{ width: `${Math.min(100, (pct / maxPct) * 100)}%`, background: 'linear-gradient(90deg, #5882ff, #00e67a)' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Tablet+: table */}
+                <div className="hidden sm:block overflow-y-auto" style={{ maxHeight: 220 }}>
+                <table className="w-full text-xs border-collapse min-w-[280px]">
                   <thead>
                     <tr style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
                       {['#','Store','Revenue','Share'].map(h => (
@@ -1207,9 +1310,9 @@ export default function Analytics() {
                     })}
                   </tbody>
                 </table>
+                </div>
+                </>
               )}
-            </div>
-          )}
         </Card>
       </div>
 
@@ -1221,7 +1324,7 @@ export default function Analytics() {
           <>
             <BreakdownTable
               title="Day-wise Sales"
-              subtitle={`${data?.daywise?.length ?? 0} days · current vs last year`}
+              subtitle={`${data?.daywise?.length ?? 0} ${periodUnit} · current vs last year`}
               loading={uiLoading}
               isDark={isDark}
               columns={['#', 'Date', 'Label', 'Sales', 'Qty', 'LY Sales']}
@@ -1337,31 +1440,25 @@ function BreakdownTable({
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
 
   return (
-    <Card className="p-5">
+    <Card className="p-3 sm:p-5">
       {/* Header row */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h2>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{subtitle}</p>
         </div>
 
         {/* Chart type toggle */}
         {renderChart && !loading && (
-          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <div className="flex shrink-0 gap-1 self-start rounded-lg p-0.5"
+            style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}>
             {(['bar', 'line', 'pie'] as const).map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setChartType(t)}
+                className="rounded-md px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide transition-all sm:px-3"
                 style={{
-                  padding: '3px 9px',
-                  borderRadius: 6,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
                   background: chartType === t
                     ? '#5882ff'
                     : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
@@ -1372,6 +1469,7 @@ function BreakdownTable({
                     ? 'none'
                     : `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
                   boxShadow: chartType === t ? '0 0 10px rgba(0,184,230,0.35)' : 'none',
+                  cursor: 'pointer',
                 }}>
                 {t}
               </button>
@@ -1400,8 +1498,8 @@ function BreakdownTable({
       ) : rows.length === 0 ? (
         <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No data</p>
       ) : (
-        <div className="overflow-auto" style={{ maxHeight: 360 }}>
-          <table className="w-full text-xs border-collapse">
+        <div className="-mx-1 overflow-auto px-1" style={{ maxHeight: 360 }}>
+          <table className="w-full min-w-[480px] text-xs border-collapse">
             <thead className="sticky top-0 z-10"
               style={{ background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.98)' }}>
               <tr style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)' }}>
@@ -1441,4 +1539,3 @@ function BreakdownTable({
     </Card>
   );
 }
-             

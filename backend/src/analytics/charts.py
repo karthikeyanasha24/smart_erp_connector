@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from src.config import cfg
 from src.utils.logger import logger
-from src.utils.date_utils import resolve_date_range, trend_granularity
+from src.utils.date_utils import resolve_date_range, resolve_custom_range, trend_granularity
 from src.utils.sql_ref import sql_table
 from src.db.mssql import execute_query
 from src.analytics.metrics_sql import trend_transactions_aggregate as transactions_aggregate, quantity_column
@@ -173,11 +173,31 @@ async def get_branch_chart(period: str = "mtd") -> List[Dict[str, Any]]:
 
 # ─── Department Breakdown ─────────────────────────────────────────────────────
 
-async def get_department_chart(period: str = "mtd", top_n: Optional[int] = None) -> List[Dict[str, Any]]:
+async def get_department_chart(
+    period: str = "mtd",
+    top_n: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     n = min(top_n or cfg.ANALYTICS_TOP_N, cfg.ANALYTICS_TOP_N_MAX)
 
+    # Custom ranges can take minutes on the legacy driver — cache per range.
+    # Shares the dashboard:v4:custom prefix so DELETE /analytics/cache/custom purges it.
+    custom_key: Optional[str] = None
+    if period == "custom" and start_date and end_date:
+        from src.analytics.cache import cache
+        from src.utils.date_utils import custom_dashboard_cache_key
+
+        custom_key = f"{custom_dashboard_cache_key('dashboard:v4', start_date, end_date)}:dept:{n}"
+        cached, is_fresh = cache.get(custom_key)
+        if cached is not None and is_fresh:
+            return cached
+
     async def _fetch() -> List[Dict[str, Any]]:
-        dr = resolve_date_range(period)
+        if period == "custom" and start_date and end_date:
+            dr = resolve_custom_range(start_date, end_date)
+        else:
+            dr = resolve_date_range(period)
         c = cfg
         dc = c.MB_POWERBI_APP_REPORT_FILTER_DATE_COLUMN
         sql = f"""
@@ -210,7 +230,12 @@ async def get_department_chart(period: str = "mtd", top_n: Optional[int] = None)
             logger.warning("Department chart returned no rows", period=period, table=c.SALES_AI_TABLE)
         return rows
 
-    return await _fetch()
+    rows = await _fetch()
+    if custom_key is not None and rows:
+        from src.analytics.cache import cache
+
+        cache.set(custom_key, rows)
+    return rows
 
 
 # ─── Top Salespersons ─────────────────────────────────────────────────────────

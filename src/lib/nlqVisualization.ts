@@ -164,13 +164,39 @@ function aggregateComposite(records: Record<string, unknown>[], dimKeys: string[
     .map(([label, value]) => ({ label: label.slice(0, 28), value }));
 }
 
-function sortChartByDate(points: ChartPoint[]): ChartPoint[] {
-  return [...points].sort((a, b) => {
-    const da = Date.parse(a.label);
-    const db = Date.parse(b.label);
-    if (!Number.isNaN(da) && !Number.isNaN(db)) return da - db;
-    return a.label.localeCompare(b.label);
-  });
+/**
+ * Aggregate a time series by the real date column (chronological ASC),
+ * but display a friendly label column (e.g. MonthLabel "April 2024") when present.
+ * Sorting always uses the date column value — never the display label — so
+ * "since Apr'24" charts start at Apr'24 regardless of label format.
+ */
+function aggregateTimeSeries(
+  records: Record<string, unknown>[],
+  dateKey: string,
+  displayLabelKey: string | null,
+  valueKey: string,
+): ChartPoint[] {
+  const map = new Map<string, { label: string; value: number }>();
+  for (const r of records) {
+    const dk = String(r[dateKey] ?? '');
+    if (!dk) continue;
+    const v = toNum(r[valueKey]) ?? 0;
+    const existing = map.get(dk);
+    if (existing) {
+      existing.value += v;
+    } else {
+      const lbl = displayLabelKey ? String(r[displayLabelKey] ?? dk) : dk;
+      map.set(dk, { label: lbl.slice(0, 28), value: v });
+    }
+  }
+  return [...map.entries()]
+    .sort(([a], [b]) => {
+      const da = Date.parse(a);
+      const db = Date.parse(b);
+      if (!Number.isNaN(da) && !Number.isNaN(db)) return da - db;
+      return a.localeCompare(b);
+    })
+    .map(([, p]) => p);
 }
 
 function buildChartData(
@@ -180,32 +206,28 @@ function buildChartData(
   dateKey: string | null,
   dimKeys: string[],
 ): { chartData: ChartPoint[]; labelKey: string; valueKey: string } {
-  const displayDateKey = dateKey ?? (records[0] && 'MonthLabel' in records[0] ? 'MonthLabel' : null);
+  // Friendly label column (e.g. MonthLabel "April 2024") shown on the axis;
+  // sorting always uses the real date column.
+  const friendlyLabelKey =
+    records[0] && 'MonthLabel' in records[0] && dateKey !== 'MonthLabel'
+      ? 'MonthLabel'
+      : null;
 
   // Time series with extra dimensions → aggregate to monthly (or daily) totals
   if (dateKey && dimKeys.length > 0) {
-    const aggregated = aggregateSum(records, dateKey, valueKey);
-    const sorted = sortChartByDate(aggregated).slice(-60);
-    const chartLabel = displayDateKey && displayDateKey !== dateKey
-      ? aggregateSum(records, displayDateKey, valueKey)
-      : sorted;
-    const finalData = displayDateKey && displayDateKey !== dateKey
-      ? sortChartByDate(chartLabel).slice(-60)
-      : sorted;
+    const spaced = valueKey.replace(/([A-Z])/g, ' $1').trim();
     return {
-      chartData: finalData,
-      labelKey: displayDateKey ?? dateKey,
-      valueKey: `Total ${valueKey.replace(/([A-Z])/g, ' $1').trim()}`,
+      chartData: aggregateTimeSeries(records, dateKey, friendlyLabelKey, valueKey).slice(-60),
+      labelKey: friendlyLabelKey ?? dateKey,
+      valueKey: /^total/i.test(spaced) ? spaced : `Total ${spaced}`,
     };
   }
 
   // Pure time series (one row per period)
   if (dateKey) {
-    const key = displayDateKey ?? dateKey;
-    const aggregated = aggregateSum(records, key, valueKey);
     return {
-      chartData: sortChartByDate(aggregated).slice(-60),
-      labelKey: key,
+      chartData: aggregateTimeSeries(records, dateKey, friendlyLabelKey, valueKey).slice(-60),
+      labelKey: friendlyLabelKey ?? dateKey,
       valueKey,
     };
   }
@@ -353,16 +375,27 @@ export function buildNLQVisualization(
     return { chartType: 'none', chartData: [], valueKey: valueCol, labelKey: metricCol, kpiCards: cards, table };
   }
 
-  // Single scalar row → KPI cards from all numeric columns
+  // Single scalar row → KPI cards from numeric columns, plus any
+  // identifying text columns (e.g. SupplierName, CustomerName) so
+  // "which X has the highest Y" results show *who* X is, not just Y.
   if (rowCount === 1) {
     const cards: KPICard[] = [];
     for (const col of Object.keys(records[0])) {
-      const n = toNum(records[0][col]);
-      if (n == null) continue;
+      const raw = records[0][col];
+      const n = toNum(raw);
+      if (n != null) {
+        cards.push({
+          label: col.replace(/([A-Z])/g, ' $1').trim(),
+          value: formatNumeric(n, col),
+          raw: n,
+        });
+        continue;
+      }
+      const text = raw == null ? '' : String(raw).trim();
+      if (!text) continue;
       cards.push({
         label: col.replace(/([A-Z])/g, ' $1').trim(),
-        value: formatNumeric(n, col),
-        raw: n,
+        value: text.length > 32 ? `${text.slice(0, 31)}…` : text,
       });
     }
     return {

@@ -408,10 +408,11 @@ export const analytics = {
   // calls (e.g. from useDashboardPage + fetchAndApplySnapshot + prefetchAnalyticsShell)
   // share a single in-flight HTTP request instead of firing N copies.
 
-  dashboard: (period = 'mtd', startDate?: string, endDate?: string) => {
+  dashboard: (period = 'mtd', startDate?: string, endDate?: string, force = false) => {
     const qs = new URLSearchParams({ period });
     if (startDate) qs.set('start_date', startDate);
     if (endDate) qs.set('end_date', endDate);
+    if (force) qs.set('force', 'true');
     return apiFetchDeduped<DashboardResponse>(`/analytics/dashboard?${qs}`, { timeoutMs: 600_000 });
   },
 
@@ -472,10 +473,16 @@ export const analytics = {
       { timeoutMs: 600_000 }
     ),
 
-  departments: (period = 'mtd', topN = 10) =>
-    apiFetchDeduped<{ success: boolean; period: string; departments: DeptPoint[] }>(
-      `/analytics/departments?period=${period}&top_n=${topN}`
-    ),
+  departments: (period = 'mtd', topN = 10, startDate?: string, endDate?: string) => {
+    const qs = new URLSearchParams({ period, top_n: String(topN) });
+    if (startDate) qs.set('start_date', startDate);
+    if (endDate) qs.set('end_date', endDate);
+    // Custom ranges can take minutes server-side on first load — don't abort early.
+    return apiFetchDeduped<{ success: boolean; period: string; departments: DeptPoint[] }>(
+      `/analytics/departments?${qs}`,
+      { timeoutMs: 600_000 },
+    );
+  },
 
   salespersons: (period = 'mtd', topN = 10) =>
     apiFetchDeduped<{ success: boolean; period: string; salespersons: SalespersonPoint[] }>(

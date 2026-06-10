@@ -428,11 +428,23 @@ async def branch_chart(
 async def department_chart(
     period: str = Query(default="mtd"),
     top_n: int = Query(default=10, ge=1, le=100),
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
     user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    _validate_period(period)
-    data = await get_department_chart(period, top_n)
-    return {"success": True, "period": period, "departments": data}
+    if period == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="custom period requires start_date and end_date")
+    else:
+        _validate_period(period)
+    try:
+        data = await run_analytics_sql(
+            get_department_chart(period, top_n, start_date, end_date)
+        )
+        return {"success": True, "period": period, "departments": data}
+    except Exception as exc:
+        logger.error("Department chart failed", period=period, error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/salespersons")
