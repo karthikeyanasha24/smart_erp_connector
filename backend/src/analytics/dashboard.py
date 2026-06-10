@@ -28,7 +28,8 @@ from src.utils.date_utils import (
 )
 
 # Prefix for all custom-range dashboard cache keys (see custom_dashboard_cache_key).
-CUSTOM_DASHBOARD_CACHE_PREFIX = "dashboard:v3:custom"
+# Must match the prefix passed to custom_dashboard_cache_key() in get_dashboard().
+CUSTOM_DASHBOARD_CACHE_PREFIX = "dashboard:v4:custom"
 
 
 def _safe_float(val: Any) -> float:

@@ -208,6 +208,7 @@ export default function Analytics() {
 
   // Apply button — copy pending → committed to fire the query
   const customDirty = period === 'custom' && (pendingStart !== customStart || pendingEnd !== customEnd);
+  const isReversedRange = !!pendingStart && !!pendingEnd && pendingStart > pendingEnd;
   const canApplyCustom = !!pendingStart && !!pendingEnd && pendingStart <= pendingEnd;
   const applyCustom = useCallback(() => {
     if (!canApplyCustom) return;
@@ -735,6 +736,19 @@ export default function Analytics() {
           </div>
         )}
       </div>
+
+      {/* ── Reversed custom range warning ── */}
+      <AnimatePresence>
+        {isReversedRange && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="px-3.5 py-2.5 rounded-xl flex items-center gap-2.5 text-xs"
+            style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171' }}>
+            <AlertTriangle size={14} />
+            <span className="font-semibold">Invalid date range —</span>
+            <span style={{ color: 'var(--text-secondary)' }}>start date is after end date. Please pick an end date on or after the start date.</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Error banner ── */}
       <AnimatePresence>
