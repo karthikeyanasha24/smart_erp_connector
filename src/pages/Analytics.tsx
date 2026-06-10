@@ -555,7 +555,7 @@ export default function Analytics() {
           </Bar>
         </BarChart>
       </ResponsiveContainer>,
-      daywiseBillsData.length, 40, 14,
+      daywiseBillsData.length, 40, 8,
     );
 
     if (type === 'line') return withHScroll(
@@ -624,7 +624,7 @@ export default function Analytics() {
           </Bar>
         </BarChart>
       </ResponsiveContainer>,
-      daywiseAreaData.length, 48, 14,
+      daywiseAreaData.length, 72, 5,
       );
     }
 
@@ -1319,8 +1319,11 @@ export default function Analytics() {
       {/* ── Detailed breakdown sections with Bar/Line/Pie toggle ── */}
       <div className="space-y-4">
 
-        {/* Day-wise breakdown hidden for Today — single-day view makes row table redundant */}
-        {period !== 'today' && (
+        {/* Day-wise breakdown only makes sense for short, day-granular ranges:
+            Today, MTD, and Custom. QTD/YTD/Last 6M span months, so the
+            day-by-day chart and table are dropped in favor of the monthly
+            breakdowns below. */}
+        {(period === 'today' || period === 'mtd' || period === 'custom') && (
           <>
             <BreakdownTable
               title="Day-wise Sales"
