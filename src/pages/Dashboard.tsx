@@ -27,6 +27,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useDashboardPage, summaryFromKpis, resolveTodaySummary, useTransactions, hasLyTrendData, formatLySub, lyGrowthReady, lyChartSubtitle, formatCustomerKpi } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtCountAxis, fmtRupees, fmtSmart } from '../lib/format';
+import { ScrollableCartesian } from '../lib/chartLayout';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +87,12 @@ const DEMO = {
 // ─── Card surface + category colors ───────────────────────────────────────────
 
 const CAT_COLORS   = ['#5C6BC0','#26C6DA','#EC407A','#66BB6A','#FFA726','#AB47BC'];
-const CARD_SURFACE = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(88,130,255,0.1)' } as const;
+
+function cardSurface(isDark: boolean) {
+  return isDark
+    ? { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(88,130,255,0.1)' }
+    : { background: '#ffffff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 1px 3px rgba(15,23,42,0.06)' };
+}
 
 // ─── Mini Sparkline ────────────────────────────────────────────────────────────
 
@@ -156,6 +162,64 @@ const _shimmerStyle = typeof document !== 'undefined' && (() => {
 })();
 void _shimmerStyle;
 
+/** Responsive chart height — Recharts needs a numeric height. */
+function useChartHeight(mobile: number, desktop: number): number {
+  const [h, setH] = useState(desktop);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const update = () => setH(mq.matches ? mobile : desktop);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, [mobile, desktop]);
+  return h;
+}
+
+// ─── Hero metric chip ─────────────────────────────────────────────────────────
+
+function HeroMetricChip({
+  label,
+  value,
+  loading,
+  accent,
+  isDark,
+}: {
+  label: string;
+  value: string;
+  loading?: boolean;
+  accent?: string;
+  isDark: boolean;
+}) {
+  return (
+    <div
+      className="min-w-0 rounded-xl border px-3 py-2 sm:px-4 sm:py-2.5"
+      style={{
+        background: accent
+          ? `${accent}${isDark ? '14' : '10'}`
+          : isDark ? 'rgba(255,255,255,0.07)' : 'rgba(15,23,42,0.04)',
+        borderColor: accent
+          ? `${accent}33`
+          : isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.08)',
+      }}
+    >
+      {loading ? (
+        <div className="mb-1"><ShimmerBar width="70%" height={18} radius={5} /></div>
+      ) : (
+        <p
+          className="truncate text-sm font-extrabold tabular-nums sm:text-base"
+          style={{ color: accent ?? (isDark ? '#fff' : '#0f172a'), letterSpacing: '-0.01em' }}
+        >
+          {value}
+        </p>
+      )}
+      <p className="mt-0.5 truncate text-[9px] sm:text-[10px]"
+        style={{ color: isDark ? 'rgba(255,255,255,0.45)' : 'var(--text-muted)' }}>
+        {label}
+      </p>
+    </div>
+  );
+}
+
 // ─── KPI Sparkline Card (matches Nebula reference) ────────────────────────────
 
 interface KpiCardProps {
@@ -179,16 +243,10 @@ function KpiCard({ icon, value, label, sub, growth, sparkData, color, delay = 0,
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, type: 'spring', stiffness: 260, damping: 22 }}
+      className="relative flex min-h-[118px] flex-col overflow-hidden rounded-2xl p-3 sm:min-h-[132px] sm:rounded-[20px] sm:p-4 md:p-[18px_18px_12px]"
       style={{
         background: 'rgba(255,255,255,0.03)',
         border: '1px solid rgba(88,130,255,0.1)',
-        borderRadius: 20,
-        padding: '16px 18px 12px',
-        position: 'relative',
-        overflow: 'hidden',
-        minHeight: 140,
-        display: 'flex',
-        flexDirection: 'column',
       }}
     >
       {/* Subtle top accent line */}
@@ -226,10 +284,8 @@ function KpiCard({ icon, value, label, sub, growth, sparkData, color, delay = 0,
           <ShimmerBar width="72%" height={26} radius={7} />
         </div>
       ) : (
-        <p style={{
-          fontSize:22, fontWeight:900, color:'var(--text-primary)',
-          letterSpacing:'-0.02em', fontVariantNumeric:'tabular-nums', lineHeight:1.1,
-        }}>
+        <p className="truncate text-lg font-black tabular-nums leading-tight tracking-tight sm:text-xl md:text-[22px]"
+          style={{ color: 'var(--text-primary)' }}>
           {value}
         </p>
       )}
@@ -295,7 +351,6 @@ export default function Dashboard() {
   const { isDark } = useTheme();
   const { user }   = useAuth();
   const [demo,     setDemo]     = useState(false);
-  const [spinning, setSpinning] = useState(false);
   const [now, setNow] = useState(new Date());
 
   // ── Dashboard data loads via useDashboardPage → /analytics/dashboard-page
@@ -308,13 +363,11 @@ export default function Dashboard() {
 
   const {
     mtdRaw, todayRaw, kpis, todayKpis,
-    loading: mLoading, todayLoading, error: fetchError, refetch, dataFetchedAt,
+    loading: mLoading, todayLoading, error: fetchError, refetch, dataFetchedAt, refreshing,
   } = useDashboardPage();
 
   const doRefresh = useCallback(() => {
-    refetch();
-    setSpinning(true);
-    setTimeout(() => setSpinning(false), 900);
+    void refetch();
   }, [refetch]);
 
   // ── Resolve data ──────────────────────────────────────────────────────────
@@ -339,13 +392,8 @@ export default function Dashboard() {
   const txnGrowth = demo ? null : (kpis?.transactions?.growth ?? null);
   const aovGrowth = demo ? null : (kpis?.avg_order_value?.growth ?? null);
 
-  // ── PowerBI-equivalent extras ──────────────────────────────────────────────
-  // distinct_clients  = COUNT(DISTINCT CustomerId) from sales view (unique buyers in period)
-  // distinct_suppliers= COUNT(DISTINCT SupplierAlias) from sales view
-  // unique_invoices   = COUNT(DISTINCT CashmemoNo) — PowerBI "Unique Invoices" (≠ line-item count)
-  const distinctClients   = !demo && kpis?.distinct_clients?.value   != null ? fmtCount(kpis.distinct_clients.value)   : (dataPending ? '…' : '—');
+  // ── PowerBI-equivalent extras (suppliers only — clients/invoices shown above) ──
   const distinctSuppliers = !demo && kpis?.distinct_suppliers?.value != null ? fmtCount(kpis.distinct_suppliers.value) : (dataPending ? '…' : '—');
-  const uniqueInvoices    = !demo && kpis?.unique_invoices?.value    != null ? fmtCount(kpis.unique_invoices.value)    : (dataPending ? '…' : '—');
 
   // ── KPI strip: wrap in skeleton opacity when data is pending ─────────────
   // isSkeletonMode already handles charts; for KPI numbers we rely on dataPending/'…'
@@ -438,11 +486,9 @@ export default function Dashboard() {
     ? (dataFetchedAt ?? mtdRaw?.fetched_at ?? todayRaw?.fetched_at ?? null)
     : null;
   const fetchedAtDate = fetchedAtTs ? new Date(fetchedAtTs * 1000) : null;
-  const fetchedAtAge = fetchedAtDate ? (now.getTime() - fetchedAtDate.getTime()) / 1000 : 0;
-  const isFromCache = !demo && (
+  const isFromCache = !demo && !refreshing && (
     mtdRaw?.from_cache === true
     || todayRaw?.from_cache === true
-    || fetchedAtAge > 300
   );
   const fetchedAtFmt = fetchedAtDate
     ? fetchedAtDate.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }).toLowerCase()
@@ -450,132 +496,181 @@ export default function Dashboard() {
   const displayTime = fetchedAtFmt ?? timeFmt;
   const displayTimeLabel = fetchedAtFmt ? 'Data as of' : 'Last Refreshed';
 
-  void isDark; // used via CSS vars
+  const surface = cardSurface(isDark);
+
+  const trendChartHeight = useChartHeight(168, 200);
+  const pieChartHeight = useChartHeight(100, 120);
+  const billsChartHeight = useChartHeight(130, 150);
+  const unitsChartHeight = useChartHeight(120, 140);
+
+  const heroChips = [
+    { label: 'Today', value: todaySales, loading: todayPending },
+    { label: 'Bills Today', value: todayBills, loading: todayPending },
+    { label: 'Today Qty', value: todayQty, loading: todayPending },
+    { label: 'MTD Sales', value: mS ? mtdSales : '…', loading: !mS && mLoading },
+    { label: 'MTD Qty', value: mS ? mtdQty : '…', loading: !mS && mLoading },
+    {
+      label: 'MTD Customers',
+      value: mtdCustomerDisplay,
+      loading: dataPending || mtdCustomerDisplay === 'Loading…',
+      accent: '#0EA5E9',
+    },
+  ];
 
   return (
-    <div className="space-y-5 pb-6">
+    <div className="space-y-4 pb-6 sm:space-y-5">
 
       {/* ── 1. Header card ────────────────────────────────────────────────── */}
-      <div style={{
-        background: 'linear-gradient(140deg, #0d1433 0%, #0a1028 60%, #0d1840 100%)',
-        borderRadius: 24,
-        padding: '22px 24px 20px',
-        border: '1px solid rgba(88,130,255,0.18)',
-        boxShadow: '0 8px 40px rgba(0,0,0,0.45)',
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
+      <div
+        className="relative overflow-hidden rounded-2xl border p-4 sm:rounded-3xl sm:p-5 md:p-6"
+        style={{
+          background: isDark
+            ? 'linear-gradient(140deg, #0d1433 0%, #0a1028 60%, #0d1840 100%)'
+            : 'linear-gradient(140deg, #ffffff 0%, #f8fafc 55%, #eef2ff 100%)',
+          borderColor: isDark ? 'rgba(88,130,255,0.18)' : 'rgba(88,130,255,0.22)',
+          boxShadow: isDark ? '0 8px 40px rgba(0,0,0,0.45)' : '0 4px 24px rgba(15,23,42,0.08)',
+        }}
+      >
         {/* subtle grid overlay */}
-        <div style={{ position:'absolute', inset:0, backgroundImage:'radial-gradient(rgba(88,130,255,0.07) 1px, transparent 1px)', backgroundSize:'28px 28px', pointerEvents:'none', borderRadius:24 }} />
+        <div className="pointer-events-none absolute inset-0 rounded-2xl sm:rounded-3xl"
+          style={{
+            backgroundImage: isDark
+              ? 'radial-gradient(rgba(88,130,255,0.07) 1px, transparent 1px)'
+              : 'radial-gradient(rgba(88,130,255,0.12) 1px, transparent 1px)',
+            backgroundSize: '28px 28px',
+          }} />
 
-        <div className="flex flex-col sm:flex-row items-start justify-between gap-4" style={{ position:'relative' }}>
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           {/* Left: greeting + name + badge */}
-          <div>
-            <p style={{ fontSize:12, color:'rgba(255,255,255,0.45)', marginBottom:4, letterSpacing:'0.03em' }}>
+          <div className="min-w-0 flex-1">
+            <p className="mb-1 text-[11px] tracking-wide sm:text-xs"
+              style={{ color: isDark ? 'rgba(255,255,255,0.45)' : 'var(--text-muted)' }}>
               Good {greeting} · {dayFmt}
             </p>
-            <h1 style={{ fontSize:34, fontWeight:900, color:'#fff', lineHeight:1.05, letterSpacing:'-0.03em' }}>
+            <h1 className="truncate text-2xl font-black leading-tight tracking-tight sm:text-3xl md:text-[34px]"
+              style={{ color: isDark ? '#fff' : '#0f172a' }}>
               {user?.name ?? 'Manager'}
             </h1>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10, flexWrap:'wrap' }}>
-              <span style={{
-                background:'#5c6bc0', color:'#fff',
-                fontSize:10, fontWeight:700, padding:'3px 10px 3px 8px',
-                borderRadius:6, textTransform:'uppercase', letterSpacing:'0.07em',
-                display:'inline-flex', alignItems:'center', gap:5,
-              }}>
-                <span style={{ fontSize:8 }}>■</span>
+            <div className="mt-2 flex flex-wrap items-center gap-2 sm:mt-2.5 sm:gap-2.5">
+              <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white"
+                style={{ background: '#5c6bc0' }}>
+                <span className="text-[8px]">■</span>
                 {(user?.role ?? 'MANAGER').toUpperCase()}
               </span>
-              <span style={{ fontSize:12, color:'rgba(255,255,255,0.45)' }}>
+              <span className="min-w-0 truncate text-[11px] sm:text-xs"
+                style={{ color: isDark ? 'rgba(255,255,255,0.45)' : 'var(--text-muted)' }}>
                 {user?.email ?? 'karthikeyanasha24@gmail.com'}
               </span>
             </div>
           </div>
 
-          {/* Right: data freshness + action buttons */}
-          <div style={{ textAlign:'right', flexShrink:0 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:6, justifyContent:'flex-end', marginBottom:2 }}>
-              <p style={{ fontSize:10, color:'rgba(255,255,255,0.35)', textTransform:'uppercase', letterSpacing:'0.1em' }}>{displayTimeLabel}</p>
+          {/* Right: data freshness + refresh */}
+          <div className="flex w-full shrink-0 flex-row items-center justify-between gap-3 rounded-xl border px-3 py-2.5 sm:w-auto sm:flex-col sm:items-end sm:border-0 sm:bg-transparent sm:p-0 lg:text-right"
+            style={{
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)',
+              background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(88,130,255,0.06)',
+            }}>
+            <div>
+              <div className="mb-0.5 flex items-center gap-2 sm:justify-end">
+                <p className="text-[10px] uppercase tracking-widest"
+                  style={{ color: isDark ? 'rgba(255,255,255,0.35)' : 'var(--text-muted)' }}>
+                  {displayTimeLabel}
+                </p>
+                {isFromCache && (
+                  <span className="rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wide"
+                    style={{ background: 'rgba(255,170,0,0.18)', color: '#ffaa00', border: '1px solid rgba(255,170,0,0.3)' }}>
+                    CACHED
+                  </span>
+                )}
+              </div>
+              <p className="text-2xl font-extrabold leading-none sm:text-[28px]"
+                style={{
+                  color: isFromCache ? '#ffaa00' : isDark ? '#fff' : '#0f172a',
+                  letterSpacing: '-0.02em',
+                }}>
+                {displayTime}
+              </p>
               {isFromCache && (
-                <span style={{ fontSize:9, fontWeight:700, background:'rgba(255,170,0,0.18)', color:'#ffaa00', border:'1px solid rgba(255,170,0,0.3)', borderRadius:5, padding:'2px 6px', letterSpacing:'0.05em' }}>
-                  CACHED
-                </span>
+                <p className="mt-1 hidden text-[10px] sm:block" style={{ color: 'rgba(255,170,0,0.6)' }}>
+                  Cached snapshot — tap Refresh for live SQL
+                </p>
               )}
             </div>
-            <p style={{ fontSize:28, fontWeight:800, color: isFromCache ? '#ffaa00' : '#fff', letterSpacing:'-0.02em', lineHeight:1 }}>{displayTime}</p>
-            {isFromCache && (
-              <p style={{ fontSize:10, color:'rgba(255,170,0,0.6)', marginTop:2 }}>
-                Cached snapshot — tap Refresh for live SQL
-              </p>
-            )}
-            <div style={{ display:'flex', gap:6, marginTop:10, justifyContent:'flex-end' }}>
-              <button type="button" onClick={doRefresh}
-                style={{ border:'1px solid rgba(88,130,255,0.25)', color:'rgba(255,255,255,0.6)', background:'rgba(88,130,255,0.08)', borderRadius:10, padding:'5px 12px', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
-                <RefreshCw size={10} className={spinning ? 'animate-spin' : ''} /> Refresh
-              </button>
-            </div>
+            <button type="button" onClick={doRefresh} disabled={refreshing}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] sm:mt-2 disabled:opacity-60"
+              style={{
+                border: isDark ? '1px solid rgba(88,130,255,0.25)' : '1px solid rgba(88,130,255,0.3)',
+                color: isDark ? 'rgba(255,255,255,0.6)' : '#475569',
+                background: isDark ? 'rgba(88,130,255,0.08)' : 'rgba(88,130,255,0.1)',
+              }}>
+              <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> Refresh
+            </button>
           </div>
         </div>
 
-        {/* Mini KPI chip strip */}
-        <div style={{ display:'flex', gap:10, marginTop:18, paddingTop:16, borderTop:'1px solid rgba(255,255,255,0.08)', flexWrap:'wrap', position:'relative' }}>
-          {[
-            { label:'Today',       value: todaySales,            loading: todayPending },
-            { label:'Bills Today', value: todayBills,            loading: todayPending },
-            { label:'Today Qty',   value: todayQty,              loading: todayPending },
-            { label:'MTD Sales',   value: mS ? mtdSales : '…',  loading: !mS && mLoading },
-            { label:'MTD Qty',     value: mS ? mtdQty   : '…',  loading: !mS && mLoading },
-          ].map((chip) => (
-            <div key={chip.label} style={{
-              background:'rgba(255,255,255,0.07)',
-              borderRadius:12, padding:'8px 18px',
-              border:'1px solid rgba(255,255,255,0.09)',
-              minWidth:90,
-            }}>
-              {chip.loading ? (
-                <div style={{ marginBottom:4 }}>
-                  <ShimmerBar width={64} height={18} radius={5} />
-                </div>
-              ) : (
-                <p style={{ fontSize:15, fontWeight:800, color:'#fff', letterSpacing:'-0.01em', fontVariantNumeric:'tabular-nums' }}>
-                  {chip.value}
-                </p>
-              )}
-              <p style={{ fontSize:10, color:'rgba(255,255,255,0.45)', marginTop:2 }}>{chip.label}</p>
-            </div>
+        {/* Mini KPI chip grid — equal columns on all breakpoints */}
+        <div className={`relative mt-4 grid grid-cols-2 gap-2 border-t pt-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 lg:gap-2.5 ${isDark ? 'border-white/10' : 'border-slate-200/80'}`}>
+          {heroChips.map((chip) => (
+            <HeroMetricChip key={chip.label} {...chip} isDark={isDark} />
           ))}
           {mtdGrowth != null && lyReady && !dataPending && (
-            <div style={{
-              background: mtdGrowth >= 0 ? 'rgba(0,230,122,0.1)' : 'rgba(239,68,68,0.1)',
-              borderRadius:12, padding:'8px 18px',
-              border: `1px solid ${mtdGrowth >= 0 ? 'rgba(0,230,122,0.2)' : 'rgba(239,68,68,0.2)'}`,
-              display:'flex', alignItems:'center', gap:6,
-            }}>
-              {mtdGrowth >= 0
-                ? <ArrowUpRight size={14} style={{ color:'#00e67a' }} />
-                : <ArrowDownRight size={14} style={{ color:'#ef4444' }} />}
-              <div>
-                <p style={{ fontSize:15, fontWeight:800, color: mtdGrowth >= 0 ? '#00e67a' : '#ef4444' }}>
-                  {mtdGrowth >= 0 ? '+' : ''}{mtdGrowth.toFixed(1)}%
-                </p>
-                <p style={{ fontSize:10, color:'rgba(255,255,255,0.45)', marginTop:2 }}>vs Last Year</p>
-              </div>
-            </div>
+            <HeroMetricChip
+              label="vs Last Year"
+              value={`${mtdGrowth >= 0 ? '+' : ''}${mtdGrowth.toFixed(1)}%`}
+              accent={mtdGrowth >= 0 ? '#00e67a' : '#ef4444'}
+              isDark={isDark}
+            />
           )}
         </div>
       </div>
 
       {/* Period guide */}
-      <div className="rounded-xl px-3.5 py-2.5 text-[11px] leading-relaxed"
+      <div className="rounded-xl px-3 py-2 text-[10px] leading-relaxed sm:px-3.5 sm:py-2.5 sm:text-[11px]"
         style={{ background:'rgba(88,130,255,0.06)', border:'1px solid rgba(88,130,255,0.12)', color:'var(--text-muted)' }}>
         <span className="font-semibold" style={{ color:'var(--text-secondary)' }}>How to read: </span>
         {mtdPeriodHint} Cards marked <span className="font-semibold">Today</span> cover {todayDate} only.
         Growth % compares the <span className="font-semibold">same dates last year</span>.
       </div>
 
+      {/* ── Customer & supplier KPIs (above main strip — visible on mobile without scrolling) ─── */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KpiCard
+          icon={<Users size={16} style={{ color:'#EC407A' }} />}
+          value={todayCustomerDisplay}
+          label="Today's Customer Count"
+          sub={todayCustomerDisplay === 'Loading…' ? 'Distinct customers' : 'Unique customers today'}
+          growth={null}
+          sparkData={[]}
+          color="#EC407A"
+          delay={0.02}
+          pending={todayPending || todayCustomerDisplay === 'Loading…'}
+        />
+        <KpiCard
+          icon={<Users size={16} style={{ color:'#0EA5E9' }} />}
+          value={mtdCustomerDisplay}
+          label="MTD Customer Count"
+          sub={mtdCustomerDisplay === 'Loading…' ? 'Distinct customers' : `Unique customers · ${mtdLabel}`}
+          growth={null}
+          sparkData={[]}
+          color="#0EA5E9"
+          delay={0.03}
+          pending={dataPending || mtdCustomerDisplay === 'Loading…'}
+        />
+        <KpiCard
+          icon={<Zap size={16} style={{ color:'#F97316' }} />}
+          value={distinctSuppliers}
+          label="Distinct Suppliers"
+          sub={dataPending ? undefined : 'Active suppliers MTD'}
+          growth={null}
+          sparkData={[]}
+          color="#F97316"
+          delay={0.04}
+          pending={dataPending}
+        />
+      </div>
+
       {/* ── 2. KPI STRIP ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-3 xl:grid-cols-6">
         <KpiCard
           icon={<TrendingUp size={16} style={{ color:'#5882ff' }} />}
           value={mtdSales}
@@ -651,81 +746,18 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── Customer count (Today + MTD) — same metric as Analytics Customer Count card ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <KpiCard
-          icon={<Users size={16} style={{ color:'#EC407A' }} />}
-          value={todayCustomerDisplay}
-          label="Today's Customer Count"
-          sub={todayCustomerDisplay === 'Loading…' ? 'Distinct customers' : 'Unique customers today'}
-          growth={null}
-          sparkData={[]}
-          color="#EC407A"
-          delay={0.28}
-          pending={todayPending || todayCustomerDisplay === 'Loading…'}
-        />
-        <KpiCard
-          icon={<Users size={16} style={{ color:'#0EA5E9' }} />}
-          value={mtdCustomerDisplay}
-          label="MTD Customer Count"
-          sub={mtdCustomerDisplay === 'Loading…' ? 'Distinct customers' : `Unique customers · ${mtdLabel}`}
-          growth={null}
-          sparkData={[]}
-          color="#0EA5E9"
-          delay={0.29}
-          pending={dataPending || mtdCustomerDisplay === 'Loading…'}
-        />
-      </div>
-
-      {/* ── PowerBI KPI row: Distinct Clients / Suppliers / Unique Invoices ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KpiCard
-          icon={<Activity size={16} style={{ color:'#0EA5E9' }} />}
-          value={distinctClients}
-          label="Distinct Clients"
-          sub={dataPending ? undefined : 'Unique buyers MTD'}
-          growth={null}
-          sparkData={[]}
-          color="#0EA5E9"
-          delay={0.30}
-          pending={dataPending}
-        />
-        <KpiCard
-          icon={<Zap size={16} style={{ color:'#F97316' }} />}
-          value={distinctSuppliers}
-          label="Distinct Suppliers"
-          sub={dataPending ? undefined : 'Active suppliers MTD'}
-          growth={null}
-          sparkData={[]}
-          color="#F97316"
-          delay={0.35}
-          pending={dataPending}
-        />
-        <KpiCard
-          icon={<ArrowUpRight size={16} style={{ color:'#A855F7' }} />}
-          value={uniqueInvoices}
-          label="Unique Invoices"
-          sub={dataPending ? undefined : 'Distinct CashmemoNo'}
-          growth={null}
-          sparkData={[]}
-          color="#A855F7"
-          delay={0.40}
-          pending={dataPending}
-        />
-      </div>
-
       {/* ── 4. Performance ────────────────────────────────────────────────── */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <div>
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <p className="text-sm font-bold" style={{ color:'var(--text-primary)' }}>Performance</p>
             <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Revenue, transactions and branch comparisons · {mtdLabel}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 self-start sm:self-auto">
             {mLoading && !demo && <WifiOff size={11} style={{ color:'var(--text-muted)' }} title="Refreshing…" />}
             {fetchError && !demo && <span className="text-[10px] text-red-400" title={fetchError}>Error</span>}
             <Link to="/analytics"
-              className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-xl"
+              className="flex items-center gap-1 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium"
               style={{ color:'#5882ff', border:'1px solid rgba(88,130,255,0.2)', background:'rgba(88,130,255,0.04)' }}>
               Full Analytics <ChevronRight size={11} />
             </Link>
@@ -746,22 +778,22 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={isSkeletonMode ? { opacity: 0.45, pointerEvents: 'none', filter: 'saturate(0.4)' } : {}}>
 
           {/* Revenue trend */}
-          <div className="lg:col-span-2 rounded-2xl p-4" style={CARD_SURFACE}>
-            <div className="flex items-center justify-between mb-3">
+          <div className="rounded-2xl p-3 sm:p-4 lg:col-span-2" style={surface}>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Daily sales trend</p>
                 <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>{lyChartSubtitle(mtdLabel, lyReady)}</p>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 rounded" style={{ background:'#5882ff' }} /><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Revenue</span></div>
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                <div className="flex items-center gap-1.5"><div className="h-0.5 w-3 rounded" style={{ background:'#5882ff' }} /><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Revenue</span></div>
                 {lyReady ? (
-                  <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 rounded" style={{ borderTop:'1px dashed #26C6DA', background:'transparent' }} /><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Last Year</span></div>
+                  <div className="flex items-center gap-1.5"><div className="h-0.5 w-3 rounded" style={{ borderTop:'1px dashed #26C6DA', background:'transparent' }} /><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Last Year</span></div>
                 ) : lyPending ? (
                   <span className="text-[10px] animate-pulse" style={{ color:'var(--text-muted)' }}>Last year loading…</span>
                 ) : null}
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={trendChartHeight}>
               <AreaChart data={trendChart} margin={{ top: 5, right: 4, left: -8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
@@ -786,12 +818,12 @@ export default function Dashboard() {
           </div>
 
           {/* Category pie */}
-          <div className="rounded-2xl p-4 flex flex-col" style={CARD_SURFACE}>
-            <p className="text-sm font-semibold mb-0.5" style={{ color:'var(--text-primary)' }}>Sales by category</p>
-            <p className="text-[10px] mb-2" style={{ color:'var(--text-muted)' }}>
+          <div className="flex flex-col rounded-2xl p-3 sm:p-4" style={surface}>
+            <p className="mb-0.5 text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Sales by category</p>
+            <p className="mb-2 text-[10px]" style={{ color:'var(--text-muted)' }}>
               {isSkeletonMode ? 'Loading live data…' : `All ${categories.length} categories · ${mtdLabel} · top ${Math.min(CATEGORY_PIE_TOP, categories.length)}`}
             </p>
-            <ResponsiveContainer width="100%" height={120}>
+            <ResponsiveContainer width="100%" height={pieChartHeight}>
               <PieChart>
                 <Pie data={pieCategories} cx="50%" cy="50%" innerRadius={36} outerRadius={56} paddingAngle={2} dataKey="revenue">
                   {pieCategories.map((_, i) => <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />)}
@@ -825,21 +857,22 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={isSkeletonMode ? { opacity: 0.45, pointerEvents: 'none', filter: 'saturate(0.4)' } : {}}>
 
         {/* Bills per day */}
-        <div className="rounded-2xl p-4" style={CARD_SURFACE}>
+        <div className="rounded-2xl p-3 sm:p-4" style={surface}>
           <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Bills per day</p>
-          <p className="text-[10px] mb-3" style={{ color:'var(--text-muted)' }}>
+          <p className="mb-3 text-[10px]" style={{ color:'var(--text-muted)' }}>
             Bill count each day · {mtdLabel}
             {!demo && billsFromTrend > 0 && (
-              <span> · Daily sum {fmtCount(billsFromTrend)}
+              <span className="hidden sm:inline"> · Daily sum {fmtCount(billsFromTrend)}
                 {mS?.bills != null && ` · MTD card ${fmtCount(mS.bills)}`}
               </span>
             )}
           </p>
-          <ResponsiveContainer width="100%" height={150}>
+          <ScrollableCartesian itemCount={billsChart.length} height={billsChartHeight} slotPx={28} showScrollHint={false}>
+            {() => (
             <BarChart data={billsChart} margin={{ top: showBillsBarLabels ? 22 : 8, right: 4, left: 2, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(88,130,255,0.05)" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 8, fill:'var(--text-muted)' }} tickLine={false} axisLine={false}
-                interval={billsChart.length > 14 ? ('preserveStartEnd' as const) : 0} />
+                interval={0} />
               <YAxis tickFormatter={fmtCountAxis} width={40}
                 tick={{ fontSize: 8, fill:'var(--text-muted)' }} tickLine={false} axisLine={false} />
               <ReTooltip
@@ -854,13 +887,14 @@ export default function Dashboard() {
                 )}
               </Bar>
             </BarChart>
-          </ResponsiveContainer>
+            )}
+          </ScrollableCartesian>
         </div>
 
         {/* Top branches */}
-        <div className="rounded-2xl p-4" style={CARD_SURFACE}>
+        <div className="rounded-2xl p-3 sm:p-4" style={surface}>
           <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Top branches</p>
-          <p className="text-[10px] mb-3" style={{ color:'var(--text-muted)' }}>
+          <p className="mb-3 text-[10px]" style={{ color:'var(--text-muted)' }}>
             {isSkeletonMode ? 'Loading live data…' : `Top ${Math.min(5, branches.length)} of ${branches.length} · ${mtdLabel}`}
           </p>
           <div className="space-y-2.5">
@@ -868,8 +902,8 @@ export default function Dashboard() {
               const max = branchChart[0]?.revenue ?? 1;
               const pct = (b.revenue / max) * 100;
               return (
-                <div key={b.name} className="flex items-center gap-2">
-                  <p className="text-[10px] w-16 text-right shrink-0 truncate" style={{ color:'var(--text-muted)' }}>{b.name}</p>
+                <div key={b.name} className="flex items-center gap-1.5 sm:gap-2">
+                  <p className="w-12 shrink-0 truncate text-right text-[9px] sm:w-16 sm:text-[10px]" style={{ color:'var(--text-muted)' }}>{b.name}</p>
                   <div className="flex-1 h-5 rounded overflow-hidden" style={{ background:'rgba(88,130,255,0.07)' }}>
                     <motion.div
                       initial={{ width: 0 }} animate={{ width: `${pct}%` }}
@@ -889,10 +923,10 @@ export default function Dashboard() {
         </div>
 
         {/* Units vs bills */}
-        <div className="rounded-2xl p-4" style={CARD_SURFACE}>
+        <div className="rounded-2xl p-3 sm:p-4" style={surface}>
           <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Units vs bills</p>
-          <p className="text-[10px] mb-3" style={{ color:'var(--text-muted)' }}>Quantity sold and bill count by day · {mtdLabel}</p>
-          <ResponsiveContainer width="100%" height={140}>
+          <p className="mb-3 text-[10px]" style={{ color:'var(--text-muted)' }}>Quantity sold and bill count by day · {mtdLabel}</p>
+          <ResponsiveContainer width="100%" height={unitsChartHeight}>
             <AreaChart
               data={trend.slice(-15).map(p => ({ label: p.label, QTY: p.quantity, Bills: p.bills }))}
               margin={{ top: 2, right: 0, left: -14, bottom: 0 }}>
@@ -921,21 +955,56 @@ export default function Dashboard() {
       <div>
 
         {/* Recent Transactions */}
-        <div className="rounded-2xl p-4" style={CARD_SURFACE}>
-          <div className="flex items-center justify-between mb-3">
+        <div className="rounded-2xl p-3 sm:p-4" style={surface}>
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>Recent Transactions</p>
               <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>
                 {displayTxns.length > 0 ? `Latest ${displayTxns.length} records` : recentTxnsLoading ? 'Loading…' : 'Open Transactions page for live list'}
               </p>
             </div>
-            <Link to="/transactions" className="text-xs font-semibold flex items-center gap-1" style={{ color:'#5882ff' }}>
+            <Link to="/transactions" className="flex shrink-0 items-center gap-1 self-start text-xs font-semibold sm:self-auto" style={{ color:'#5882ff' }}>
               View all <ChevronRight size={11} />
             </Link>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+          {/* Mobile: card list */}
+          <div className="space-y-2 sm:hidden">
+            {displayTxns.length === 0 && !demo && !recentTxnsLoading && (
+              <p className="py-6 text-center text-xs" style={{ color:'var(--text-muted)' }}>
+                Transaction feed unavailable — use{' '}
+                <Link to="/transactions" className="font-semibold" style={{ color:'#5882ff' }}>Transactions</Link>
+              </p>
+            )}
+            {displayTxns.slice(0, 8).map((t, i) => (
+              <div key={`${t.id}-${i}`} className="rounded-xl border px-3 py-2.5"
+                style={{ borderColor:'rgba(88,130,255,0.1)', background:'rgba(88,130,255,0.03)' }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-[11px] font-semibold" style={{ color:'var(--text-secondary)' }}>{t.id}</p>
+                    <p className="mt-0.5 truncate text-[10px]" style={{ color:'var(--text-muted)' }}>{t.branch} · {t.category}</p>
+                  </div>
+                  <p className="shrink-0 font-mono text-[11px] font-semibold tabular-nums" style={{ color:'var(--text-primary)' }}>
+                    {fmtRupees(t.amount)}
+                  </p>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{t.date}</span>
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      background: t.status==='completed' ? 'rgba(0,230,122,0.1)' : t.status==='pending' ? 'rgba(255,167,38,0.1)' : 'rgba(239,68,68,0.1)',
+                      color:      t.status==='completed' ? '#00e67a'              : t.status==='pending' ? '#ffa726'              : '#ef4444',
+                    }}>
+                    {t.status.charAt(0).toUpperCase()+t.status.slice(1)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tablet+: table */}
+          <div className="hidden overflow-x-auto sm:block">
+            <table className="w-full min-w-[520px] border-collapse">
               <thead>
                 <tr style={{ borderBottom:'1px solid rgba(88,130,255,0.08)' }}>
                   {['Invoice','Branch','Category','Amount','Date','Status'].map(h => (
@@ -952,7 +1021,7 @@ export default function Dashboard() {
                   </td></tr>
                 )}
                 {displayTxns.slice(0,8).map((t, i) => (
-                  <motion.tr key={t.id}
+                  <motion.tr key={`${t.id}-${i}`}
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.025 }}
                     style={{ borderBottom:'1px solid rgba(88,130,255,0.05)' }}

@@ -287,7 +287,7 @@ export default function Product() {
               <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Top products</h2>
               <p className="text-xs flex items-center gap-1" style={{ color: topLoading ? '#5882ff' : 'var(--text-muted)' }}>
                 {topLoading && <RefreshCw size={9} className="animate-spin" />}
-                {topLoading ? `Loading ${timeRange} data…` : `By revenue · ${period.toUpperCase()}`}
+                {topLoading ? `Loading ${timeRange} data…` : `By revenue · ${timeRange}`}
               </p>
             </div>
             {topError && (

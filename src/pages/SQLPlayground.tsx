@@ -11,6 +11,7 @@ import { Play, Copy, Trash2, Download, ChevronLeft, ChevronRight, Terminal, Tabl
 import { useTheme } from '../context/ThemeContext';
 import { analytics } from '../lib/api';
 import { formatTableCell, formatChartValue, formatChartAxisValue } from '../lib/nlqVisualization';
+import { ScrollableCartesian } from '../lib/chartLayout';
 
 // ── Colour palette for chart bars ────────────────────────────────────────────
 const COLOURS = [
@@ -347,7 +348,8 @@ export default function SQLPlayground() {
           {/* CHART view */}
           {tab === 'chart' && chartData && (
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={320}>
+              <ScrollableCartesian itemCount={chartData.length} height={320} slotPx={52}>
+                {() => (
                 <BarChart data={chartData} margin={{ top: 20, right: 8, left: 0, bottom: chartData.length > 10 ? 60 : 8 }}>
                   <CartesianGrid strokeDasharray="3 3"
                     stroke={isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} vertical={false} />
@@ -375,7 +377,8 @@ export default function SQLPlayground() {
                     )}
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer>
+                )}
+              </ScrollableCartesian>
             </div>
           )}
 

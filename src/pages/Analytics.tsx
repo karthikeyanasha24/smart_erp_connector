@@ -13,6 +13,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useAnalyticsPage, prefetchAnalyticsPage, fetchAndApplySnapshot, hasLyTrendData, formatLySub, lyGrowthReady, formatCustomerKpi, clearCustomAnalyticsClientCache } from '../hooks/useAnalytics';
 import { fmtLakhs, fmtCount, fmtCountAxis, fmtLakhsAxis, formatChartLabel } from '../lib/format';
+import { ScrollableCartesian, PieSideLayout } from '../lib/chartLayout';
 import { analytics as analyticsApi } from '../lib/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -156,6 +157,28 @@ function PieLegend({ items, isDark, className = '' }: { items: { name: string; v
         </div>
       ))}
     </div>
+  );
+}
+
+// ─── Pie graphic only (no legend) — used to pair a pie with a data table ──────
+function PieGraphic({ items, size, isDark }: { items: { name: string; value: number }[]; size: number; isDark: boolean }) {
+  const innerR = Math.round(size * 0.275);
+  const outerR = Math.round(size * 0.425);
+  return (
+    <PieChart width={size} height={size}>
+      <Pie data={items} dataKey="value" nameKey="name"
+        cx="50%" cy="50%" innerRadius={innerR} outerRadius={outerR}
+        paddingAngle={2} strokeWidth={0}>
+        {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+      </Pie>
+      <Tooltip
+        formatter={(v: number, name) => [fmtLakhs(Number(v)), String(name)]}
+        contentStyle={{
+          background: isDark ? 'rgba(8,15,26,0.97)' : 'rgba(255,255,255,0.98)',
+          border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+          borderRadius: 10, fontSize: 11,
+        }} />
+    </PieChart>
   );
 }
 
@@ -408,12 +431,12 @@ export default function Analytics() {
     [data?.daywise],
   );
 
-  const topCategories = useMemo(() =>
-    allCategories.slice(0, 12).map(c => ({ name: c.name.slice(0, 14), value: c.revenue })),
+  const chartCategories = useMemo(() =>
+    allCategories.map(c => ({ name: c.name.slice(0, 14), value: c.revenue })),
     [allCategories]);
 
-  const topBranches = useMemo(() =>
-    allBranches.slice(0, 15).map(b => ({ name: b.name.slice(0, 12), value: b.revenue })),
+  const chartBranches = useMemo(() =>
+    allBranches.map(b => ({ name: b.name.slice(0, 12), value: b.revenue })),
     [allBranches]);
 
   const departmentRows = data?.departments ?? [];
@@ -421,25 +444,14 @@ export default function Analytics() {
     (chartLoading || loading) && departmentRows.length === 0
     && ((data?.categories?.length ?? 0) > 0 || (data?.branches?.length ?? 0) > 0);
 
-  const topDepts = useMemo(() =>
-    departmentRows.slice(0, 15).map(d => ({
+  const chartDepts = useMemo(() =>
+    departmentRows.map(d => ({
       name: (d.name || '—').slice(0, 14),
       value: d.revenue,
     })),
     [departmentRows]);
 
   // ── Breakdown renderChart helpers ──────────────────────────────────────────
-  /** Wrap a chart in a horizontal-scroll container once it has more bars/points
-   *  than comfortably fit on a narrow screen, instead of letting Recharts
-   *  squash everything down. */
-  function withHScroll(node: React.ReactNode, itemCount: number, slotPx = 56, threshold = 10): React.ReactNode {
-    if (itemCount <= threshold) return node;
-    return (
-      <div className="w-full overflow-x-auto overflow-y-hidden -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div style={{ minWidth: itemCount * slotPx }}>{node}</div>
-      </div>
-    );
-  }
   const tooltipStyle = {
     background: isDark ? 'rgba(8,15,26,0.97)' : 'rgba(255,255,255,0.98)',
     border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
@@ -452,6 +464,7 @@ export default function Analytics() {
   function renderSingleSeries(
     type: 'bar' | 'line' | 'pie',
     items: { name: string; value: number }[],
+    slotPx = 48,
   ): React.ReactNode {
     if (!items.length) return undefined;
     const many = items.length > 8;
@@ -459,70 +472,61 @@ export default function Analytics() {
     const ta = many ? ('end' as const) : ('middle' as const);
     const mbottom = many ? 58 : 20;
 
-    if (type === 'bar') return withHScroll(
-      <ResponsiveContainer width="100%" height={breakdownBarHeight}>
-        <BarChart data={items} barCategoryGap="28%"
-          margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-          <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)', angle, textAnchor: ta }} />
-          <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={50} />
-          <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
-          <Bar dataKey="value" name="Revenue" radius={[4, 4, 0, 0]} maxBarSize={44}>
-            {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-            {items.length <= 20 && (
-              <LabelList dataKey="value" position="top"
-                formatter={(v: number) => fmtLakhsAxis(Number(v))}
-                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
-            )}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>,
-      items.length,
+    if (type === 'bar') return (
+      <ScrollableCartesian itemCount={items.length} height={breakdownBarHeight} slotPx={slotPx}>
+        {() => (
+          <BarChart data={items} barCategoryGap="28%"
+            margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+            <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)', angle, textAnchor: ta }} />
+            <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={50} />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
+            <Bar dataKey="value" name="Revenue" radius={[4, 4, 0, 0]} maxBarSize={44}>
+              {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+              {items.length <= 24 && (
+                <LabelList dataKey="value" position="top"
+                  formatter={(v: number) => fmtLakhsAxis(Number(v))}
+                  style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+              )}
+            </Bar>
+          </BarChart>
+        )}
+      </ScrollableCartesian>
     );
 
-    if (type === 'line') return withHScroll(
-      <ResponsiveContainer width="100%" height={breakdownLineHeight}>
-        <LineChart data={items} margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-          <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)', angle, textAnchor: ta }} />
-          <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={50} />
-          <Tooltip content={<ChartTooltip />} />
-          <Line type="monotone" dataKey="value" name="Revenue"
-            stroke="#5882ff" strokeWidth={2}
-            dot={{ fill: '#5882ff', r: 3, strokeWidth: 0 }}
-            activeDot={{ r: 5, fill: '#5882ff' }}>
-            {items.length <= 20 && (
-              <LabelList dataKey="value" position="top"
-                formatter={(v: number) => v >= 100 ? `${(v/100).toFixed(1)}L` : `${v.toFixed(1)}`}
-                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
-            )}
-          </Line>
-        </LineChart>
-      </ResponsiveContainer>,
-      items.length,
+    if (type === 'line') return (
+      <ScrollableCartesian itemCount={items.length} height={breakdownLineHeight} slotPx={slotPx}>
+        {() => (
+          <LineChart data={items} margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+            <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)', angle, textAnchor: ta }} />
+            <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={50} />
+            <Tooltip content={<ChartTooltip />} />
+            <Line type="monotone" dataKey="value" name="Revenue"
+              stroke="#5882ff" strokeWidth={2}
+              dot={{ fill: '#5882ff', r: 3, strokeWidth: 0 }}
+              activeDot={{ r: 5, fill: '#5882ff' }}>
+              {items.length <= 24 && (
+                <LabelList dataKey="value" position="top"
+                  formatter={(v: number) => v >= 100 ? `${(v/100).toFixed(1)}L` : `${v.toFixed(1)}`}
+                  style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+              )}
+            </Line>
+          </LineChart>
+        )}
+      </ScrollableCartesian>
     );
 
     if (type === 'pie') {
-      const innerR = isMobile ? 46 : 55;
-      const outerR = isMobile ? 72 : 85;
       return (
-        <div className={`flex items-center gap-3 md:gap-4 ${isMobile ? 'flex-col' : 'flex-row'}`}>
-          <PieChart width={pieChartSize} height={pieChartSize} className="mx-auto shrink-0">
-            <Pie data={items} dataKey="value" nameKey="name"
-              cx="50%" cy="50%" innerRadius={innerR} outerRadius={outerR}
-              paddingAngle={2} strokeWidth={0}>
-              {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-            </Pie>
-            <Tooltip
-              formatter={(v: number, name) => [fmtLakhs(Number(v)), String(name)]}
-              contentStyle={tooltipStyle} />
-          </PieChart>
-          <PieLegend items={items} isDark={isDark} className={isMobile ? 'max-h-[180px]' : 'flex-1 min-w-0'} />
-        </div>
+        <PieSideLayout
+          pie={<PieGraphic items={items} size={pieChartSize} isDark={isDark} />}
+          side={<PieLegend items={items} isDark={isDark} className="max-h-[320px]" />}
+        />
       );
     }
     return undefined;
@@ -531,54 +535,55 @@ export default function Analytics() {
   /** Day-wise bill counts — same SQL definition as Bills Generated KPI */
   function renderDaywiseBills(type: 'bar' | 'line' | 'pie'): React.ReactNode {
     if (!daywiseBillsData.length) return undefined;
-    const interval = daywiseBillsData.length > 20 ? ('preserveStartEnd' as const) : 0;
     const showLabels = daywiseBillsData.length <= 31;
 
-    if (type === 'bar') return withHScroll(
-      <ResponsiveContainer width="100%" height={daywiseBarHeight}>
-        <BarChart data={daywiseBillsData} barCategoryGap="28%" margin={{ top: showLabels ? 22 : 10, right: 8, left: 2, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-          <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-          <YAxis tickFormatter={fmtCountAxis} axisLine={false} tickLine={false} width={48}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-          <Tooltip
-            formatter={(v: number) => [fmtCount(Number(v)), 'Bills']}
-            labelFormatter={(l) => String(l)}
-            contentStyle={tooltipStyle} cursor={{ fill: cursorFill, radius: 4 }} />
-          <Bar dataKey="bills" name="Bills" fill="#26C6DA" radius={[4, 4, 0, 0]} maxBarSize={28}>
-            {showLabels && (
-              <LabelList dataKey="bills" position="top"
-                formatter={(v: number) => fmtCountAxis(Number(v))}
-                style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
-            )}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>,
-      daywiseBillsData.length, 40, 8,
+    if (type === 'bar') return (
+      <ScrollableCartesian itemCount={daywiseBillsData.length} height={daywiseBarHeight} slotPx={40}>
+        {() => (
+          <BarChart data={daywiseBillsData} barCategoryGap="28%"
+            margin={{ top: showLabels ? 22 : 10, right: 8, left: 2, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+            <XAxis dataKey="label" axisLine={false} tickLine={false} interval={0}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+            <YAxis tickFormatter={fmtCountAxis} axisLine={false} tickLine={false} width={48}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+            <Tooltip
+              formatter={(v: number) => [fmtCount(Number(v)), 'Bills']}
+              labelFormatter={(l) => String(l)}
+              contentStyle={tooltipStyle} cursor={{ fill: cursorFill, radius: 4 }} />
+            <Bar dataKey="bills" name="Bills" fill="#26C6DA" radius={[4, 4, 0, 0]} maxBarSize={28}>
+              {showLabels && (
+                <LabelList dataKey="bills" position="top"
+                  formatter={(v: number) => fmtCountAxis(Number(v))}
+                  style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+              )}
+            </Bar>
+          </BarChart>
+        )}
+      </ScrollableCartesian>
     );
 
-    if (type === 'line') return withHScroll(
-      <ResponsiveContainer width="100%" height={daywiseLineHeight}>
-        <LineChart data={daywiseBillsData} margin={{ top: 8, right: 8, left: 2, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-          <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-          <YAxis tickFormatter={fmtCountAxis} axisLine={false} tickLine={false} width={48}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-          <Tooltip
-            formatter={(v: number) => [fmtCount(Number(v)), 'Bills']}
-            contentStyle={tooltipStyle} />
-          <Line type="monotone" dataKey="bills" name="Bills" stroke="#26C6DA" strokeWidth={2}
-            dot={daywiseBillsData.length <= 12 ? { fill: '#26C6DA', r: 3, strokeWidth: 0 } : false} />
-        </LineChart>
-      </ResponsiveContainer>,
-      daywiseBillsData.length, 40, 20,
+    if (type === 'line') return (
+      <ScrollableCartesian itemCount={daywiseBillsData.length} height={daywiseLineHeight} slotPx={40}>
+        {() => (
+          <LineChart data={daywiseBillsData} margin={{ top: 8, right: 8, left: 2, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+            <XAxis dataKey="label" axisLine={false} tickLine={false} interval={0}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+            <YAxis tickFormatter={fmtCountAxis} axisLine={false} tickLine={false} width={48}
+              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+            <Tooltip
+              formatter={(v: number) => [fmtCount(Number(v)), 'Bills']}
+              contentStyle={tooltipStyle} />
+            <Line type="monotone" dataKey="bills" name="Bills" stroke="#26C6DA" strokeWidth={2}
+              dot={daywiseBillsData.length <= 12 ? { fill: '#26C6DA', r: 3, strokeWidth: 0 } : false} />
+          </LineChart>
+        )}
+      </ScrollableCartesian>
     );
 
     if (type === 'pie') {
-      const top = daywiseBillsData.slice(0, 10).map(d => ({ name: d.label, value: d.bills }));
-      return renderSingleSeries('pie', top);
+      return renderSingleSeries('pie', daywiseBillsData.map(d => ({ name: d.label, value: d.bills })));
     }
     return undefined;
   }
@@ -586,45 +591,45 @@ export default function Analytics() {
   /** Day-wise (two series: current + prior): Bar, Area/Line, Pie */
   function renderDaywise(type: 'bar' | 'line' | 'pie'): React.ReactNode {
     if (!daywiseAreaData.length) return undefined;
-    const interval = daywiseAreaData.length > 20 ? ('preserveStartEnd' as const) : 0;
 
     if (type === 'bar') {
       _lblY.clear();
-      return withHScroll(
-      <ResponsiveContainer width="100%" height={daywiseBarHeight}>
-        <BarChart data={daywiseAreaData} barCategoryGap="28%" barGap={3}
-          margin={{ top: daywiseAreaData.length <= daywiseLabelMax ? 26 : 10, right: 8, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-          <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-          <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
-          <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
-          <Bar dataKey="prior" name="Last Year"
-            fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={28}>
-            {daywiseAreaData.length <= daywiseLabelMax && (
-              <LabelList dataKey="prior"
-                content={(props: any) => (
-                  <SmartBarLabel {...props} value={props.value}
-                    fill={isDark ? '#94a3b8' : '#64748b'} barKey="prior" idx={props.index} />
+      return (
+        <ScrollableCartesian itemCount={daywiseAreaData.length} height={daywiseBarHeight} slotPx={72}>
+          {() => (
+            <BarChart data={daywiseAreaData} barCategoryGap="28%" barGap={3}
+              margin={{ top: daywiseAreaData.length <= daywiseLabelMax ? 26 : 10, right: 8, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+              <XAxis dataKey="label" axisLine={false} tickLine={false} interval={0}
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+              <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
+              <Bar dataKey="prior" name="Last Year"
+                fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={28}>
+                {daywiseAreaData.length <= daywiseLabelMax && (
+                  <LabelList dataKey="prior"
+                    content={(props: any) => (
+                      <SmartBarLabel {...props} value={props.value}
+                        fill={isDark ? '#94a3b8' : '#64748b'} barKey="prior" idx={props.index} />
+                    )}
+                  />
                 )}
-              />
-            )}
-          </Bar>
-          <Bar dataKey="current" name="Current"
-            fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={28}>
-            {daywiseAreaData.length <= daywiseLabelMax && (
-              <LabelList dataKey="current"
-                content={(props: any) => (
-                  <SmartBarLabel {...props} value={props.value}
-                    fill="#5882ff" barKey="current" idx={props.index} />
+              </Bar>
+              <Bar dataKey="current" name="Current"
+                fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={28}>
+                {daywiseAreaData.length <= daywiseLabelMax && (
+                  <LabelList dataKey="current"
+                    content={(props: any) => (
+                      <SmartBarLabel {...props} value={props.value}
+                        fill="#5882ff" barKey="current" idx={props.index} />
+                    )}
+                  />
                 )}
-              />
-            )}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>,
-      daywiseAreaData.length, 72, 5,
+              </Bar>
+            </BarChart>
+          )}
+        </ScrollableCartesian>
       );
     }
 
@@ -638,8 +643,8 @@ export default function Analytics() {
             </div>
           ))}
         </div>
-        {withHScroll(
-          <ResponsiveContainer width="100%" height={daywiseLineHeight}>
+        <ScrollableCartesian itemCount={daywiseAreaData.length} height={daywiseLineHeight} slotPx={48}>
+          {() => (
             <AreaChart data={daywiseAreaData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
               <defs>
                 <linearGradient id="dgCurr" x1="0" y1="0" x2="0" y2="1">
@@ -652,7 +657,7 @@ export default function Analytics() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-              <XAxis dataKey="label" axisLine={false} tickLine={false} interval={interval}
+              <XAxis dataKey="label" axisLine={false} tickLine={false} interval={0}
                 tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
               <YAxis tickFormatter={fmtLakhsAxis} axisLine={false} tickLine={false}
                 tick={{ fontSize: 10, fill: 'var(--text-muted)' }} width={48} />
@@ -666,29 +671,13 @@ export default function Analytics() {
                 dot={daywiseAreaData.length <= 12 ? { fill: '#5882ff', r: 3, strokeWidth: 0 } : false}
                 activeDot={{ r: 5 }} />
             </AreaChart>
-          </ResponsiveContainer>,
-          daywiseAreaData.length, 48, 20,
-        )}
+          )}
+        </ScrollableCartesian>
       </div>
     );
 
     if (type === 'pie') {
-      const topDays = daywiseAreaData.slice(0, 10).map(d => ({ name: d.label, value: d.current }));
-      return (
-        <div className={`flex items-center gap-3 md:gap-4 ${isMobile ? 'flex-col' : 'flex-row'}`}>
-          <PieChart width={pieChartSize} height={pieChartSize} className="mx-auto shrink-0">
-            <Pie data={topDays} dataKey="value" nameKey="name"
-              cx="50%" cy="50%" innerRadius={isMobile ? 46 : 55} outerRadius={isMobile ? 72 : 85}
-              paddingAngle={2} strokeWidth={0}>
-              {topDays.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-            </Pie>
-            <Tooltip
-              formatter={(v: number, name) => [fmtLakhs(Number(v)), String(name)]}
-              contentStyle={tooltipStyle} />
-          </PieChart>
-          <PieLegend items={topDays} isDark={isDark} className={isMobile ? 'max-h-[180px]' : 'flex-1 min-w-0'} />
-        </div>
-      );
+      return renderSingleSeries('pie', daywiseAreaData.map(d => ({ name: d.label, value: d.current })));
     }
     return undefined;
   }
@@ -1036,56 +1025,55 @@ export default function Analytics() {
           <p className="text-sm py-16 text-center" style={{ color: 'var(--text-muted)' }}>
             No data for this period
           </p>
-        ) : withHScroll(
-          <ResponsiveContainer width="100%" height={yoyChartHeight}>
-            {(() => {
+        ) : (
+          <ScrollableCartesian itemCount={chartData.length} height={yoyChartHeight} slotPx={hasLyData ? 72 : 56}>
+            {() => {
               _lblY.clear();
               const manyBars = chartData.length > 8;
               const xAngle = manyBars ? -38 : 0;
               const xAnchor = manyBars ? ('end' as const) : ('middle' as const);
               const xBottom = manyBars ? 44 : 4;
               return (
-            <BarChart data={chartData}
-              margin={{ top: showBarLabels ? 24 : 10, right: 12, left: 4, bottom: xBottom }}
-              barCategoryGap="32%" barGap={4}>
-              <CartesianGrid strokeDasharray="4 6"
-                stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} />
-              <XAxis dataKey="label"
-                tick={{ fontSize: 10, fill: 'var(--text-muted)', angle: xAngle, textAnchor: xAnchor }}
-                axisLine={false} tickLine={false} interval={0}
-                height={manyBars ? 52 : 25} />
-              <YAxis tickFormatter={fmtLakhsAxis} tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                axisLine={false} tickLine={false} width={52} />
-              <Tooltip content={<ChartTooltip />}
-                cursor={{ fill: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', radius: 4 }} />
-              <Bar dataKey="current" name="Current" fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={36}>
-                {showBarLabels && (
-                  <LabelList dataKey="current"
-                    content={(props: any) => (
-                      <SmartBarLabel {...props} value={props.value}
-                        fill="#5882ff" barKey="current" idx={props.index} />
+                <BarChart data={chartData}
+                  margin={{ top: showBarLabels ? 24 : 10, right: 12, left: 4, bottom: xBottom }}
+                  barCategoryGap="32%" barGap={4}>
+                  <CartesianGrid strokeDasharray="4 6"
+                    stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'} vertical={false} />
+                  <XAxis dataKey="label"
+                    tick={{ fontSize: 10, fill: 'var(--text-muted)', angle: xAngle, textAnchor: xAnchor }}
+                    axisLine={false} tickLine={false} interval={0}
+                    height={manyBars ? 52 : 25} />
+                  <YAxis tickFormatter={fmtLakhsAxis} tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                    axisLine={false} tickLine={false} width={52} />
+                  <Tooltip content={<ChartTooltip />}
+                    cursor={{ fill: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', radius: 4 }} />
+                  <Bar dataKey="current" name="Current" fill="#5882ff" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                    {showBarLabels && (
+                      <LabelList dataKey="current"
+                        content={(props: any) => (
+                          <SmartBarLabel {...props} value={props.value}
+                            fill="#5882ff" barKey="current" idx={props.index} />
+                        )}
+                      />
                     )}
-                  />
-                )}
-              </Bar>
-              {hasLyData && (
-                <Bar dataKey="prior" name="Last Year"
-                  fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={36}>
-                  {showBarLabels && (
-                    <LabelList dataKey="prior"
-                      content={(props: any) => (
-                        <SmartBarLabel {...props} value={props.value}
-                          fill={isDark ? '#94a3b8' : '#64748b'} barKey="prior" idx={props.index} />
+                  </Bar>
+                  {hasLyData && (
+                    <Bar dataKey="prior" name="Last Year"
+                      fill={isDark ? '#475569' : '#cbd5e1'} radius={[4, 4, 0, 0]} maxBarSize={36}>
+                      {showBarLabels && (
+                        <LabelList dataKey="prior"
+                          content={(props: any) => (
+                            <SmartBarLabel {...props} value={props.value}
+                              fill={isDark ? '#94a3b8' : '#64748b'} barKey="prior" idx={props.index} />
+                          )}
+                        />
                       )}
-                    />
+                    </Bar>
                   )}
-                </Bar>
-              )}
-            </BarChart>
+                </BarChart>
               );
-            })()}
-          </ResponsiveContainer>,
-          chartData.length, 56, 8,
+            }}
+          </ScrollableCartesian>
         )}
       </Card>
 
@@ -1119,10 +1107,8 @@ export default function Analytics() {
               {uiLoading ? 'Loading…' : 'No category data'}
             </p>
           ) : (
-            <div className={`flex gap-4 md:gap-5 items-center min-h-[220px] ${isMobile ? 'flex-col' : 'flex-row'}`}>
-
-              {/* Donut */}
-              <div className="shrink-0 mx-auto md:mx-0">
+            <PieSideLayout
+              pie={
                 <PieChart width={categoryPieSize} height={categoryPieSize}>
                   <Pie
                     data={pieData}
@@ -1154,10 +1140,9 @@ export default function Analytics() {
                     }}
                   />
                 </PieChart>
-              </div>
-
-              {/* Legend */}
-              <div className="w-full md:flex-1 overflow-y-auto max-h-[240px] md:max-h-[230px]">
+              }
+              side={
+              <div className="overflow-y-auto max-h-[240px] md:max-h-[280px] w-full">
                 {pieData.map((cat, i) => {
                   const color = PIE_COLORS[i % PIE_COLORS.length];
                   const isActive = i === activePieIndex;
@@ -1205,7 +1190,8 @@ export default function Analytics() {
                   );
                 })}
               </div>
-            </div>
+              }
+            />
           )}
         </Card>
 
@@ -1340,6 +1326,7 @@ export default function Analytics() {
                 d.prior > 0 ? fmtLakhs(d.prior) : '—',
               ])}
               renderChart={renderDaywise}
+              pieItems={daywiseAreaData.map(d => ({ name: d.label, value: d.current }))}
             />
             <BreakdownTable
               title="Day-wise Bills"
@@ -1358,6 +1345,7 @@ export default function Analytics() {
                 fmtCount(d.bills),
               ])}
               renderChart={renderDaywiseBills}
+              pieItems={daywiseBillsData.map(d => ({ name: d.label, value: d.bills }))}
             />
           </>
         )}
@@ -1375,7 +1363,8 @@ export default function Analytics() {
             c.percentage > 0 ? `${c.percentage.toFixed(2)}%` : '—',
             (c as any).transactions != null ? fmtCount((c as any).transactions) : '—',
           ])}
-          renderChart={(type) => renderSingleSeries(type, topCategories)}
+          renderChart={(type) => renderSingleSeries(type, chartCategories)}
+          pieItems={chartCategories}
         />
 
         <BreakdownTable
@@ -1391,7 +1380,8 @@ export default function Analytics() {
             `${b.percentage.toFixed(2)}%`,
             (b as any).transactions != null ? fmtCount((b as any).transactions) : '—',
           ])}
-          renderChart={(type) => renderSingleSeries(type, topBranches)}
+          renderChart={(type) => renderSingleSeries(type, chartBranches, 44)}
+          pieItems={chartBranches}
         />
 
         <BreakdownTable
@@ -1413,7 +1403,8 @@ export default function Analytics() {
             `${d.percentage.toFixed(2)}%`,
             fmtCount((d as any).transactions ?? 0),
           ])}
-          renderChart={(type) => renderSingleSeries(type, topDepts)}
+          renderChart={(type) => renderSingleSeries(type, chartDepts)}
+          pieItems={chartDepts}
         />
       </div>
       </>
@@ -1431,6 +1422,7 @@ function BreakdownTable({
   loading,
   isDark,
   renderChart,
+  pieItems,
 }: {
   title: string;
   subtitle: string;
@@ -1439,8 +1431,63 @@ function BreakdownTable({
   loading: boolean;
   isDark: boolean;
   renderChart?: (type: 'bar' | 'line' | 'pie') => React.ReactNode;
+  /** Raw {name,value} items for the pie view. When provided, the pie view shows
+   *  the donut on the left and this table on the right (UI/UX: pie + its own
+   *  data list side by side, instead of a chart stacked above a duplicate table). */
+  pieItems?: { name: string; value: number }[];
 }) {
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
+  const isMobile = useIsMobile();
+  const isPieView = chartType === 'pie' && !!pieItems && pieItems.length > 0;
+
+  const tableEl = loading ? (
+    <div className="space-y-2">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="h-3 rounded animate-pulse"
+          style={{ background: 'rgba(128,128,128,0.1)', width: `${90 - i * 8}%` }} />
+      ))}
+    </div>
+  ) : rows.length === 0 ? (
+    <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No data</p>
+  ) : (
+    <div className="-mx-1 overflow-auto px-1" style={{ maxHeight: 360 }}>
+      <table className="w-full min-w-[480px] text-xs border-collapse">
+        <thead className="sticky top-0 z-10"
+          style={{ background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.98)' }}>
+          <tr style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)' }}>
+            {columns.map((h) => (
+              <th key={h}
+                className={`pb-2 pr-3 font-semibold whitespace-nowrap ${
+                  h === 'Sales' || h === 'Share %' || h === 'Bills' || h === 'Qty' || h === 'LY Sales'
+                    ? 'text-right' : 'text-left'
+                }`}
+                style={{ color: 'var(--text-muted)' }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri}
+              style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(0,0,0,0.04)' }}>
+              {row.map((cell, ci) => (
+                <td key={ci}
+                  className={`py-2 pr-3 tabular-nums ${ci >= 3 ? 'text-right' : ''}`}
+                  style={{
+                    color: ci === 3 && cell.startsWith('₹') ? '#5882ff'
+                      : ci === 0 ? 'var(--text-muted)' : 'var(--text-primary)',
+                    fontWeight: ci === 3 && cell.startsWith('₹') ? 600 : 400,
+                  }}>
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <Card className="p-3 sm:p-5">
@@ -1481,63 +1528,26 @@ function BreakdownTable({
         )}
       </div>
 
-      {/* Chart area */}
-      {renderChart && !loading && (
-        <div className="mb-5">
-          {renderChart(chartType) ?? (
-            <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>No chart data</p>
-          )}
-        </div>
-      )}
-
-      {/* Table */}
-      {loading ? (
-        <div className="space-y-2">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-3 rounded animate-pulse"
-              style={{ background: 'rgba(128,128,128,0.1)', width: `${90 - i * 8}%` }} />
-          ))}
-        </div>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>No data</p>
+      {/* Pie view: donut left, data table right; stacks on small screens */}
+      {isPieView && !loading ? (
+        <PieSideLayout
+          pie={<PieGraphic items={pieItems!} size={isMobile ? 176 : 220} isDark={isDark} />}
+          side={tableEl}
+        />
       ) : (
-        <div className="-mx-1 overflow-auto px-1" style={{ maxHeight: 360 }}>
-          <table className="w-full min-w-[480px] text-xs border-collapse">
-            <thead className="sticky top-0 z-10"
-              style={{ background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.98)' }}>
-              <tr style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)' }}>
-                {columns.map((h) => (
-                  <th key={h}
-                    className={`pb-2 pr-3 font-semibold whitespace-nowrap ${
-                      h === 'Sales' || h === 'Share %' || h === 'Bills' || h === 'Qty' || h === 'LY Sales'
-                        ? 'text-right' : 'text-left'
-                    }`}
-                    style={{ color: 'var(--text-muted)' }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, ri) => (
-                <tr key={ri}
-                  style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(0,0,0,0.04)' }}>
-                  {row.map((cell, ci) => (
-                    <td key={ci}
-                      className={`py-2 pr-3 tabular-nums ${ci >= 3 ? 'text-right' : ''}`}
-                      style={{
-                        color: ci === 3 && cell.startsWith('₹') ? '#5882ff'
-                          : ci === 0 ? 'var(--text-muted)' : 'var(--text-primary)',
-                        fontWeight: ci === 3 && cell.startsWith('₹') ? 600 : 400,
-                      }}>
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {/* Chart area */}
+          {renderChart && !loading && (
+            <div className="mb-5">
+              {renderChart(chartType) ?? (
+                <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>No chart data</p>
+              )}
+            </div>
+          )}
+
+          {/* Table */}
+          {tableEl}
+        </>
       )}
     </Card>
   );

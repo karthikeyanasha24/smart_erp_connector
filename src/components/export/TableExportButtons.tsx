@@ -159,7 +159,7 @@ export default function TableExportButtons({
           <span className="w-px h-4 mx-0.5" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
           <Btn
             kind="drive-excel"
-            label="Drive Excel"
+            label="Save to Drive"
             icon={Upload}
             accent={violet}
             title="Save Excel to your Google Drive — Google sign-in required"

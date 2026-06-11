@@ -878,11 +878,12 @@ function applyMtdBundleCharts(
   kpis?: KPIsResponse | null,
   setToday?: (d: DashboardResponse | null) => void,
   setTodayLoading?: (v: boolean) => void,
+  forceRefresh = false,
 ): void {
   const partial = dashboardFromBundle(core, kpis);
   if (!partial) return;
   const prev = cacheGet<DashboardResponse>(KEY_DASH_MTD);
-  if (shouldKeepExistingMtd(prev, partial)) return;
+  if (!forceRefresh && shouldKeepExistingMtd(prev, partial)) return;
   cacheSet(KEY_DASH_MTD, partial);
   setMtd(partial);
 
@@ -924,6 +925,7 @@ function applyDashboardPagePayload(
     setTodayLoading: (v: boolean) => void;
     setFetchedAt?: (ts: number | null) => void;
   },
+  forceRefresh = false,
 ): void {
   const { mtd: mtdCore, today: todayCore } = page;
   const pageFetchedAt =
@@ -954,6 +956,7 @@ function applyDashboardPagePayload(
     mtdCore.kpis,
     handlers.setToday,
     handlers.setTodayLoading,
+    forceRefresh,
   );
 
   const todayDash = dashboardFromBundle(todayCore, todayCore.kpis);
@@ -1029,6 +1032,16 @@ function clearIntradayClientCache(): void {
   }
 }
 
+/** Drop all dashboard SWR keys so Refresh always paints the server response. */
+function clearDashboardClientCache(): void {
+  for (const key of [KEY_DASH_MTD, KEY_DASH_TODAY, KEY_KPIS_MTD, KEY_KPIS_TODAY]) {
+    _store.delete(key);
+    try {
+      localStorage.removeItem(LS_PREFIX + key);
+    } catch { /* ignore */ }
+  }
+}
+
 function hasTodaySnapshot(todayRaw: DashboardResponse | null, todayKpis: KPIsResponse | null): boolean {
   if (isRollingClientCacheStale(KEY_KPIS_TODAY) || isRollingClientCacheStale(KEY_DASH_TODAY)) {
     return false;
@@ -1085,7 +1098,9 @@ export interface DashboardPageResult {
   error: string | null;
   /** Unix seconds — when today/MTD KPIs were last computed on the server */
   dataFetchedAt: number | null;
-  refetch: () => void;
+  /** True while an explicit Refresh (?force=true) request is in flight */
+  refreshing: boolean;
+  refetch: () => Promise<void>;
 }
 
 /** Single hook for Dashboard.tsx — one /dashboard-page request (MTD + Today). */
@@ -1140,9 +1155,14 @@ export function useDashboardPage(): DashboardPageResult {
     const t = getDashboardCache(KEY_DASH_TODAY)?.fetched_at;
     return m || t || null;
   });
+  const [refreshing, setRefreshing] = useState(false);
 
   const run = useCallback(async (silent = false, forceRefresh = false) => {
-    if (forceRefresh) clearIntradayClientCache();
+    if (forceRefresh) {
+      clearDashboardClientCache();
+      clearIntradayClientCache();
+      setRefreshing(true);
+    }
     if (!silent) {
       setLoading(!cacheGet<KPIsResponse>(KEY_KPIS_MTD));
     }
@@ -1167,13 +1187,14 @@ export function useDashboardPage(): DashboardPageResult {
         setLoading,
         setTodayLoading,
         setFetchedAt: setDataFetchedAt,
-      });
+      }, forceRefresh);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Dashboard load failed';
       if (!silent && !cacheGet<KPIsResponse>(KEY_KPIS_MTD)) {
         setError(msg.includes('abort') ? 'Request timed out — try Refresh' : msg);
       }
     } finally {
+      if (forceRefresh) setRefreshing(false);
       if (!silent) setLoading(false);
     }
   }, []);
@@ -1201,9 +1222,10 @@ export function useDashboardPage(): DashboardPageResult {
     todayLoading,
     error,
     dataFetchedAt,
+    refreshing,
     refetch: useCallback(() => {
       setTodayLoading(true);
-      run(false, true);
+      return run(false, true);
     }, [run]),
   };
 }

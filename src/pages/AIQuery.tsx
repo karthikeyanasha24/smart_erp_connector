@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, CartesianGrid, BarChart, Bar,
-  LineChart, Line, PieChart, Pie, Cell, Tooltip, Legend, LabelList,
+  LineChart, Line, PieChart, Pie, Cell, Tooltip, LabelList,
 } from 'recharts';
 import {
   Send, Sparkles, Code2, BarChart2, Loader2,
@@ -23,6 +23,7 @@ import {
 import verifiedQueriesFallback from '../data/verified_nlq_queries.json';
 import verifiedAiTemplates from '../data/ai_query_templates.json';
 import TableExportButtons, { type ExportNotify } from '../components/export/TableExportButtons';
+import { ScrollableCartesian, PieSideLayout } from '../lib/chartLayout';
 
 const PIE_COLORS = ['#00b8e6', '#00e67a', '#ffb800', '#a78bfa', '#f472b6', '#fb923c', '#38bdf8', '#4ade80'];
 
@@ -265,9 +266,6 @@ const KPICards = memo(function KPICards({ cards }: { cards: KPICard[] }) {
 
 /** Min px per bar when chart scrolls horizontally. */
 const BAR_SLOT_PX = 52;
-/** Bars above this count trigger horizontal scroll so none are clipped. */
-const BAR_SCROLL_THRESHOLD = 8;
-const PIE_CHART_MAX = 24;
 
 function truncateChartLabel(label: string, max = 12): string {
   const s = String(label ?? '').trim();
@@ -275,16 +273,60 @@ function truncateChartLabel(label: string, max = 12): string {
   return `${s.slice(0, max - 1)}…`;
 }
 
-const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 'bar' | 'area' | 'line' | 'pie'; data: ChartPoint[]; valueKey: string }) {
+const ResultChart = memo(function ResultChart({
+  type,
+  data,
+  valueKey,
+  pieGraphicOnly = false,
+}: {
+  type: 'bar' | 'area' | 'line' | 'pie';
+  data: ChartPoint[];
+  valueKey: string;
+  pieGraphicOnly?: boolean;
+}) {
   const { isDark } = useTheme();
   if (!data.length) return null;
 
-  // Rankings (bar/pie) sort by value; time series (line/area) must keep the
-  // chronological order built by nlqVisualization — never re-sort by value.
   const plotData = useMemo(
     () => (type === 'bar' || type === 'pie' ? [...data].sort((a, b) => b.value - a.value) : data),
     [data, type],
   );
+
+  const fmtVal = useMemo(
+    () => (v: number) => formatChartValue(Number(v), valueKey),
+    [valueKey],
+  );
+
+  if (pieGraphicOnly && type === 'pie') {
+    return (
+      <PieChart width={200} height={200}>
+        <Pie
+          data={plotData}
+          dataKey="value"
+          nameKey="label"
+          cx="50%"
+          cy="50%"
+          outerRadius={78}
+          paddingAngle={1}
+          strokeWidth={0}
+        >
+          {plotData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+        </Pie>
+        <Tooltip
+          formatter={(v: number) => fmtVal(Number(v))}
+          contentStyle={{
+            background: isDark ? 'rgba(8,15,26,0.97)' : 'rgba(255,255,255,0.98)',
+            border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+            borderRadius: 10,
+            fontSize: 11,
+          }}
+        />
+      </PieChart>
+    );
+  }
+
+  // Rankings (bar/pie) sort by value; time series (line/area) must keep the
+  // chronological order built by nlqVisualization — never re-sort by value.
 
   const tick = { fill: 'var(--text-muted)', fontSize: 10 };
   const gridStroke = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
@@ -294,19 +336,10 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
     borderRadius: 10,
     fontSize: 11,
   };
-  const needsBarScroll = type === 'bar' && plotData.length > BAR_SCROLL_THRESHOLD;
-  const barScrollMinWidth = needsBarScroll ? plotData.length * BAR_SLOT_PX : undefined;
   const barHeight = type === 'bar'
     ? (plotData.length > 30 ? 280 : plotData.length > 15 ? 250 : 220)
     : 176;
-  const piePlotData = type === 'pie' && plotData.length > PIE_CHART_MAX
-    ? plotData.slice(0, PIE_CHART_MAX)
-    : plotData;
 
-  const fmtVal = useMemo(
-    () => (v: number) => formatChartValue(Number(v), valueKey),
-    [valueKey],
-  );
   const fmtAxis = useMemo(
     () => (v: number) => formatChartAxisValue(Number(v), valueKey),
     [valueKey],
@@ -320,75 +353,50 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
           <BarChart2 size={11} style={{ color: '#00b8e6' }} />
           <span className="text-xs font-semibold" style={{ color: '#00b8e6' }}>{valueKey}</span>
         </div>
-        {type === 'bar' && needsBarScroll && (
+        {type === 'bar' && plotData.length * BAR_SLOT_PX > 400 && (
           <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>
-            Scroll chart horizontally · {plotData.length} bars
+            Scroll chart on narrow screens · {plotData.length} bars
           </span>
         )}
-        {type === 'bar' && !needsBarScroll && plotData.length > 0 && (
-          <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>Values on bars</span>
-        )}
-        {type === 'pie' && plotData.length > PIE_CHART_MAX && (
-          <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>
-            Top {PIE_CHART_MAX} of {plotData.length} in chart — see table for all
-          </span>
+        {type === 'bar' && plotData.length > 0 && (
+          <span className="text-2xs hidden sm:inline" style={{ color: 'var(--text-muted)' }}>Values on bars</span>
         )}
       </div>
-      <div
-        className={type === 'bar' ? 'w-full overflow-y-hidden' : 'w-full'}
-        style={type === 'bar' ? { overflowX: needsBarScroll ? 'auto' : 'hidden', WebkitOverflowScrolling: 'touch' } : undefined}
-      >
-        <div style={{ height: barHeight, minWidth: barScrollMinWidth, width: type === 'bar' ? (barScrollMinWidth ?? '100%') : '100%' }}>
-        <ResponsiveContainer width="100%" height="100%">
-          {type === 'pie' ? (
-            <PieChart>
+      {type === 'pie' ? (
+        <PieSideLayout
+          pie={
+            <PieChart width={200} height={200}>
               <Pie
-                data={piePlotData}
+                data={plotData}
                 dataKey="value"
                 nameKey="label"
                 cx="50%"
                 cy="50%"
-                outerRadius={70}
-                label={piePlotData.length <= 6
-                  ? ({ name, percent }) => `${truncateChartLabel(String(name), 10)} ${((percent ?? 0) * 100).toFixed(0)}%`
-                  : false}
+                outerRadius={78}
+                paddingAngle={1}
+                strokeWidth={0}
               >
-                {piePlotData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                {plotData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
               </Pie>
               <Tooltip formatter={(v: number) => fmtVal(Number(v))} contentStyle={tooltipStyle} />
-              <Legend wrapperStyle={{ fontSize: 10 }} />
             </PieChart>
-          ) : type === 'area' ? (
-            <AreaChart data={plotData} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
-              <defs>
-                <linearGradient id="aiChartGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00b8e6" stopOpacity={0.35} />
-                  <stop offset="95%" stopColor="#00b8e6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
-              <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={52} />
-              <Tooltip
-                formatter={(v: number) => [fmtVal(Number(v)), valueKey]}
-                labelFormatter={(l) => String(l)}
-                contentStyle={tooltipStyle}
-              />
-              <Area type="monotone" dataKey="value" stroke="#00b8e6" strokeWidth={2} fill="url(#aiChartGrad)" dot={plotData.length <= 24} />
-            </AreaChart>
-          ) : type === 'line' ? (
-            <LineChart data={plotData} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
-              <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={52} />
-              <Tooltip
-                formatter={(v: number) => [fmtVal(Number(v)), valueKey]}
-                labelFormatter={(l) => String(l)}
-                contentStyle={tooltipStyle}
-              />
-              <Line type="monotone" dataKey="value" stroke="#00e67a" strokeWidth={2} dot={plotData.length <= 20 ? { r: 3 } : false} />
-            </LineChart>
-          ) : type === 'bar' ? (
+          }
+          side={
+            <div className="overflow-y-auto max-h-[min(70vh,320px)] space-y-0.5">
+              {plotData.map((d, i) => (
+                <div key={i} className="flex items-center gap-2 px-1 py-1 rounded-lg text-xs"
+                  style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+                  <div className="w-2 h-2 rounded-sm shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                  <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }} title={d.label}>{d.label}</span>
+                  <span className="shrink-0 font-semibold tabular-nums" style={{ color: '#00b8e6' }}>{fmtVal(d.value)}</span>
+                </div>
+              ))}
+            </div>
+          }
+        />
+      ) : type === 'bar' ? (
+        <ScrollableCartesian itemCount={plotData.length} height={barHeight} slotPx={BAR_SLOT_PX}>
+          {() => (
             <BarChart
               data={plotData}
               margin={{ top: 24, right: 12, left: 4, bottom: plotData.length > 6 ? 80 : 24 }}
@@ -424,10 +432,45 @@ const ResultChart = memo(function ResultChart({ type, data, valueKey }: { type: 
                 )}
               </Bar>
             </BarChart>
+          )}
+        </ScrollableCartesian>
+      ) : (
+        <div style={{ height: barHeight }}>
+        <ResponsiveContainer width="100%" height="100%">
+          {type === 'area' ? (
+            <AreaChart data={plotData} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="aiChartGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#00b8e6" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#00b8e6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+              <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={52} />
+              <Tooltip
+                formatter={(v: number) => [fmtVal(Number(v)), valueKey]}
+                labelFormatter={(l) => String(l)}
+                contentStyle={tooltipStyle}
+              />
+              <Area type="monotone" dataKey="value" stroke="#00b8e6" strokeWidth={2} fill="url(#aiChartGrad)" dot={plotData.length <= 24} />
+            </AreaChart>
+          ) : type === 'line' ? (
+            <LineChart data={plotData} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+              <XAxis dataKey="label" tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={52} />
+              <Tooltip
+                formatter={(v: number) => [fmtVal(Number(v)), valueKey]}
+                labelFormatter={(l) => String(l)}
+                contentStyle={tooltipStyle}
+              />
+              <Line type="monotone" dataKey="value" stroke="#00e67a" strokeWidth={2} dot={plotData.length <= 20 ? { r: 3 } : false} />
+            </LineChart>
           ) : null}
         </ResponsiveContainer>
         </div>
-      </div>
+      )}
     </div>
   );
 });
@@ -438,6 +481,7 @@ const ResultTable = memo(function ResultTable({
   exportName,
   onExportNotify,
   totalRows,
+  embedded = false,
 }: {
   columns: string[];
   rows: string[][];
@@ -445,11 +489,12 @@ const ResultTable = memo(function ResultTable({
   onExportNotify?: (n: ExportNotify) => void;
   /** When API returned more rows than displayed (should match rows.length after fix). */
   totalRows?: number;
+  embedded?: boolean;
 }) {
   const { isDark } = useTheme();
   const total = totalRows ?? rows.length;
   return (
-    <div className="mt-3 rounded-xl overflow-hidden"
+    <div className={embedded ? 'rounded-xl overflow-hidden' : 'mt-3 rounded-xl overflow-hidden'}
       style={{ border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}>
       {exportName && onExportNotify && (
         <div className="flex items-center justify-between px-3 py-2"
@@ -892,17 +937,38 @@ export default function AIQuery() {
           ))}
         </div>
       )}
-      {msg.chart && msg.chartType && msg.chartType !== 'none' && (
-        <ResultChart type={msg.chartType as 'bar' | 'area' | 'line' | 'pie'} data={msg.chart.data} valueKey={msg.chart.valueKey} />
-      )}
-      {msg.table && (
-        <ResultTable
-          columns={msg.table.columns}
-          rows={msg.table.rows}
-          totalRows={msg.recordCount}
-          exportName={`ai_query_${msg.id.slice(0, 8)}`}
-          onExportNotify={handleExportNotify}
-        />
+      {msg.chart && msg.chartType === 'pie' && msg.table ? (
+        <div className="mt-3 rounded-xl p-4"
+          style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
+          <PieSideLayout
+            pie={<ResultChart type="pie" data={msg.chart.data} valueKey={msg.chart.valueKey} pieGraphicOnly />}
+            side={
+              <ResultTable
+                columns={msg.table.columns}
+                rows={msg.table.rows}
+                totalRows={msg.recordCount}
+                exportName={`ai_query_${msg.id.slice(0, 8)}`}
+                onExportNotify={handleExportNotify}
+                embedded
+              />
+            }
+          />
+        </div>
+      ) : (
+        <>
+          {msg.chart && msg.chartType && msg.chartType !== 'none' && (
+            <ResultChart type={msg.chartType as 'bar' | 'area' | 'line' | 'pie'} data={msg.chart.data} valueKey={msg.chart.valueKey} />
+          )}
+          {msg.table && (
+            <ResultTable
+              columns={msg.table.columns}
+              rows={msg.table.rows}
+              totalRows={msg.recordCount}
+              exportName={`ai_query_${msg.id.slice(0, 8)}`}
+              onExportNotify={handleExportNotify}
+            />
+          )}
+        </>
       )}
       {msg.insights && msg.insights.length > 0 && (
         <div className="mt-2 space-y-1">

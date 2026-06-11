@@ -84,6 +84,7 @@ export default function Reports() {
   const [summaries, setSummaries] = useState<PeriodSummary[]>([]);
   const [trendData, setTrendData] = useState<{ label: string; current: number; prior: number }[]>([]);
   const [branches, setBranches] = useState<{ name: string; sales_L: number }[]>([]);
+  const [activeBranchCount, setActiveBranchCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -145,8 +146,10 @@ export default function Reports() {
         }));
         setTrendData(trend.slice(-30));
 
-        /* Bundle branches: [{branch, revenue, transactions}] */
-        const brs = (mtdBundle.value.branches ?? [])
+        /* Bundle branches: [{branch, revenue, transactions}] — full list = active branches for the period */
+        const allBranches = mtdBundle.value.branches ?? [];
+        setActiveBranchCount(allBranches.length);
+        const brs = allBranches
           .slice(0, 12)
           .map((b: any) => ({
             name: String(b.branch ?? b.name ?? b.label ?? '').slice(0, 18),
@@ -204,7 +207,7 @@ export default function Reports() {
           type: 'Operations',
           color: '#a78bfa',
           status: 'ready',
-          value: `${branches.length} stores`,
+          value: `${activeBranchCount || branches.length} stores`,
           detail: branches[0] ? `Top: ${branches[0].name}` : 'All branches',
         },
         {
@@ -250,6 +253,7 @@ export default function Reports() {
             Refresh
           </motion.button>
           <motion.button
+            onClick={() => window.print()}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white"
             style={{ background: 'linear-gradient(135deg, #00b8e6, #00e67a)', boxShadow: '0 0 20px rgba(0,184,230,0.3)' }}
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
@@ -320,7 +324,7 @@ export default function Reports() {
               />
               <StatCard
                 label="Active Branches"
-                value={String(branches.length || '—')}
+                value={String(activeBranchCount || branches.length || '—')}
                 sub="Stores with sales"
                 color="#a78bfa"
                 icon={Activity}
@@ -335,10 +339,10 @@ export default function Reports() {
       </motion.div>
 
       {/* ── Charts row ── */}
-      <div className="grid grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
 
         {/* Revenue trend */}
-        <motion.div variants={fadeUp} className="col-span-7 rounded-2xl p-5" style={card}>
+        <motion.div variants={fadeUp} className="lg:col-span-7 rounded-2xl p-5" style={card}>
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -390,7 +394,7 @@ export default function Reports() {
         </motion.div>
 
         {/* Branch performance bar */}
-        <motion.div variants={fadeUp} className="col-span-5 rounded-2xl p-5" style={card}>
+        <motion.div variants={fadeUp} className="lg:col-span-5 rounded-2xl p-5" style={card}>
           <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Top Branches — MTD</h3>
           <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Revenue in Lakhs</p>
           <div className="h-52">

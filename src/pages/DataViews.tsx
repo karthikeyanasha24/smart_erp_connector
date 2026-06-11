@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Download,
   Loader2,
   Wifi,
   WifiOff,
@@ -144,25 +143,6 @@ function fmtCell(v: unknown, col?: string): string {
   return formatTableCell(v, col, 120);
 }
 
-function escapeCsvCell(s: string) {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
-
-function downloadCsv(columns: string[], rows: Record<string, unknown>[], viewName: string, page: number) {
-  const header = columns.join(',');
-  const body = rows.map((r) =>
-    columns.map((c) => escapeCsvCell(fmtCell(r[c], c))).join(','),
-  );
-  const csv = [header, ...body].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${viewName}-page${page}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 /* ─── category colours ─────────────────────────────────────────────────────── */
 const CATEGORY_COLORS: Record<string, string> = {
@@ -342,7 +322,7 @@ export default function DataViews() {
 
         {/* LEFT: view selector panel */}
         <div
-          className="w-72 flex-shrink-0 flex flex-col rounded-2xl overflow-hidden"
+          className="w-full md:w-72 flex-shrink-0 flex flex-col rounded-2xl overflow-hidden max-h-[45vh] md:max-h-none"
           style={card}
         >
           {/* search */}
@@ -594,25 +574,19 @@ export default function DataViews() {
               >
                 {/* table header bar */}
                 <div
-                  className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
+                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 flex-shrink-0"
                   style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}
                 >
                   <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
                     {result.short_name} &mdash; {fmtCount(result.rows.length)} row(s) on page {result.page}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => downloadCsv(result.columns, result.rows, result.short_name, result.page)}
-                    className="flex items-center gap-1.5 text-2xs font-semibold px-2.5 py-1.5 rounded-lg"
-                    style={{
-                      background: isDark ? 'rgba(88,130,255,0.1)' : 'rgba(88,130,255,0.08)',
-                      color: '#5882ff',
-                      border: '1px solid rgba(88,130,255,0.2)',
-                    }}
-                  >
-                    <Download size={11} />
-                    CSV
-                  </button>
+                  <TableExportButtons
+                    columns={result.columns}
+                    rows={result.rows}
+                    fileBaseName={`${result.short_name}_page${result.page}`}
+                    compact
+                    onNotify={setExportNotify}
+                  />
                 </div>
 
                 {/* scrollable table */}

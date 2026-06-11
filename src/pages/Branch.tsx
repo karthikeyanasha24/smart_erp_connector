@@ -30,8 +30,8 @@ const PERIOD_TABS: { key: BranchPeriod; label: string; detail: string }[] = [
   { key: 'today',    label: 'Today', detail: 'today' },
   { key: 'last_7d',  label: '7D',    detail: 'last_7d' },
   { key: 'last_30d', label: '30D',   detail: 'last_30d' },
-  { key: 'mtd',      label: 'MTD',   detail: 'last_30d' },
-  { key: 'qtd',      label: 'QTD',   detail: 'last_30d' },
+  { key: 'mtd',      label: 'MTD',   detail: 'mtd' },
+  { key: 'qtd',      label: 'QTD',   detail: 'qtd' },
 ];
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -47,10 +47,15 @@ const T = {
 
 // ─── Custom Tooltip ────────────────────────────────────────────────────────────
 function ChartTooltip({ active, payload, label }: any) {
+  const { isDark } = useTheme();
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-xl px-3 py-2.5 text-xs shadow-xl"
-      style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', color: T.text }}>
+      style={{
+        background: isDark ? '#111827' : '#ffffff',
+        border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+        color: isDark ? T.text : '#0f172a',
+      }}>
       <p className="font-semibold mb-1" style={{ color: T.muted }}>{label}</p>
       {payload.map((p: any) => (
         <p key={p.name} className="tabular-nums font-bold" style={{ color: T.cyan }}>
@@ -65,9 +70,14 @@ function ChartTooltip({ active, payload, label }: any) {
 function StatCard({ icon: Icon, label, value, color, loading }: {
   icon: any; label: string; value: string; color: string; loading?: boolean;
 }) {
+  const { isDark } = useTheme();
   return (
     <div className="rounded-2xl p-5 flex flex-col gap-3"
-      style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.07)' }}>
+      style={{
+        background: isDark ? '#111827' : '#ffffff',
+        border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(15,23,42,0.08)',
+        boxShadow: isDark ? undefined : '0 1px 3px rgba(15,23,42,0.06)',
+      }}>
       <div className="w-9 h-9 rounded-xl flex items-center justify-center"
         style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
         <Icon size={16} style={{ color }} />
@@ -76,9 +86,11 @@ function StatCard({ icon: Icon, label, value, color, loading }: {
         <p className="text-[11px] font-semibold uppercase tracking-widest mb-1.5"
           style={{ color: T.muted }}>{label}</p>
         {loading ? (
-          <div className="h-7 w-20 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.06)' }} />
+          <div className="h-7 w-20 rounded-lg animate-pulse"
+            style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} />
         ) : (
-          <p className="text-2xl font-bold tabular-nums" style={{ color: T.text }}>{value}</p>
+          <p className="text-2xl font-bold tabular-nums"
+            style={{ color: isDark ? T.text : '#0f172a' }}>{value}</p>
         )}
       </div>
     </div>
@@ -207,7 +219,7 @@ export default function Branch() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.3 }}
           className="col-span-12 md:col-span-3 flex flex-col gap-0 rounded-2xl overflow-hidden md:sticky md:top-6"
-          style={{ background: card.bg, border: card.border, height: 'fit-content', position: 'sticky', top: 24 }}
+          style={{ background: card.bg, border: card.border, height: 'fit-content' }}
         >
           {/* Sidebar header */}
           <div className="px-4 pt-4 pb-3 flex-shrink-0"
@@ -308,7 +320,7 @@ export default function Branch() {
                       </div>
                       {/* Progress bar */}
                       <div className="ml-7 h-1 rounded-full overflow-hidden"
-                        style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
                         <motion.div className="h-full rounded-full"
                           initial={{ width: 0 }}
                           animate={{ width: `${pct}%` }}
@@ -368,7 +380,8 @@ export default function Branch() {
                         Total Revenue
                       </p>
                       {detailLoading ? (
-                        <div className="h-9 w-32 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                        <div className="h-9 w-32 rounded-lg animate-pulse"
+                          style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} />
                       ) : (
                         <p className="text-3xl font-bold tabular-nums" style={{ color: T.cyan }}>
                           {fmtRevenue(detail?.total_revenue ?? selectedBranch.revenue)}

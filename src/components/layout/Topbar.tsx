@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Bell, Sun, Moon, Sparkles, Command, TrendingUp,
+  Search, Sun, Moon, Sparkles, Command, TrendingUp,
   Calendar, Download, Menu, X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -28,9 +28,7 @@ export default function Topbar() {
   const { currentPage, sidebarExpanded, mobileSidebarOpen, setMobileSidebarOpen, isMobile } = useNavigation();
   const { isDark, toggleTheme } = useTheme();
   const [searchFocused, setSearchFocused] = useState(false);
-  const [searchValue, setSearchValue] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false); // mobile search toggle
-  const [notifOpen, setNotifOpen] = useState(false);
 
   const sidebarW = isMobile ? 0 : (sidebarExpanded ? 240 : 72);
 
@@ -178,7 +176,6 @@ export default function Topbar() {
       >
         <Search size={13} className="absolute left-3" style={{ color: 'var(--text-muted)' }} />
         <input
-          value={searchValue ? '' : ''}
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
           placeholder="Search metrics, branches..."
@@ -271,22 +268,6 @@ export default function Topbar() {
           </AnimatePresence>
         </motion.button>
 
-        {/* Notifications */}
-        <motion.button
-          onClick={() => setNotifOpen(v => !v)}
-          className="relative w-8 h-8 rounded-xl flex items-center justify-center"
-          style={{
-            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-            color: 'var(--text-tertiary)',
-          }}
-          whileHover={{ scale: 1.05, color: '#5882ff' }}
-          whileTap={{ scale: 0.92 }}
-        >
-          <Bell size={14} />
-          <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-error-500"
-            style={{ boxShadow: '0 0 6px rgba(239,68,68,0.8)' }} />
-        </motion.button>
-
         {/* Ask AI */}
         <motion.button
           type="button"
@@ -303,49 +284,6 @@ export default function Topbar() {
           <span className="hidden sm:inline">Ask AI</span>
         </motion.button>
       </div>
-
-      {/* Notification dropdown */}
-      <AnimatePresence>
-        {notifOpen && (
-          <motion.div
-            className="absolute top-full right-2 md:right-4 mt-2 w-72 md:w-80 rounded-2xl p-4 z-50"
-            style={{
-              background: isDark ? 'rgba(8,15,26,0.95)' : 'rgba(255,255,255,0.95)',
-              backdropFilter: 'blur(20px)',
-              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
-            }}
-            initial={{ opacity: 0, y: -8, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.96 }}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Notifications</span>
-              <span className="badge-info">4 new</span>
-            </div>
-            {[
-              { title: 'Anomaly Detected', desc: 'Branch NYC-01 shows unusual activity', time: '2m', color: 'error' },
-              { title: 'Revenue Milestone', desc: 'Q4 projections exceeded by 12%', time: '8m', color: 'success' },
-              { title: 'AI Model Updated', desc: 'Fraud detection accuracy improved', time: '1h', color: 'info' },
-            ].map((n, i) => (
-              <motion.div
-                key={i}
-                className="flex items-start gap-3 p-2.5 rounded-xl mb-1.5 cursor-pointer"
-                whileHover={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
-                  n.color === 'error' ? 'bg-error-500' : n.color === 'success' ? 'bg-accent-500' : 'bg-primary-500'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{n.title}</p>
-                  <p className="text-2xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{n.desc}</p>
-                </div>
-                <span className="text-2xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{n.time}</span>
-              </motion.div>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.header>
   );
 }

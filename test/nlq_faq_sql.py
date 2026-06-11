@@ -70,6 +70,14 @@ def _last_12m_memo_where(alias: str = "m") -> str:
     )
 
 
+def _memo_mtd_where(alias: str = "m") -> str:
+    """Current month on the MIS supplier view (XnMemoDate)."""
+    return (
+        f"{alias}.[XnMemoDate] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) "
+        f"AND {alias}.[XnMemoDate] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
+    )
+
+
 def _invoice_mtd_where(alias: str = "s") -> str:
     return (
         f"{alias}.[InvoiceDt] >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) "
@@ -1491,22 +1499,24 @@ ORDER BY AgeBucket
 
 
 def _sql_highest_supplier_sales_mtd(_q: str) -> Dict[str, Any]:
+    # MIS supplier view is the only complete supplier-sales source —
+    # APP_REPORT has supplier attribution on a tiny fraction of rows
+    # (it returned the same lone supplier for both highest AND lowest).
     sql = f"""
 SELECT TOP (1)
-    s.[SupplierName],
-    s.[SupplierAlias],
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue
-FROM {_APP} s WITH (NOLOCK)
-WHERE {_mtd_where("s")}
-  AND s.[SupplierName] IS NOT NULL
-GROUP BY s.[SupplierName], s.[SupplierAlias]
+    m.[SupplierName],
+    CAST(SUM(m.[NetAmount]) AS decimal(18, 2)) AS Revenue
+FROM {_MIS_SUP} m WITH (NOLOCK)
+WHERE {_memo_mtd_where("m")}
+  AND m.[SupplierName] IS NOT NULL
+GROUP BY m.[SupplierName]
 ORDER BY Revenue DESC
 """
     return _blob(
         "highest_supplier_sales_mtd",
         sql,
-        "Supplier with highest MTD net sales on APP_REPORT.",
-        ["MTD on XnDt; metric SUM(NetAmount)."],
+        "Supplier with highest current-month net sales (MIS supplier view).",
+        ["View: VW_MB_POWERBI_MIS_SUPPLIER_SLS_DATA; date: XnMemoDate; metric SUM(NetAmount)."],
     )
 
 
@@ -2096,9 +2106,9 @@ _register(
 _register(
     "top_customers_by_purchase_value",
     [
-        r"top\s+(?:\d+\s+)?customers?\s+by\s+purchase\s+value",
-        r"top\s+customers?\s+by\s+(?:sales?|revenue|spend)",
-        r"best\s+customers?\s+by\s+purchase",
+        r"top\s+(?:\d+\s+)?customers?\s+(?:by|based\s+on)\s+purchase\s+value",
+        r"top\s+customers?\s+(?:by|based\s+on)\s+(?:sales?|revenue|spend)",
+        r"best\s+customers?\s+(?:by|based\s+on)\s+purchase",
     ],
     _sql_top_customers_by_value,
 )

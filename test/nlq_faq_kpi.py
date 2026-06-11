@@ -370,22 +370,24 @@ ORDER BY MTDSales ASC
         )
 
     def _sql_lowest_supplier_mtd(_q: str) -> Dict[str, Any]:
+        from nlq_faq_sql import _MIS_SUP, _memo_mtd_where
+
         sql = f"""
 SELECT TOP (1)
-    s.[SupplierName],
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDSales
-FROM {_APP} s WITH (NOLOCK)
-WHERE {_mtd_where("s")}
-  AND s.[SupplierName] IS NOT NULL
-GROUP BY s.[SupplierName]
-HAVING SUM(s.[NetAmount]) > 0
+    m.[SupplierName],
+    CAST(SUM(m.[NetAmount]) AS decimal(18, 2)) AS MTDSales
+FROM {_MIS_SUP} m WITH (NOLOCK)
+WHERE {_memo_mtd_where("m")}
+  AND m.[SupplierName] IS NOT NULL
+GROUP BY m.[SupplierName]
+HAVING SUM(m.[NetAmount]) > 0
 ORDER BY MTDSales ASC
 """
         return _blob(
             "lowest_supplier_sales_mtd",
             sql,
-            "Supplier with lowest MTD sales among suppliers with positive sales.",
-            ["Current month."],
+            "Supplier with lowest current-month sales among suppliers with positive sales (MIS supplier view).",
+            ["View: VW_MB_POWERBI_MIS_SUPPLIER_SLS_DATA; date: XnMemoDate."],
         )
 
     def _sql_top_stores_growth(_q: str) -> Dict[str, Any]:
