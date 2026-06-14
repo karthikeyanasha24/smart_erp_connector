@@ -97,6 +97,13 @@ const TOPIC_FOLLOW_UPS: Record<NonNullable<Topic>, string[]> = {
   ],
 };
 
+const STARTER_SUGGESTIONS: string[] = [
+  "Today's sales",
+  'YTD, QTD and MTD growth vs last year',
+  'Which store has the highest sales this month?',
+  'Category contribution % in total revenue',
+];
+
 function generateFollowUps(userQuestion: string, msg: Message): string[] {
   const topic = detectTopic(userQuestion);
   if (!topic) {
@@ -115,6 +122,8 @@ function generateFollowUps(userQuestion: string, msg: Message): string[] {
         'Break down by top category',
       ];
     }
+    // Conversational / greeting / help reply (no chart or table) → offer starters.
+    if (!msg.chart && !msg.table) return STARTER_SUGGESTIONS;
     return [];
   }
   const pool = TOPIC_FOLLOW_UPS[topic];
@@ -422,12 +431,12 @@ const ResultChart = memo(function ResultChart({
                 cursor={{ fill: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}
               />
               <Bar dataKey="value" fill="#00b8e6" radius={[4, 4, 0, 0]} opacity={0.9}>
-                {plotData.length <= 24 && (
+                {plotData.length <= 150 && (
                   <LabelList
                     dataKey="value"
                     position="top"
                     formatter={(v: number) => fmtVal(Number(v))}
-                    style={{ fontSize: 9, fill: 'var(--text-secondary)', fontWeight: 600 }}
+                    style={{ fontSize: 9, fill: 'var(--text-primary)', fontWeight: 700 }}
                   />
                 )}
               </Bar>
@@ -758,7 +767,11 @@ export default function AIQuery() {
 
   useEffect(() => {
     ai.verifiedSuggestions(50)
-      .then(r => { if (r.queries?.length) setSuggestions(r.queries); })
+      .then(r => {
+        if (r.queries?.length) {
+          setSuggestions([...new Set(r.queries)]);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -1055,7 +1068,7 @@ export default function AIQuery() {
   }, [activeTopic]);
 
   return (
-    <div className="flex flex-col md:flex-row gap-4 h-auto md:h-[calc(100vh-108px)]">
+    <div className="flex flex-col md:flex-row gap-4 h-[calc(100dvh-96px)] md:h-[calc(100vh-108px)]">
 
       <Toast message={toast?.message ?? ''} type={toast?.type ?? 'success'} visible={!!toast} />
 
@@ -1281,7 +1294,7 @@ export default function AIQuery() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.1 }}
-        className="flex-1 flex flex-col rounded-2xl overflow-hidden min-w-0"
+        className="flex-1 flex flex-col rounded-2xl overflow-hidden min-w-0 min-h-0"
         style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.07)' }}
       >
         {/* Header */}
@@ -1383,7 +1396,7 @@ export default function AIQuery() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-none">
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 scrollbar-none">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-5 py-8">
               <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
@@ -1434,7 +1447,7 @@ export default function AIQuery() {
                       : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
                     border: msg.role === 'user' ? 'none' : isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
                   }}>
-                  <p className="text-sm leading-relaxed" style={{ color: msg.role === 'user' ? 'white' : 'var(--text-primary)' }}>
+                  <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: msg.role === 'user' ? 'white' : 'var(--text-primary)' }}>
                     {msg.content}
                   </p>
                 </div>

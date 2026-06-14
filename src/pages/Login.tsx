@@ -94,7 +94,7 @@ export default function Login() {
           <h2 className="text-3xl font-extrabold leading-tight mb-3">
             <span className="text-white">Your ERP data,</span>
             <br />
-            <span style={{ background: 'linear-gradient(90deg,#6366f1,#22c55e)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <span style={{ background: 'linear-gradient(90deg,#6366f1,#22c55e)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'var(--text-primary)' }}>
               intelligently unified.
             </span>
           </h2>

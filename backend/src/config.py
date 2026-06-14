@@ -124,8 +124,10 @@ class Settings(BaseSettings):
     SALES_ANALYTICS_AMOUNT_COLUMN: str = "NetAmount"
     SALES_ANALYTICS_QUANTITY_COLUMN: str = "NetSlsQty"
     SALES_ANALYTICS_BILL_COUNT_COLUMN: str = "BillCount"
-    # "rows" = COUNT line items (SLS_REPORT); "column" = SUM(BillCount) on APP_REPORT
-    SALES_ANALYTICS_BILL_COUNT_MODE: str = "rows"
+    # "rows"   = SUM(CASE..THEN 1) — counts every line item (overcounts invoices).
+    # "column" = COUNT(DISTINCT [BILL_COUNT_COLUMN]) — distinct invoices (CORRECT).
+    # Default "column" so production stays correct even if the env var is unset.
+    SALES_ANALYTICS_BILL_COUNT_MODE: str = "column"
     SALES_ANALYTICS_BRANCH_DIM: str = "BranchAlias"
     SALES_ANALYTICS_CATEGORY_DIM: str = "CategoryShortName"
     SALES_ANALYTICS_DEPARTMENT_DIM: str = "DepartmentShortName"

@@ -233,7 +233,7 @@ export default function Reports() {
               background: isDark
                 ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)'
                 : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'var(--text-primary)', backgroundClip: 'text',
             }}
           >Reports</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -409,7 +409,7 @@ export default function Reports() {
                   <Bar dataKey="sales_L" fill="#00b8e6" radius={[0, 4, 4, 0]} opacity={0.85}>
                     <LabelList dataKey="sales_L" position="right"
                       formatter={(v: number) => `₹${Number(v).toFixed(1)}L`}
-                      style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                      style={{ fontSize: 9, fill: 'var(--text-primary)', fontWeight: 700 }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -459,12 +459,12 @@ export default function Reports() {
                 <Bar dataKey="current" fill="#00b8e6" radius={[4, 4, 0, 0]} barSize={28} opacity={0.9}>
                   <LabelList dataKey="current" position="top"
                     formatter={(v: number) => `₹${Number(v).toFixed(1)}L`}
-                    style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                    style={{ fontSize: 9, fill: 'var(--text-primary)', fontWeight: 700 }} />
                 </Bar>
                 <Bar dataKey="prior" fill="#94a3b8" radius={[4, 4, 0, 0]} barSize={28} opacity={0.5}>
                   <LabelList dataKey="prior" position="top"
                     formatter={(v: number) => `₹${Number(v).toFixed(1)}L`}
-                    style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                    style={{ fontSize: 9, fill: 'var(--text-primary)', fontWeight: 700 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

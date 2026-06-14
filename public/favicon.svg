@@ -1,0 +1,26 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0a1124"/>
+      <stop offset="1" stop-color="#0c1a3a"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="16" y1="46" x2="48" y2="16" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00b8e6"/>
+      <stop offset="1" stop-color="#00e67a"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="16" y1="44" x2="48" y2="20" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5882ff"/>
+      <stop offset="1" stop-color="#00e67a"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#bg)"/>
+  <rect width="64" height="64" rx="15" fill="none" stroke="#5882ff" stroke-opacity="0.18"/>
+  <!-- ascending analytics bars -->
+  <rect x="15" y="36" width="7" height="13" rx="2.5" fill="url(#bar)" fill-opacity="0.55"/>
+  <rect x="26.5" y="29" width="7" height="20" rx="2.5" fill="url(#bar)" fill-opacity="0.75"/>
+  <rect x="38" y="20" width="7" height="29" rx="2.5" fill="url(#bar)"/>
+  <!-- trend spark line + node -->
+  <path d="M16 41 L29 33 L41 24 L50 17" stroke="url(#spark)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="50" cy="17" r="3.2" fill="#00e67a"/>
+  <circle cx="50" cy="17" r="6" fill="#00e67a" fill-opacity="0.18"/>
+</svg>

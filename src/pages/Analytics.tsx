@@ -397,7 +397,7 @@ export default function Analytics() {
   // trend_granularity_for_custom), and users picking a custom range expect
   // labels on every bar regardless of count — so use the relaxed (31) cap
   // for custom periods even when gran === 'day'.
-  const labelCap = (gran === 'month' || period === 'custom') ? 31 : 14;
+  const labelCap = 150; // labels on every bar for realistic charts; safety cap avoids label-soup on pathological sets (charts scroll)
   const showBarLabels = chartData.length <= labelCap;
   const daywiseLabelMax = labelCap;
   const periodUnit = gran === 'month' ? 'months' : 'days';
@@ -476,7 +476,7 @@ export default function Analytics() {
       <ScrollableCartesian itemCount={items.length} height={breakdownBarHeight} slotPx={slotPx}>
         {() => (
           <BarChart data={items} barCategoryGap="28%"
-            margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
+            margin={{ top: 24, right: 8, left: 4, bottom: mbottom }}>
             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
             <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
               tick={{ fontSize: 10, fill: 'var(--text-muted)', angle, textAnchor: ta }} />
@@ -485,11 +485,9 @@ export default function Analytics() {
             <Tooltip content={<ChartTooltip />} cursor={{ fill: cursorFill, radius: 4 }} />
             <Bar dataKey="value" name="Revenue" radius={[4, 4, 0, 0]} maxBarSize={44}>
               {items.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-              {items.length <= 24 && (
-                <LabelList dataKey="value" position="top"
-                  formatter={(v: number) => fmtLakhsAxis(Number(v))}
-                  style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
-              )}
+              <LabelList dataKey="value" position="top"
+                formatter={(v: number) => fmtLakhsAxis(Number(v))}
+                style={{ fontSize: items.length > 24 ? 9 : 10, fill: 'var(--text-primary)', fontWeight: 700 }} />
             </Bar>
           </BarChart>
         )}
@@ -499,7 +497,7 @@ export default function Analytics() {
     if (type === 'line') return (
       <ScrollableCartesian itemCount={items.length} height={breakdownLineHeight} slotPx={slotPx}>
         {() => (
-          <LineChart data={items} margin={{ top: 10, right: 8, left: 4, bottom: mbottom }}>
+          <LineChart data={items} margin={{ top: 24, right: 8, left: 4, bottom: mbottom }}>
             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
             <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0}
               tick={{ fontSize: 10, fill: 'var(--text-muted)', angle, textAnchor: ta }} />
@@ -510,11 +508,9 @@ export default function Analytics() {
               stroke="#5882ff" strokeWidth={2}
               dot={{ fill: '#5882ff', r: 3, strokeWidth: 0 }}
               activeDot={{ r: 5, fill: '#5882ff' }}>
-              {items.length <= 24 && (
-                <LabelList dataKey="value" position="top"
-                  formatter={(v: number) => v >= 100 ? `${(v/100).toFixed(1)}L` : `${v.toFixed(1)}`}
-                  style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
-              )}
+              <LabelList dataKey="value" position="top"
+                formatter={(v: number) => fmtLakhsAxis(Number(v))}
+                style={{ fontSize: items.length > 24 ? 9 : 10, fill: 'var(--text-primary)', fontWeight: 700 }} />
             </Line>
           </LineChart>
         )}
@@ -535,7 +531,7 @@ export default function Analytics() {
   /** Day-wise bill counts — same SQL definition as Bills Generated KPI */
   function renderDaywiseBills(type: 'bar' | 'line' | 'pie'): React.ReactNode {
     if (!daywiseBillsData.length) return undefined;
-    const showLabels = daywiseBillsData.length <= 31;
+    const showLabels = true;
 
     if (type === 'bar') return (
       <ScrollableCartesian itemCount={daywiseBillsData.length} height={daywiseBarHeight} slotPx={40}>
@@ -555,7 +551,7 @@ export default function Analytics() {
               {showLabels && (
                 <LabelList dataKey="bills" position="top"
                   formatter={(v: number) => fmtCountAxis(Number(v))}
-                  style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                  style={{ fontSize: 9, fill: 'var(--text-primary)', fontWeight: 700 }} />
               )}
             </Bar>
           </BarChart>
@@ -692,7 +688,7 @@ export default function Analytics() {
             background: isDark
               ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)'
               : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'var(--text-primary)', backgroundClip: 'text',
           }}>Sales Analytics</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             {data?.period_label ?? 'Select a period'} · All values in Lakhs (L)

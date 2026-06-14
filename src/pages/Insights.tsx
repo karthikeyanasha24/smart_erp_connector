@@ -103,7 +103,7 @@ export default function Insights() {
           </div>
           <h1 className="text-2xl font-bold" style={{
             background: isDark ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)' : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'var(--text-primary)', backgroundClip: 'text',
           }}>AI Insights</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             {loading

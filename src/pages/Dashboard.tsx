@@ -465,7 +465,7 @@ export default function Dashboard() {
   }));
   const billsChart  = effectiveTrend.slice(-30).map(p => ({ label: p.label, Bills: p.bills }));
   const billsFromTrend = effectiveTrend.reduce((s, p) => s + (p.bills ?? 0), 0);
-  const showBillsBarLabels = billsChart.length <= 31;
+  const showBillsBarLabels = true; // always show value labels on bars (chart scrolls)
   const branchChart = effectiveBranches.slice(0, 6);
   const revSpark    = effectiveTrend.slice(-15).map(p => p.current);
   const billsSpark  = effectiveTrend.slice(-15).map(p => p.bills);
@@ -883,7 +883,7 @@ export default function Dashboard() {
                 {showBillsBarLabels && (
                   <LabelList dataKey="Bills" position="top"
                     formatter={(v: number) => fmtCountAxis(Number(v))}
-                    style={{ fontSize: 8, fill: 'var(--text-muted)', fontWeight: 600 }} />
+                    style={{ fontSize: 8, fill: 'var(--text-primary)', fontWeight: 700 }} />
                 )}
               </Bar>
             </BarChart>

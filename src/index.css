@@ -14,8 +14,8 @@
     --border-2: rgba(0,0,0,0.05);
     --text-primary: #0f172a;
     --text-secondary: #334155;
-    --text-tertiary: #64748b;
-    --text-muted: #94a3b8;
+    --text-tertiary: #475569;
+    --text-muted: #64748b;
     --accent-glow: rgba(0,184,230,0.2);
     --accent-primary: #00b8e6;
     --sidebar-width: 240px;
@@ -339,4 +339,45 @@
 .page-wrapper {
   min-height: calc(100vh - var(--topbar-height));
   padding: 24px;
+}
+
+/* ─── Professional polish (2026-06-13) — additive, non-breaking ─────────────── */
+@layer base {
+  /* Cleaner Inter letterforms + kerning across the app */
+  body {
+    font-feature-settings: "cv11", "ss01", "kern";
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Branded text selection */
+  ::selection {
+    background: rgba(88,130,255,0.32);
+    color: #ffffff;
+  }
+  ::-moz-selection {
+    background: rgba(88,130,255,0.32);
+    color: #ffffff;
+  }
+
+  /* Keyboard focus ring — only on keyboard nav, never on mouse (a11y + polish) */
+  :focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  /* Numeric figures align in tables/KPIs for a crisp, financial look */
+  table, .tabular, [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Respect reduced-motion preferences (professional + accessible) */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

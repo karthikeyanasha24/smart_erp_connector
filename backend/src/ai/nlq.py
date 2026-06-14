@@ -77,15 +77,10 @@ def _pipeline_to_intent(result: PipelineResult) -> Dict[str, Any]:
 
 
 def _summary_to_insights(summary: str) -> List[Dict[str, Any]]:
-    if not summary:
-        return []
-    return [
-        {
-            "title": "Analysis",
-            "description": summary,
-            "severity": "info",
-        }
-    ]
+    # The summary is already rendered as the main answer bubble. Do NOT echo it
+    # again as an "Analysis" insight under the table — that produced a duplicate
+    # block (the same paragraph shown twice). Return no extra insight.
+    return []
 
 
 # ─── Main Orchestrator ────────────────────────────────────────────────────────

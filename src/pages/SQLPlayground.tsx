@@ -370,10 +370,10 @@ export default function SQLPlayground() {
                   />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
                     {chartData.map((_, i) => <Cell key={i} fill={COLOURS[i % COLOURS.length]} />)}
-                    {chartData.length <= 20 && (
+                    {chartData.length <= 150 && (
                       <LabelList dataKey="value" position="top"
                         formatter={(v: number) => formatChartAxisValue(Number(v), chartValueKey)}
-                        style={{ fontSize: 9, fill: muted, fontWeight: 600 }} />
+                        style={{ fontSize: 9, fill: 'var(--text-primary)', fontWeight: 700 }} />
                     )}
                   </Bar>
                 </BarChart>

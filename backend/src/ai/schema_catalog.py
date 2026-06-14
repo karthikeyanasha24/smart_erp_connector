@@ -254,7 +254,10 @@ def select_relevant_views(query: str, max_views: int = 4) -> List[Dict[str, Any]
 _BUSINESS_GLOSSARY = """
 ## ERP Business Glossary
 - **MTD**: Month-to-Date (1st of current month → today)
-- **YTD**: Year-to-Date (Jan 1 of current year → today)
+- **YTD**: Year-to-Date on the INDIAN FINANCIAL YEAR — 1 April of the current
+  financial year through today (NOT 1 January). If today is in Jan–Mar, the FY
+  started 1 April of the PREVIOUS calendar year. Always prefer @startDate/@endDate,
+  which the backend has already resolved to the correct FY window.
 - **QTD**: Quarter-to-Date (1st of current quarter → today)
 - **NetAmount / NetSlsNetAmount**: Net sales revenue after discounts — PRIMARY revenue metric
 - **BillCount**: Number of invoices/transactions — footfall KPI

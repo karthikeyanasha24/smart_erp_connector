@@ -17,9 +17,7 @@ FREQUENT_AI_QUERIES: Tuple[str, ...] = (
     "Last 5 Years Sales Analysis at Department and Category Level",
     "Average Sales at MTD Level",
     "Today's Sales with Unique Customer Count and Unique Invoices Billed",
-    "Current Year YTD Growth vs Last Year YTD Growth",
-    "Current Year QTD Growth vs Last Year QTD Growth",
-    "Current Year MTD Growth vs Last Year MTD Growth",
+    "YTD, QTD and MTD Growth vs Last Year",
     "Which Store has the Highest Sales in the Current Month?",
     "Which Department has the Highest Sales in the Current Month?",
     "Which Category has the Highest Sales in the Current Month?",
@@ -213,11 +211,11 @@ ORDER BY MonthStart ASC, TotalSales DESC
     def _sql_average_sales_mtd(_q: str) -> Dict[str, Any]:
         sql = f"""
 SELECT
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS MTDTotalSales,
-    COUNT(DISTINCT CAST(s.[XnDt] AS DATE)) AS TradingDays,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT CAST(s.[XnDt] AS DATE)), 0) AS decimal(18, 2)) AS AvgDailySales
-FROM {_APP} s WITH (NOLOCK)
-WHERE {_mtd_where("s")}
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS MTDTotalSales,
+    COUNT(DISTINCT CAST(sp.[CashmemoDt] AS DATE)) AS TradingDays,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT CAST(sp.[CashmemoDt] AS DATE)), 0) AS decimal(18, 2)) AS AvgDailySales
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_mtd_where("sp")}
 """
         return _blob(
             "average_sales_mtd_level",
@@ -244,14 +242,19 @@ WHERE {_cashmemo_today_where("sp")}
             ["Single source: SLS_DATA_WITHOUT_ITEMID on CashmemoDt."],
         )
 
-    def _period_growth_sql(period: str, label_cur: str, label_py: str) -> str:
+    def _period_bounds(period: str) -> tuple[str, str]:
+        _fy_start = (
+            "CASE WHEN MONTH(GETDATE()) >= 4 "
+            "THEN DATEFROMPARTS(YEAR(GETDATE()), 4, 1) "
+            "ELSE DATEFROMPARTS(YEAR(GETDATE()) - 1, 4, 1) END"
+        )
         if period == "ytd":
             cur = (
-                "sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()), 1, 1) "
+                f"sp.[CashmemoDt] >= {_fy_start} "
                 "AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
             )
             py = (
-                "sp.[CashmemoDt] >= DATEFROMPARTS(YEAR(GETDATE()) - 1, 1, 1) "
+                f"sp.[CashmemoDt] >= DATEADD(YEAR, -1, {_fy_start}) "
                 "AND sp.[CashmemoDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))"
             )
         elif period == "qtd":
@@ -272,6 +275,10 @@ WHERE {_cashmemo_today_where("sp")}
                 "sp.[CashmemoDt] >= DATEADD(YEAR, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) "
                 "AND sp.[CashmemoDt] < DATEADD(YEAR, -1, DATEADD(DAY, 1, CAST(GETDATE() AS DATE)))"
             )
+        return cur, py
+
+    def _period_growth_sql(period: str, label_cur: str, label_py: str) -> str:
+        cur, py = _period_bounds(period)
         return f"""
 SELECT
     N'{label_cur}' AS PeriodLabel,
@@ -286,12 +293,29 @@ FROM {_SALESPERSON} sp WITH (NOLOCK)
 WHERE {py}
 """
 
+    def _sql_all_period_growth(_q: str) -> Dict[str, Any]:
+        parts = [
+            _period_growth_sql("ytd", "CurrentYTD", "LastYearYTD"),
+            _period_growth_sql("qtd", "CurrentQTD", "LastYearQTD"),
+            _period_growth_sql("mtd", "CurrentMTD", "LastYearMTD"),
+        ]
+        sql = "\nUNION ALL\n".join(p.strip() for p in parts)
+        return _blob(
+            "all_period_growth_vs_last_year",
+            sql,
+            "FY YTD, calendar QTD, and MTD each compared to the same window last year (6 rows).",
+            [
+                "YTD uses Indian FY (Apr 1 → today); QTD/MTD use calendar quarter/month.",
+                "Replaces three separate suggestion entries with one combined view.",
+            ],
+        )
+
     def _sql_ytd_growth(_q: str) -> Dict[str, Any]:
         return _blob(
             "ytd_growth_vs_last_year",
             _period_growth_sql("ytd", "CurrentYTD", "LastYearYTD"),
-            "Current year YTD sales vs same YTD window last year (two rows).",
-            ["Compare growth manually: (Current - Last) / Last."],
+            "Current FY YTD sales (Apr 1 → today) vs same day-range last FY.",
+            ["Indian financial year starts 1 April — aligned with Analytics dashboard."],
         )
 
     def _sql_qtd_growth(_q: str) -> Dict[str, Any]:
@@ -472,47 +496,32 @@ ORDER BY SalesDecline ASC
 
     def _sql_products_mom_growth(_q: str) -> Dict[str, Any]:
         sql = f"""
+-- OPTIMISED 2026-06-13: single 2-month scan with conditional sums instead of a
+-- 6-month scan + ROW_NUMBER window + self-join (which timed out at 300s on SLSXNS).
+-- LatestRevenue = last complete month; PriorMonthRevenue = the month before it.
 WITH M AS (
     SELECT
         s.[Itemcode],
-        DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
-        SUM(s.[NetAmount]) AS Revenue
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE s.[XnDt] >= DATEADD(MONTH, -6, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
-      AND s.[XnDt] < DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
+        SUM(CASE WHEN s.[XnDt] >= DATEADD(MONTH, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+                 THEN s.[NetSlsNetAmount] ELSE 0 END) AS LatestRevenue,
+        SUM(CASE WHEN s.[XnDt] <  DATEADD(MONTH, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+                 THEN s.[NetSlsNetAmount] ELSE 0 END) AS PriorMonthRevenue
+    FROM {_SLSXNS} s WITH (NOLOCK)
+    WHERE s.[XnDt] >= DATEADD(MONTH, -2, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+      AND s.[XnDt] <  DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
       AND s.[Itemcode] IS NOT NULL
-    GROUP BY s.[Itemcode], DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1)
-),
-Ranked AS (
-    SELECT
-        Itemcode,
-        MonthStart,
-        Revenue,
-        ROW_NUMBER() OVER (PARTITION BY Itemcode ORDER BY MonthStart DESC) AS rn
-    FROM M
-),
-Curr AS (
-    SELECT Itemcode, MonthStart AS LatestMonth, Revenue AS LatestRevenue
-    FROM Ranked
-    WHERE rn = 1
-),
-Prev AS (
-    SELECT Itemcode, Revenue AS PriorMonthRevenue
-    FROM Ranked
-    WHERE rn = 2
+    GROUP BY s.[Itemcode]
 )
-SELECT
-    c.[Itemcode],
-    c.LatestMonth,
-    CAST(c.LatestRevenue AS decimal(18, 2)) AS LatestRevenue,
-    CAST(p.PriorMonthRevenue AS decimal(18, 2)) AS PriorMonthRevenue,
+SELECT TOP (50)
+    [Itemcode],
+    CAST(LatestRevenue AS decimal(18, 2)) AS LatestRevenue,
+    CAST(PriorMonthRevenue AS decimal(18, 2)) AS PriorMonthRevenue,
     CAST(
-        100.0 * (c.LatestRevenue - p.PriorMonthRevenue) / NULLIF(p.PriorMonthRevenue, 0)
+        100.0 * (LatestRevenue - PriorMonthRevenue) / NULLIF(PriorMonthRevenue, 0)
         AS decimal(18, 4)
     ) AS MoMGrowthPct
-FROM Curr c
-INNER JOIN Prev p ON p.[Itemcode] = c.[Itemcode]
-WHERE p.PriorMonthRevenue > 0 AND c.LatestRevenue > p.PriorMonthRevenue
+FROM M
+WHERE PriorMonthRevenue > 0 AND LatestRevenue > PriorMonthRevenue
 ORDER BY MoMGrowthPct DESC
 """
         return _blob(
@@ -520,8 +529,8 @@ ORDER BY MoMGrowthPct DESC
             sql,
             "Products with highest month-over-month revenue growth (latest complete month vs prior).",
             [
-                "Compares the two most recent complete calendar months per Itemcode.",
-                "Excludes current partial month; requires sales in both months.",
+                "Compares the last complete month vs the month before it, per Itemcode (SLSXNS).",
+                "TOP 50 fastest growers; requires sales in both months; current partial month excluded.",
             ],
         )
 
@@ -529,14 +538,14 @@ ORDER BY MoMGrowthPct DESC
         sql = f"""
 WITH M AS (
     SELECT
-        s.[CategoryShortName] AS Category,
-        DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
-        SUM(s.[NetAmount]) AS Revenue
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE s.[XnDt] >= DATEADD(MONTH, -4, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
-      AND s.[XnDt] < DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
-      AND s.[CategoryShortName] IS NOT NULL
-    GROUP BY s.[CategoryShortName], DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1)
+        sp.[CategoryShortName] AS Category,
+        DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1) AS MonthStart,
+        SUM(sp.[SalesNetAmount]) AS Revenue
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
+    WHERE sp.[CashmemoDt] >= DATEADD(MONTH, -4, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+      AND sp.[CashmemoDt] < DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
+      AND sp.[CategoryShortName] IS NOT NULL
+    GROUP BY sp.[CategoryShortName], DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1)
 ),
 L AS (
     SELECT *,
@@ -565,8 +574,8 @@ ORDER BY MoMGrowthPct ASC
 WITH DailySales AS (
     SELECT
         s.[Itemcode],
-        SUM(s.[AppQty]) / 30.0 AS AvgDailyQty
-    FROM {_APP} s WITH (NOLOCK)
+        SUM(s.[NetSlsQty]) / 30.0 AS AvgDailyQty
+    FROM {_SLSXNS} s WITH (NOLOCK)
     WHERE s.[XnDt] >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))
       AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
       AND s.[Itemcode] IS NOT NULL
@@ -591,8 +600,8 @@ ORDER BY ExpectedQtyNext30Days DESC
 
         sql = f"""
 WITH DailySales AS (
-    SELECT s.[Itemcode], SUM(s.[AppQty]) / 14.0 AS AvgDailyQty
-    FROM {_APP} s WITH (NOLOCK)
+    SELECT s.[Itemcode], SUM(s.[NetSlsQty]) / 14.0 AS AvgDailyQty
+    FROM {_SLSXNS} s WITH (NOLOCK)
     WHERE s.[XnDt] >= DATEADD(DAY, -14, CAST(GETDATE() AS DATE))
       AND s.[Itemcode] IS NOT NULL
     GROUP BY s.[Itemcode]
@@ -641,12 +650,12 @@ ORDER BY MTDSales DESC
         sql = f"""
 WITH M AS (
     SELECT
-        MONTH(s.[XnDt]) AS Mo,
-        SUM(s.[NetAmount]) AS Revenue
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE s.[XnDt] >= DATEADD(YEAR, -3, DATEFROMPARTS(YEAR(GETDATE()), 1, 1))
-      AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
-    GROUP BY MONTH(s.[XnDt])
+        MONTH(sp.[CashmemoDt]) AS Mo,
+        SUM(sp.[SalesNetAmount]) AS Revenue
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
+    WHERE sp.[CashmemoDt] >= DATEADD(YEAR, -3, DATEFROMPARTS(YEAR(GETDATE()), 1, 1))
+      AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
+    GROUP BY MONTH(sp.[CashmemoDt])
 )
 SELECT
     Mo AS CalendarMonth,
@@ -686,13 +695,13 @@ ORDER BY MTDSales DESC
     def _sql_invoice_value_trend(_q: str) -> Dict[str, Any]:
         sql = f"""
 SELECT TOP (24)
-    DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
-    CAST(SUM(s.[NetAmount]) / NULLIF(COUNT(DISTINCT s.[XnNo]), 0) AS decimal(18, 2)) AS AvgInvoiceValue,
-    COUNT(DISTINCT s.[XnNo]) AS InvoiceCount
-FROM {_APP} s WITH (NOLOCK)
-WHERE s.[XnDt] >= DATEADD(MONTH, -24, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
-  AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
-GROUP BY DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1)
+    DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1) AS MonthStart,
+    CAST(SUM(sp.[SalesNetAmount]) / NULLIF(COUNT(DISTINCT sp.[CashmemoNo]), 0) AS decimal(18, 2)) AS AvgInvoiceValue,
+    COUNT(DISTINCT sp.[CashmemoNo]) AS InvoiceCount
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE sp.[CashmemoDt] >= DATEADD(MONTH, -24, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+  AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
+GROUP BY DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1)
 ORDER BY MonthStart ASC
 """
         return _blob(
@@ -816,11 +825,11 @@ ORDER BY SellThroughPct DESC, MTDQtySold DESC, Itemcode
     def _sql_sales_spike_alert(_q: str) -> Dict[str, Any]:
         sql = f"""
 WITH Daily AS (
-    SELECT CAST(s.[XnDt] AS DATE) AS SaleDate, SUM(s.[NetAmount]) AS Revenue
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE s.[XnDt] >= DATEADD(DAY, -14, CAST(GETDATE() AS DATE))
-      AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
-    GROUP BY CAST(s.[XnDt] AS DATE)
+    SELECT CAST(sp.[CashmemoDt] AS DATE) AS SaleDate, SUM(sp.[SalesNetAmount]) AS Revenue
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
+    WHERE sp.[CashmemoDt] >= DATEADD(DAY, -14, CAST(GETDATE() AS DATE))
+      AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
+    GROUP BY CAST(sp.[CashmemoDt] AS DATE)
 ),
 Stats AS (
     SELECT
@@ -895,19 +904,19 @@ ORDER BY ForecastNextMonthRevenue DESC
     def _sql_discount_impact(_q: str) -> Dict[str, Any]:
         sql = f"""
 SELECT
-    s.[CategoryShortName] AS Category,
-    CAST(SUM(s.[MrpValue]) AS decimal(18, 2)) AS TotalMRP,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS NetSales,
-    CAST(SUM(s.[MrpValue]) - SUM(s.[NetAmount]) AS decimal(18, 2)) AS ImpliedDiscountValue,
+    sp.[CategoryShortName] AS Category,
+    CAST(SUM(sp.[ItemMRP] * sp.[SalesQuantity]) AS decimal(18, 2)) AS TotalMRP,
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS NetSales,
+    CAST(SUM(sp.[ItemMRP] * sp.[SalesQuantity]) - SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS ImpliedDiscountValue,
     CAST(
-        100.0 * (SUM(s.[MrpValue]) - SUM(s.[NetAmount])) / NULLIF(SUM(s.[MrpValue]), 0)
+        100.0 * (SUM(sp.[ItemMRP] * sp.[SalesQuantity]) - SUM(sp.[SalesNetAmount])) / NULLIF(SUM(sp.[ItemMRP] * sp.[SalesQuantity]), 0)
         AS decimal(18, 4)
     ) AS ImpliedDiscountPct
-FROM {_APP} s WITH (NOLOCK)
-WHERE {_mtd_where("s")}
-  AND s.[CategoryShortName] IS NOT NULL
-GROUP BY s.[CategoryShortName]
-HAVING SUM(s.[MrpValue]) > 0
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_mtd_where("sp")}
+  AND sp.[CategoryShortName] IS NOT NULL
+GROUP BY sp.[CategoryShortName]
+HAVING SUM(sp.[ItemMRP] * sp.[SalesQuantity]) > 0
 ORDER BY ImpliedDiscountPct DESC
 """
         return _blob(
@@ -1081,8 +1090,8 @@ WITH Ret AS (
     GROUP BY [Itemcode]
 ),
 Sales AS (
-    SELECT [Itemcode], SUM([AppQty]) AS SoldQty
-    FROM {_APP} s WITH (NOLOCK)
+    SELECT [Itemcode], SUM([NetSlsQty]) AS SoldQty
+    FROM {_SLSXNS} s WITH (NOLOCK)
     WHERE {_mtd_where("s")} AND [Itemcode] IS NOT NULL
     GROUP BY [Itemcode]
 )
@@ -1151,8 +1160,8 @@ ORDER BY MTDQtySold DESC
         from nlq_faq_sql import _stock_by_itemcode_cte
         sql = f"""
 WITH SalesLast30 AS (
-    SELECT s.[Itemcode], SUM(s.[AppQty]) AS SoldQty30d
-    FROM {_APP} s WITH (NOLOCK)
+    SELECT s.[Itemcode], SUM(s.[NetSlsQty]) AS SoldQty30d
+    FROM {_SLSXNS} s WITH (NOLOCK)
     WHERE s.[XnDt] >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))
       AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
       AND s.[Itemcode] IS NOT NULL
@@ -1185,8 +1194,8 @@ ORDER BY OnHandQty DESC, SoldQty30d ASC
         from nlq_faq_sql import _stock_by_itemcode_cte
         sql = f"""
 WITH SalesLast30 AS (
-    SELECT s.[Itemcode], SUM(s.[AppQty]) AS SoldQty30d
-    FROM {_APP} s WITH (NOLOCK)
+    SELECT s.[Itemcode], SUM(s.[NetSlsQty]) AS SoldQty30d
+    FROM {_SLSXNS} s WITH (NOLOCK)
     WHERE s.[XnDt] >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))
       AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
       AND s.[Itemcode] IS NOT NULL
@@ -1310,6 +1319,13 @@ ORDER BY ATS DESC
         r"today(?:'?s)?\s+sales?\s+unique\s+customer\s+count",
         r"sales?\s+today\s+with\s+(?:unique\s+)?customer\s+count",
     ], _sql_today_sales_customers_invoices)
+
+    register("all_period_growth_vs_last_year", [
+        r"ytd.*qtd.*mtd.*growth.*last\s+year",
+        r"(?:ytd|qtd|mtd).*(?:and|&|,).*growth.*last\s+year",
+        r"all\s+period\s+growth.*last\s+year",
+        r"growth\s+(?:vs|versus|compared\s+to)\s+last\s+year.*(?:ytd|qtd|mtd)",
+    ], _sql_all_period_growth)
 
     register("ytd_growth_vs_last_year", [
         r"(?:current\s+year\s+)?ytd\s+growth\s+vs\.?\s+last\s+year",

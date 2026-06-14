@@ -29,6 +29,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _SCHEMA_CACHE_FILE = _PROJECT_ROOT / "db-chat" / "schema_cache.json"
 
 MAX_RESULT_ROWS = int(os.getenv("DB_CHAT_MAX_ROWS", "3000"))
+# Only a small sample of rows is sent to the LLM for the plain-English explanation.
+# Sending thousands of rows overflows the model context (157K > 128K tokens on
+# huge results like Product Sell-Through). The display table is unaffected.
+EXPLAIN_MAX_ROWS = int(os.getenv("DB_CHAT_EXPLAIN_MAX_ROWS", "40"))
 
 _snap_cache: Optional[dict] = None
 
@@ -596,9 +600,12 @@ and received results. Explain what the data means in clear, plain English.
 
 Rules:
 - Be specific: include actual numbers, names, and values from the data.
-- Format currency in Indian style (₹ with lakh/crore: e.g. ₹12,34,567 or ₹1.2 lakh).
+- Currency values in the Results are ALREADY formatted as "₹X.XX L" (Lakhs).
+  Quote them EXACTLY as shown — do NOT recompute, convert, change the scale, or use crore.
+  Non-currency numbers (counts, quantities, percentages) are raw — report them as-is.
+- "YTD" means Indian financial year (1 April → today), not calendar Jan–Dec.
 - If the result is empty (0 rows), explain what that means in context.
-- Keep the answer concise but complete — 2 to 6 sentences is ideal.
+- Structure the answer for a busy executive, using line breaks between parts:\n  (1) a one-line headline with the single most important figure or finding;\n  (2) one or two short supporting sentences with the key numbers;\n  (3) optionally, one short insight or recommendation.\n  Keep it crisp — under ~6 sentences total. Use plain, professional business English.
 - Do NOT repeat the SQL query.
 
 Return ONLY a JSON object:
@@ -606,6 +613,152 @@ Return ONLY a JSON object:
   "answer": "<plain English explanation of the results>"
 }
 """.strip()
+
+
+def _to_float(v: Any) -> Optional[float]:
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt_inr_narrative(amount: float) -> str:
+    """Format raw rupees for AI/user-facing summaries."""
+    # Express in Lakhs (₹X.XX L) to match the Analytics dashboard cards exactly,
+    # so a side-by-side of dashboard vs AI shows identical units (no crore/L mismatch).
+    a = abs(amount)
+    sign = "−" if amount < 0 else ""
+    if a >= 100_000:
+        return f"{sign}₹{a / 100_000:,.2f} L"
+    return f"{sign}₹{a:,.0f}"
+
+
+def _try_period_comparison_summary(records: list[dict]) -> Optional[str]:
+    """
+    Deterministic summary for 2-row current-vs-prior period tables
+    (e.g. ytd_growth_vs_last_year) — avoids LLM crore/lakh mistakes.
+    """
+    if len(records) != 2:
+        return None
+    keys = list(records[0].keys())
+    if len(keys) < 2:
+        return None
+    label_col = next(
+        (k for k in keys if any(h in k.lower() for h in ("period", "label", "metric", "name"))),
+        keys[0],
+    )
+    val_col = next(
+        (k for k in keys if k != label_col and _to_float(records[0].get(k)) is not None),
+        None,
+    )
+    if not val_col:
+        return None
+
+    def _row_val(row: dict) -> tuple[str, float]:
+        label = str(row.get(label_col) or "")
+        val = _to_float(row.get(val_col))
+        return label, val if val is not None else 0.0
+
+    rows = [_row_val(r) for r in records]
+    cur = next((r for r in rows if "current" in r[0].lower()), rows[0])
+    prior = next(
+        (r for r in rows if any(h in r[0].lower() for h in ("last", "prior", "previous", "ly"))),
+        rows[1] if rows[1][0] != cur[0] else rows[0],
+    )
+    if prior[0] == cur[0]:
+        return None
+
+    cur_amt, prior_amt = cur[1], prior[1]
+    delta = cur_amt - prior_amt
+    growth = (delta / prior_amt * 100) if prior_amt else None
+    growth_txt = f"{growth:+.1f}%" if growth is not None else "N/A"
+    direction = "ahead of" if delta > 0 else "behind" if delta < 0 else "even with"
+
+    return (
+        f"{cur[0]} sales are {_fmt_inr_narrative(cur_amt)} "
+        f"({_fmt_inr_narrative(prior_amt)} for {prior[0]}). "
+        f"That is {_fmt_inr_narrative(delta)} {direction} last year "
+        f"({growth_txt} growth). "
+        f"Figures use Indian FY YTD (1 April through today), matching the Analytics dashboard."
+    )
+
+
+_CURRENCY_INCLUDE = ("sales", "revenue", "amount", "value", "ats", "mrp",
+                     "profit", "cost", "ticket", "basket", "forecast", "discount", "networth")
+_CURRENCY_EXCLUDE = ("pct", "percent", "qty", "quantity", "count", "rate", "ratio",
+                     "days", "month", "year", "growth", "score", "rank", "id")
+
+
+def _is_currency_key(key: str) -> bool:
+    k = key.lower()
+    if any(x in k for x in _CURRENCY_EXCLUDE):
+        return False
+    return any(x in k for x in _CURRENCY_INCLUDE)
+
+
+def _lakhify_rows(rows: list[dict]) -> list[dict]:
+    """Pre-format currency columns (raw INR) as '₹X.XX L' so the LLM quotes
+    already-correct Lakh figures instead of doing its own (often wrong) math.
+    Handles Decimal/None/strings safely; non-currency values pass through."""
+    out: list[dict] = []
+    for r in rows:
+        nr: dict = {}
+        for k, v in r.items():
+            if _is_currency_key(k) and v is not None and not isinstance(v, str):
+                try:
+                    nr[k] = f"₹{float(v) / 100000:,.2f} L"
+                except (TypeError, ValueError):
+                    nr[k] = v
+            else:
+                nr[k] = v
+        out.append(nr)
+    return out
+
+
+def _data_digest(rows: list[dict]) -> str:
+    """Compute total / highest / lowest of the primary currency column over ALL
+    rows (not just the sample). Gives the LLM accurate peaks and totals even when
+    the dataset is too large to send in full — fixes wrong/partial summaries."""
+    if not rows or len(rows) < 2:
+        return ""
+    keys = list(rows[0].keys())
+    cur_key = next((k for k in keys if _is_currency_key(k)), None)
+    if not cur_key:
+        return ""
+
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    pairs = [(_num(r.get(cur_key)), r) for r in rows]
+    pairs = [(v, r) for v, r in pairs if v is not None]
+    if not pairs:
+        return ""
+
+    def _label(r: dict) -> str:
+        parts = [str(r.get(k)) for k in keys
+                 if k != cur_key and not isinstance(r.get(k), (int, float))
+                 and r.get(k) not in (None, "")]
+        return " / ".join(parts) or "—"
+
+    def _L(v: float) -> str:
+        return f"₹{v / 100000:,.2f} L"
+
+    total = sum(v for v, _ in pairs)
+    hi_v, hi_r = max(pairs, key=lambda x: x[0])
+    lo_v, lo_r = min(pairs, key=lambda x: x[0])
+    return (
+        f"DATA DIGEST (computed over ALL {len(rows)} rows, column '{cur_key}'): "
+        f"total = {_L(total)}; highest = {_L(hi_v)} at [{_label(hi_r)}]; "
+        f"lowest = {_L(lo_v)} at [{_label(lo_r)}]. "
+        f"Use these for any total / peak / lowest claims — the sample below is only the first rows."
+    )
 
 
 async def explain_results(
@@ -616,12 +769,20 @@ async def explain_results(
     truncated: bool,
     provider: str,
 ) -> str:
-    results_json = json.dumps(rows, indent=2, default=str)
-    truncation_note = f" (showing first {MAX_RESULT_ROWS} of {row_count}+)" if truncated else ""
+    sample = _lakhify_rows(rows[:EXPLAIN_MAX_ROWS])
+    sample_truncated = truncated or len(rows) > EXPLAIN_MAX_ROWS
+    results_json = json.dumps(sample, indent=2, default=str)
+    truncation_note = (
+        f" (narrating a sample of the first {len(sample)} of {row_count}+ rows)"
+        if sample_truncated else ""
+    )
 
+    digest = _data_digest(rows)
+    digest_block = f"{digest}\n\n" if digest else ""
     content = (
         f"Original question: {question}\n\n"
         f"SQL that was run:\n{sql}\n\n"
+        f"{digest_block}"
         f"Results ({row_count} rows{truncation_note}):\n{results_json}\n\n"
         "Explain the results in plain business English."
     )
@@ -640,6 +801,58 @@ async def explain_results(
     if row_count > 0:
         return f"Returned {row_count} row(s) for your question."
     return "No rows matched this query for the selected period."
+
+
+import re as _re_st
+
+_SMALLTALK_HELP = (
+    "I can answer questions about your live ERP data — here are things you can ask:\n\n"
+    "Sales — \"Today's sales\", \"Month-to-date sales vs last year\", \"YTD, QTD and MTD growth\"\n"
+    "Stores — \"Which store has the highest sales this month?\", \"Top 10 stores by growth\"\n"
+    "Products — \"Most selling product\", \"Top 20 products by revenue\", \"Slow-moving inventory\"\n"
+    "Categories — \"Category contribution % in total revenue\", \"Gross margin by category\"\n"
+    "Customers — \"New vs repeat customers\", \"Top customers by value\"\n"
+    "Suppliers — \"Supplier contribution %\", \"Which supplier has the highest sales?\"\n\n"
+    "You can also click any verified question in the left panel, or ask a follow-up after any answer."
+)
+
+
+def _smalltalk(question: str) -> Optional[str]:
+    """Fast, deterministic replies for greetings / chit-chat / help — no LLM call,
+    so it works instantly even without API credits. Returns None for real queries."""
+    q = (question or "").strip().lower()
+    if not q:
+        return None
+    qn = _re_st.sub(r"[^a-z0-9\s']", " ", q).strip()
+    qn = _re_st.sub(r"\s+", " ", qn)
+    if not qn:
+        return None
+
+    if any(w in qn for w in ("what can you do", "what can i ask", "what do you do",
+                             "how do i use", "how to use", "capabilities", "show examples",
+                             "what can this", "help me", "what questions")) or qn in ("help", "menu", "options"):
+        return _SMALLTALK_HELP
+    _short = len(qn.split()) <= 4  # only treat as a greeting when it's a short message
+    if (_short and _re_st.match(r"^(hi+|hey+|hello+|hii+|yo|hola|namaste|greetings|good (morning|afternoon|evening|day))\b", qn)) \
+            or qn in ("hi", "hey", "hello", "hi there", "hey there", "hello there"):
+        return ("Hi! I'm your SmarterP analytics assistant. I pull live numbers from your "
+                "ERP — sales, growth, top stores and products, customers, suppliers and "
+                "inventory.\n\nTry: \"Which store has the highest sales this month?\" or "
+                "\"Category contribution % in total revenue\". You can also pick a verified "
+                "question from the panel on the left, or type \"help\" to see what I can do.")
+    if "how are you" in qn or "how r u" in qn or "how is it going" in qn or "how's it going" in q or "how do you do" in qn:
+        return ("I'm doing great and ready to help! Ask me anything about your sales or "
+                "operations — for example \"Today's sales\" or \"Top 10 stores by growth\". "
+                "Type \"help\" for more examples.")
+    if "who are you" in qn or "your name" in qn or "what are you" in qn:
+        return ("I'm the SmarterP AI assistant. I turn your questions into safe, read-only "
+                "SQL against your ERP and explain the results in plain English. What would "
+                "you like to know about your business?")
+    if "thank" in qn or qn in ("thanks", "thx", "ty", "great", "nice", "cool", "perfect", "awesome", "good job", "well done"):
+        return "You're welcome! Ask me anything else about your sales, branches, products or customers."
+    if qn in ("bye", "goodbye", "see you", "see ya", "cya", "good night", "goodnight", "take care"):
+        return "Goodbye! Come back anytime for a live look at your numbers."
+    return None
 
 
 # ─── Main pipeline ────────────────────────────────────────────────────────────
@@ -692,6 +905,15 @@ async def run_pipeline(
     sql = ""
     explanation = ""
     conversational_answer = ""
+
+    # Fast path: greetings / chit-chat / "help" — answer instantly, no SQL or LLM.
+    _st = _smalltalk(question)
+    if _st is not None:
+        return PipelineResult(
+            sql=None, records=[], record_count=0,
+            summary=_st, description="Conversational response",
+            conversational=True,
+        )
 
     faq = try_verified_faq(question)
     if faq and (faq.get("sql") or "").strip():
@@ -798,9 +1020,11 @@ async def run_pipeline(
         records = records[: cfg.DATASET_HARD_CAP]
         warnings.append(f"Results capped at {cfg.DATASET_HARD_CAP:,} rows.")
 
-    summary = await explain_results(
-        question, sql, records, row_count, truncated, ai_provider
-    )
+    summary = _try_period_comparison_summary(records)
+    if not summary:
+        summary = await explain_results(
+            question, sql, records, row_count, truncated, ai_provider
+        )
 
     if summary.strip().startswith("{") and '"sql"' in summary:
         summary = (

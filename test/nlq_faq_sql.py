@@ -43,8 +43,13 @@ def _mtd_where(alias: str = "s") -> str:
 
 
 def _ytd_where(alias: str = "s") -> str:
+    # FIXED 2026-06-13 (Manoj issue #2): YTD = Indian FINANCIAL year (starts 1 April),
+    # not calendar year (1 January). Before April, the FY started the previous year.
+    # Kept consistent with date_utils._start_of_financial_year and the dashboard.
     return (
-        f"{alias}.[XnDt] >= DATEFROMPARTS(YEAR(GETDATE()), 1, 1) "
+        f"{alias}.[XnDt] >= CASE WHEN MONTH(GETDATE()) >= 4 "
+        f"THEN DATEFROMPARTS(YEAR(GETDATE()), 4, 1) "
+        f"ELSE DATEFROMPARTS(YEAR(GETDATE()) - 1, 4, 1) END "
         f"AND {alias}.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))"
     )
 
@@ -704,12 +709,12 @@ def _sql_predict_next_month_sales(_q: str) -> Dict[str, Any]:
     sql = f"""
 WITH Hist AS (
     SELECT
-        DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
-        SUM(s.[NetAmount]) AS Revenue
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE s.[XnDt] >= DATEADD(MONTH, -12, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
-      AND s.[XnDt] < DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
-    GROUP BY DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1)
+        DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1) AS MonthStart,
+        SUM(sp.[SalesNetAmount]) AS Revenue
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
+    WHERE sp.[CashmemoDt] >= DATEADD(MONTH, -12, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+      AND sp.[CashmemoDt] < DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
+    GROUP BY DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1)
 ),
 Avg3 AS (
     SELECT AVG(CAST(Revenue AS decimal(18, 4))) AS AvgRevenue
@@ -722,7 +727,7 @@ Avg3 AS (
 SELECT
     DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AS ForecastMonthStart,
     CAST(a.AvgRevenue AS decimal(18, 2)) AS ForecastRevenue,
-    N'Average of last 3 complete months on APP_REPORT' AS ForecastMethod
+    N'Average of last 3 complete months (canonical sales view)' AS ForecastMethod
 FROM Avg3 a
 """
     return _blob(
@@ -1679,28 +1684,35 @@ ORDER BY s.[SupplierState], Revenue DESC
 
 
 def _sql_supplier_contribution_pct_mtd(_q: str) -> Dict[str, Any]:
+    # FIXED 2026-06-13: switched from APP_REPORT (NetAmount/XnDt - sparse, diverged
+    # from dashboard) to the canonical SLS_DATA_WITHOUT_ITEMID view (SalesNetAmount/
+    # CashmemoDt) so the % matches the Analytics dashboard supplier totals.
     sql = f"""
 WITH sup AS (
     SELECT
-        s.[SupplierName],
-        SUM(s.[NetAmount]) AS Revenue
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE {_mtd_where("s")}
-      AND s.[SupplierName] IS NOT NULL
-    GROUP BY s.[SupplierName]
+        sp.[SupplierName],
+        SUM(sp.[SalesNetAmount]) AS Revenue
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
+    WHERE {_cashmemo_mtd_where("sp")}
+      AND sp.[SupplierName] IS NOT NULL
+    GROUP BY sp.[SupplierName]
 )
 SELECT
     [SupplierName],
     CAST(Revenue AS decimal(18, 2)) AS Revenue,
     CAST(100.0 * Revenue / NULLIF(SUM(Revenue) OVER (), 0) AS decimal(18, 4)) AS ContributionPct
 FROM sup
+WHERE Revenue <> 0
 ORDER BY ContributionPct DESC
 """
     return _blob(
         "supplier_contribution_percentage",
         sql,
         "Each supplier's share of total MTD net sales (percent of grand total).",
-        ["MTD; correct T-SQL window on pre-aggregated supplier revenue."],
+        [
+            "Source: VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID (SalesNetAmount, CashmemoDt).",
+            "Aligned with the Analytics dashboard - same view, amount column and date column.",
+        ],
     )
 
 
@@ -1736,8 +1748,8 @@ ORDER BY Revenue DESC
 def _sql_product_sell_through(_q: str) -> Dict[str, Any]:
     sql = f"""
 WITH Sales AS (
-    SELECT s.[Itemcode], SUM(s.[AppQty]) AS SoldQty
-    FROM {_APP} s WITH (NOLOCK)
+    SELECT s.[Itemcode], SUM(s.[NetSlsQty]) AS SoldQty
+    FROM {_SLSXNS} s WITH (NOLOCK)
     WHERE {_mtd_where("s")} AND s.[Itemcode] IS NOT NULL
     GROUP BY s.[Itemcode]
 ),
@@ -1748,7 +1760,7 @@ Stock AS (
     WHERE pm.[Itemcode] IS NOT NULL
     GROUP BY pm.[Itemcode]
 )
-SELECT
+SELECT TOP (200)
     COALESCE(sa.[Itemcode], st.[Itemcode]) AS Itemcode,
     CAST(ISNULL(sa.SoldQty, 0) AS decimal(18, 4)) AS MTDQtySold,
     CAST(ISNULL(st.StockQty, 0) AS decimal(18, 4)) AS OnHandQty,
@@ -1759,6 +1771,7 @@ SELECT
 FROM Sales sa
 FULL OUTER JOIN Stock st ON st.[Itemcode] = sa.[Itemcode]
 WHERE ISNULL(sa.SoldQty, 0) + ISNULL(st.StockQty, 0) > 0
+  AND ISNULL(sa.SoldQty, 0) > 0
 ORDER BY SellThroughPct DESC, MTDQtySold DESC, Itemcode
 """
     return _blob(
@@ -1778,17 +1791,17 @@ ORDER BY SellThroughPct DESC, MTDQtySold DESC, Itemcode
 def _sql_five_year_sales_dept_category(_q: str) -> Dict[str, Any]:
     sql = f"""
 SELECT
-    DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
-    s.[DepartmentShortName] AS Department,
-    s.[CategoryShortName] AS Category,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales
-FROM {_APP} s WITH (NOLOCK)
-WHERE s.[XnDt] >= DATEADD(YEAR, -5, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
-  AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
+    DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1) AS MonthStart,
+    sp.[DepartmentShortName] AS Department,
+    sp.[CategoryShortName] AS Category,
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE sp.[CashmemoDt] >= DATEADD(YEAR, -5, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+  AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
 GROUP BY
-    DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1),
-    s.[DepartmentShortName],
-    s.[CategoryShortName]
+    DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1),
+    sp.[DepartmentShortName],
+    sp.[CategoryShortName]
 ORDER BY MonthStart ASC, TotalSales DESC
 """
     return _blob(
@@ -1803,12 +1816,16 @@ ORDER BY MonthStart ASC, TotalSales DESC
 
 
 def _sql_category_contribution_pct(_q: str) -> Dict[str, Any]:
+    # FIXED 2026-06-13 (Manoj issue #3): switched from APP_REPORT (NetAmount/XnDt -
+    # sparse, produced figures that did NOT match the Analytics dashboard category
+    # chart) to the canonical SLS_DATA_WITHOUT_ITEMID view (SalesNetAmount/CashmemoDt).
+    # The contribution % now reconciles with the dashboard "Sales by category" share %.
     sql = f"""
 WITH c AS (
-    SELECT s.[CategoryShortName] AS Category, SUM(s.[NetAmount]) AS Revenue
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE {_mtd_where("s")} AND s.[CategoryShortName] IS NOT NULL
-    GROUP BY s.[CategoryShortName]
+    SELECT sp.[CategoryShortName] AS Category, SUM(sp.[SalesNetAmount]) AS Revenue
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
+    WHERE {_cashmemo_mtd_where("sp")} AND sp.[CategoryShortName] IS NOT NULL
+    GROUP BY sp.[CategoryShortName]
 )
 SELECT
     Category,
@@ -1823,7 +1840,8 @@ ORDER BY ContributionPct DESC
         sql,
         "MTD revenue contribution % by category. All categories returned.",
         [
-            "Source: VW_MB_POWERBI_APP_REPORT (NetAmount, XnDt).",
+            "Source: VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID (SalesNetAmount, CashmemoDt).",
+            "Aligned with the Analytics dashboard category share % - same view/columns.",
             "No row cap — full category list returned.",
         ],
     )
@@ -1862,19 +1880,23 @@ FROM Bills WHERE InvoiceCount = 1
 
 
 def _sql_gross_margin_by_category(_q: str) -> Dict[str, Any]:
+    # FIXED 2026-06-13: switched from APP_REPORT (NetAmount/CostValue/XnDt - sparse)
+    # to the canonical SLS_DATA_WITHOUT_ITEMID view. Revenue = SalesNetAmount,
+    # Cost = SalesCost (COGS), filtered on CashmemoDt so margin reconciles with the
+    # dashboard revenue figures (same view/columns the Analytics page uses).
     sql = f"""
 SELECT
-    s.[CategoryShortName] AS Category,
-    CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS Revenue,
-    CAST(SUM(s.[CostValue]) AS decimal(18, 2)) AS CostValue,
-    CAST(SUM(s.[NetAmount]) - SUM(s.[CostValue]) AS decimal(18, 2)) AS GrossProfit,
+    sp.[CategoryShortName] AS Category,
+    CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS Revenue,
+    CAST(SUM(sp.[SalesCost]) AS decimal(18, 2)) AS CostValue,
+    CAST(SUM(sp.[SalesNetAmount]) - SUM(sp.[SalesCost]) AS decimal(18, 2)) AS GrossProfit,
     CAST(
-        100.0 * (SUM(s.[NetAmount]) - SUM(s.[CostValue])) / NULLIF(SUM(s.[NetAmount]), 0)
+        100.0 * (SUM(sp.[SalesNetAmount]) - SUM(sp.[SalesCost])) / NULLIF(SUM(sp.[SalesNetAmount]), 0)
         AS decimal(18, 4)
     ) AS GrossMarginPct
-FROM {_APP} s WITH (NOLOCK)
-WHERE {_mtd_where("s")} AND s.[CategoryShortName] IS NOT NULL
-GROUP BY s.[CategoryShortName]
+FROM {_SALESPERSON} sp WITH (NOLOCK)
+WHERE {_cashmemo_mtd_where("sp")} AND sp.[CategoryShortName] IS NOT NULL
+GROUP BY sp.[CategoryShortName]
 ORDER BY GrossProfit DESC
 """
     return _blob(
@@ -1882,9 +1904,9 @@ ORDER BY GrossProfit DESC
         sql,
         "MTD revenue, cost, gross profit and margin % by category.",
         [
-            "Revenue = NetAmount, Cost = CostValue from VW_MB_POWERBI_APP_REPORT.",
+            "Revenue = SalesNetAmount, Cost = SalesCost from VW_MB_POWERBI_SLS_DATA_WITHOUT_ITEMID.",
+            "Aligned with the Analytics dashboard - same view, amount column and date column.",
             "No row cap — all categories returned.",
-            "Department variant: ask 'gross margin by department'.",
         ],
     )
 
@@ -1921,13 +1943,13 @@ def _sql_festival_sales_trend(_q: str) -> Dict[str, Any]:
     sql = f"""
 WITH MonthlyTotals AS (
     SELECT
-        DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1) AS MonthStart,
-        CAST(SUM(s.[NetAmount]) AS decimal(18, 2)) AS TotalSales,
-        COUNT(DISTINCT s.[XnNo]) AS BillCount
-    FROM {_APP} s WITH (NOLOCK)
-    WHERE s.[XnDt] >= DATEADD(YEAR, -3, DATEFROMPARTS(YEAR(GETDATE()), 1, 1))
-      AND s.[XnDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
-    GROUP BY DATEFROMPARTS(YEAR(s.[XnDt]), MONTH(s.[XnDt]), 1)
+        DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1) AS MonthStart,
+        CAST(SUM(sp.[SalesNetAmount]) AS decimal(18, 2)) AS TotalSales,
+        COUNT(DISTINCT sp.[CashmemoNo]) AS BillCount
+    FROM {_SALESPERSON} sp WITH (NOLOCK)
+    WHERE sp.[CashmemoDt] >= DATEADD(YEAR, -3, DATEFROMPARTS(YEAR(GETDATE()), 1, 1))
+      AND sp.[CashmemoDt] < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
+    GROUP BY DATEFROMPARTS(YEAR(sp.[CashmemoDt]), MONTH(sp.[CashmemoDt]), 1)
 ),
 Ranked AS (
     SELECT *,

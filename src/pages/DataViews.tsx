@@ -405,9 +405,9 @@ export default function DataViews() {
 
           {/* controls bar */}
           <div className="rounded-2xl p-4 flex-shrink-0" style={card}>
-            <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3">
               {/* view info */}
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 w-full sm:w-auto">
                 {selectedMeta ? (
                   <>
                     <div className="flex items-center gap-2 mb-0.5">
@@ -422,7 +422,7 @@ export default function DataViews() {
                         </span>
                       )}
                     </div>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <p className="text-xs break-all" style={{ color: 'var(--text-muted)' }}>
                       <span className="font-mono text-2xs">{selectedMeta.fqn}</span>
                       {selectedMeta.grain ? <span> · {selectedMeta.grain}</span> : null}
                     </p>
@@ -437,8 +437,10 @@ export default function DataViews() {
                 )}
               </div>
 
+              {/* controls: rows-per-page + Load — full-width row on mobile, inline on sm+ */}
+              <div className="flex items-end gap-3 w-full sm:w-auto">
               {/* rows per page */}
-              <div className="flex-shrink-0">
+              <div className="flex-1 sm:flex-initial min-w-0">
                 <span className="text-2xs font-semibold uppercase tracking-wider block mb-1" style={{ color: 'var(--text-muted)' }}>
                   Rows / page
                 </span>
@@ -471,6 +473,7 @@ export default function DataViews() {
                 {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                 Load
               </motion.button>
+              </div>
             </div>
           </div>
 

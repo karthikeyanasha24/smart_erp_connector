@@ -27,8 +27,6 @@ export default function Topbar() {
   const navigate = useNavigate();
   const { currentPage, sidebarExpanded, mobileSidebarOpen, setMobileSidebarOpen, isMobile } = useNavigation();
   const { isDark, toggleTheme } = useTheme();
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false); // mobile search toggle
 
   const sidebarW = isMobile ? 0 : (sidebarExpanded ? 240 : 72);
 
@@ -42,14 +40,6 @@ export default function Topbar() {
   const fmtGrowth = (g: number | null) => g !== null ? `${g >= 0 ? '+' : ''}${g.toFixed(1)}%` : '—';
   const fmtCount  = (n: number) => n >= 1e5 ? `${(n / 1e3).toFixed(1)}K` : n >= 1000 ? `${(n / 1e3).toFixed(0)}K` : String(n);
 
-  const tickerItems = useMemo(() => {
-    const base = [
-      { label: 'Revenue MTD Growth', value: fmtGrowth(revGrowth), color: (revGrowth ?? 0) >= 0 ? 'text-accent-400' : 'text-error-400' },
-      { label: 'MTD Transactions',   value: txnCount > 0 ? fmtCount(txnCount) : '…', color: 'text-primary-400' },
-      { label: 'Active Branches',    value: branchCount > 0 ? String(branchCount) : '…', color: 'text-warning-400' },
-    ];
-    return [...base, ...base];
-  }, [revGrowth, txnCount, branchCount]);
 
   return (
     <motion.header
@@ -110,90 +100,8 @@ export default function Topbar() {
         </div>
       </div>
 
-      {/* Ticker — hidden on mobile */}
-      <div
-        className="flex-1 mx-4 hidden md:flex items-center gap-3 px-4 py-2 rounded-xl overflow-hidden"
-        style={{
-          background: 'rgba(88,130,255,0.04)',
-          border: '1px solid rgba(88,130,255,0.1)',
-          maxWidth: 480,
-        }}
-      >
-        <TrendingUp size={12} className="text-primary-400 flex-shrink-0" />
-        <div className="overflow-hidden flex-1">
-          <motion.div
-            animate={{ x: ['0%', '-50%'] }}
-            transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
-            className="flex gap-8 whitespace-nowrap text-xs"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            {tickerItems.map((item, i) => (
-              <span key={i}>
-                <span className={`${item.color} font-medium`}>{item.value}</span>
-                {' '}{item.label}
-              </span>
-            ))}
-          </motion.div>
-        </div>
-      </div>
-
-      {/* Spacer on mobile */}
-      <div className="flex-1 md:hidden" />
-
-      {/* Search — expandable on mobile */}
-      <AnimatePresence>
-        {searchOpen && isMobile ? (
-          <motion.div
-            key="mobile-search"
-            className="absolute left-0 right-0 top-0 h-16 flex items-center gap-2 px-3 z-10"
-            style={{
-              background: isDark ? 'rgba(5,9,24,0.98)' : 'rgba(248,250,255,0.98)',
-              backdropFilter: 'blur(20px)',
-            }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <Search size={14} style={{ color: 'var(--text-muted)' }} />
-            <input
-              autoFocus
-              placeholder="Search metrics, branches…"
-              className="flex-1 text-sm outline-none bg-transparent"
-              style={{ color: 'var(--text-primary)' }}
-            />
-            <button type="button" onClick={() => setSearchOpen(false)}>
-              <X size={16} style={{ color: 'var(--text-muted)' }} />
-            </button>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      {/* Search input — desktop */}
-      <motion.div
-        className="relative hidden lg:flex items-center"
-        animate={{ width: searchFocused ? 240 : 180 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      >
-        <Search size={13} className="absolute left-3" style={{ color: 'var(--text-muted)' }} />
-        <input
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          placeholder="Search metrics, branches..."
-          className="w-full pl-8 pr-9 py-2 text-xs rounded-xl outline-none transition-all"
-          style={{
-            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-            border: searchFocused
-              ? '1px solid rgba(88,130,255,0.4)'
-              : isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.08)',
-            color: 'var(--text-primary)',
-          }}
-        />
-        <div className="absolute right-2.5 flex items-center gap-0.5 px-1 py-0.5 rounded"
-          style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-          <Command size={9} style={{ color: 'var(--text-muted)' }} />
-          <span className="text-2xs" style={{ color: 'var(--text-muted)' }}>K</span>
-        </div>
-      </motion.div>
+      {/* Spacer — pushes actions to the right */}
+      <div className="flex-1" />
 
       {/* Actions */}
       <div className="flex items-center gap-1 flex-shrink-0">
@@ -228,21 +136,6 @@ export default function Topbar() {
             </motion.button>
           </>
         )}
-
-        {/* Mobile search icon */}
-        <motion.button
-          type="button"
-          onClick={() => setSearchOpen(true)}
-          className="lg:hidden w-8 h-8 rounded-xl flex items-center justify-center"
-          style={{
-            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-            color: 'var(--text-tertiary)',
-          }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.92 }}
-        >
-          <Search size={14} />
-        </motion.button>
 
         {/* Theme toggle */}
         <motion.button

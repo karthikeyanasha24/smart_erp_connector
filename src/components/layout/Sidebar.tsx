@@ -99,7 +99,7 @@ function SidebarContent({
                 <span className="text-xs font-medium" style={{
                   background: 'linear-gradient(90deg, #5882ff, #8B5CF6)',
                   WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
+                  WebkitTextFillColor: 'var(--text-primary)',
                   backgroundClip: 'text',
                 }}>
                   Connector

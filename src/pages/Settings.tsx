@@ -21,9 +21,6 @@ type SectionId = 'profile' | 'appearance' | 'notifications' | 'security' | 'ai' 
 const BASE_SECTIONS: { id: SectionId; label: string; icon: any; desc: string; adminOnly?: boolean }[] = [
   { id: 'profile', label: 'Profile', icon: User, desc: 'Account information' },
   { id: 'appearance', label: 'Appearance', icon: Palette, desc: 'Theme & display' },
-  { id: 'notifications', label: 'Notifications', icon: Bell, desc: 'Alert preferences' },
-  { id: 'security', label: 'Security', icon: Shield, desc: 'Auth & permissions' },
-  { id: 'ai', label: 'AI Settings', icon: Brain, desc: 'Model configuration' },
   { id: 'data', label: 'Data & APIs', icon: Database, desc: 'Integrations' },
   { id: 'users', label: 'User Management', icon: Users, desc: 'Add & manage users', adminOnly: true },
 ];
@@ -35,24 +32,6 @@ const ROLE_META: Record<string, { color: string; bg: string }> = {
   viewer:  { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
 };
 
-function Toggle2({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <motion.button onClick={() => onChange(!checked)}
-      className="w-10 h-5.5 rounded-full relative flex-shrink-0"
-      style={{
-        background: checked ? 'linear-gradient(135deg, #00b8e6, #00e67a)' : 'rgba(100,116,139,0.3)',
-        boxShadow: checked ? '0 0 12px rgba(0,184,230,0.3)' : 'none',
-        height: 22,
-      }}
-      animate={{ background: checked ? 'linear-gradient(135deg, #00b8e6, #00e67a)' : 'rgba(100,116,139,0.3)' }}
-    >
-      <motion.div className="w-4 h-4 bg-white rounded-full absolute top-[3px]"
-        animate={{ left: checked ? 'calc(100% - 19px)' : 3 }}
-        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-    </motion.button>
-  );
-}
 
 export default function Settings() {
   const { isDark, toggleTheme } = useTheme();
@@ -163,25 +142,6 @@ export default function Settings() {
     if (activeSection === 'data') void loadHealth();
   }, [activeSection, loadHealth]);
 
-  const [settings, setSettings] = useState({
-    emailNotifs: true,
-    pushNotifs: true,
-    fraudAlerts: true,
-    weeklyReport: false,
-    aiInsights: true,
-    darkMode: isDark,
-    compactMode: false,
-    animations: true,
-    autoRefresh: true,
-    aiSuggestions: true,
-    predictiveMode: true,
-    dataRetention: '90',
-  });
-
-  const toggle = (key: keyof typeof settings) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
   const sectionContent: Partial<Record<SectionId, React.ReactNode>> = {
     profile: (
       <div className="space-y-6">
@@ -259,145 +219,6 @@ export default function Settings() {
                 </motion.button>
               );
             })}
-          </div>
-        </div>
-
-        <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)', paddingTop: 20 }}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Display Options</h3>
-          <div className="space-y-4">
-            {[
-              { key: 'compactMode' as const, label: 'Compact Mode', desc: 'Reduce padding and whitespace' },
-              { key: 'animations' as const, label: 'Smooth Animations', desc: 'Framer Motion transitions and effects' },
-            ].map(opt => (
-              <div key={opt.key} className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{opt.label}</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{opt.desc}</p>
-                </div>
-                <Toggle2 checked={settings[opt.key] as boolean} onChange={() => toggle(opt.key)} />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)', paddingTop: 20 }}>
-          <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Accent Color</h3>
-          <div className="flex items-center gap-2.5">
-            {['#00b8e6', '#00e67a', '#a78bfa', '#f97316', '#ec4899'].map(color => (
-              <motion.button key={color}
-                className="w-8 h-8 rounded-xl border-2"
-                style={{ background: color, borderColor: color === '#00b8e6' ? 'white' : 'transparent' }}
-                whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }} />
-            ))}
-          </div>
-        </div>
-      </div>
-    ),
-
-    notifications: (
-      <div className="space-y-5">
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Notification Preferences</h3>
-        {[
-          { key: 'emailNotifs' as const, label: 'Email Notifications', desc: 'Receive reports and alerts via email', icon: Mail },
-          { key: 'pushNotifs' as const, label: 'Push Notifications', desc: 'Real-time browser notifications', icon: Bell },
-          { key: 'fraudAlerts' as const, label: 'Fraud Alerts', desc: 'Immediate alerts for suspicious activity', icon: Shield },
-          { key: 'weeklyReport' as const, label: 'Weekly Digest', desc: 'Automated weekly performance report', icon: Activity },
-          { key: 'aiInsights' as const, label: 'AI Insight Notifications', desc: 'New pattern detections and recommendations', icon: Brain },
-        ].map(notif => {
-          const Icon = notif.icon;
-          return (
-            <div key={notif.key} className="flex items-center gap-3 p-3.5 rounded-2xl"
-              style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: settings[notif.key] ? 'rgba(0,184,230,0.1)' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
-                <Icon size={15} style={{ color: settings[notif.key] ? '#00b8e6' : 'var(--text-muted)' }} />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{notif.label}</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{notif.desc}</p>
-              </div>
-              <Toggle2 checked={settings[notif.key] as boolean} onChange={() => toggle(notif.key)} />
-            </div>
-          );
-        })}
-      </div>
-    ),
-
-    security: (
-      <div className="space-y-5">
-        <div className="p-4 rounded-2xl flex items-center gap-3"
-          style={{ background: 'rgba(0,230,122,0.06)', border: '1px solid rgba(0,230,122,0.15)' }}>
-          <Shield size={16} style={{ color: '#00e67a' }} />
-          <div>
-            <p className="text-sm font-semibold" style={{ color: '#00e67a' }}>Security Score: 94/100</p>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Your account is well protected</p>
-          </div>
-        </div>
-        {[
-          { label: 'Two-Factor Authentication', desc: 'TOTP enabled via authenticator app', status: 'Enabled', color: '#00e67a', icon: Key },
-          { label: 'Session Management', desc: '2 active sessions', status: 'Review', color: '#ffb800', icon: Globe },
-          { label: 'API Access Keys', desc: '3 keys active, 1 expires soon', status: 'Manage', color: '#00b8e6', icon: Lock },
-          { label: 'Audit Log', desc: 'All actions are logged', status: 'View', color: '#a78bfa', icon: Activity },
-        ].map(item => {
-          const Icon = item.icon;
-          return (
-            <div key={item.label} className="flex items-center gap-3 p-3.5 rounded-2xl cursor-pointer group"
-              style={{ border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: `${item.color}15` }}>
-                <Icon size={15} style={{ color: item.color }} />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.label}</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{item.desc}</p>
-              </div>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-lg"
-                style={{ background: `${item.color}18`, color: item.color }}>{item.status}</span>
-            </div>
-          );
-        })}
-      </div>
-    ),
-
-    ai: (
-      <div className="space-y-5">
-        <div className="p-4 rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, rgba(0,184,230,0.08), rgba(0,230,122,0.08))', border: '1px solid rgba(0,184,230,0.15)' }}>
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={14} style={{ color: '#00b8e6' }} />
-            <p className="text-sm font-semibold" style={{ color: '#00b8e6' }}>AI Engine: GPT-4 Turbo Enhanced</p>
-          </div>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Fine-tuned on 18 months of financial transaction data</p>
-        </div>
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>AI Configuration</h3>
-        {[
-          { key: 'aiSuggestions' as const, label: 'AI Suggestions', desc: 'Contextual recommendations throughout the platform' },
-          { key: 'predictiveMode' as const, label: 'Predictive Analytics', desc: 'Forward-looking forecasts and trend prediction' },
-          { key: 'autoRefresh' as const, label: 'Auto-Refresh Insights', desc: 'Automatically update insights every 5 minutes' },
-        ].map(opt => (
-          <div key={opt.key} className="flex items-center justify-between p-3.5 rounded-2xl"
-            style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)' }}>
-            <div>
-              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{opt.label}</p>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{opt.desc}</p>
-            </div>
-            <Toggle2 checked={settings[opt.key] as boolean} onChange={() => toggle(opt.key)} />
-          </div>
-        ))}
-        <div className="p-4 rounded-2xl"
-          style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)' }}>
-          <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Confidence Threshold</p>
-          <div className="relative h-1.5 rounded-full" style={{ background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
-            <div className="absolute left-0 top-0 h-full w-4/5 rounded-full"
-              style={{ background: 'linear-gradient(90deg, #00b8e6, #00e67a)' }} />
-            <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white border-2 border-primary-500"
-              style={{ left: 'calc(80% - 8px)', boxShadow: '0 0 8px rgba(0,184,230,0.5)' }} />
-          </div>
-          <div className="flex justify-between mt-1.5">
-            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>60%</span>
-            <span className="text-xs font-semibold" style={{ color: '#00b8e6' }}>80% (current)</span>
-            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>99%</span>
           </div>
         </div>
       </div>
@@ -761,7 +582,7 @@ export default function Settings() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold" style={{
             background: isDark ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)' : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'var(--text-primary)', backgroundClip: 'text',
           }}>Settings</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Configure your workspace and preferences</p>
         </div>

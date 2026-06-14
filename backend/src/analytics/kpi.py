@@ -181,9 +181,12 @@ async def _fetch_extras_kpi(period: str) -> Dict[str, Any]:
             COUNT(DISTINCT CASE WHEN [{date_col}] >= @startDate
                                      AND [{date_col}] < {end_expr}
                                 THEN [CustomerId] END)    AS DistinctClients,
+            -- Count by SupplierName (the supplier entity) so this matches the AI
+            -- "Supplier Contribution %" list, which groups by SupplierName. (Was
+            -- SupplierAlias, which gave a different count — 213 vs 232.)
             COUNT(DISTINCT CASE WHEN [{date_col}] >= @startDate
                                      AND [{date_col}] < {end_expr}
-                                THEN [SupplierAlias] END) AS DistinctSuppliers,
+                                THEN [SupplierName] END) AS DistinctSuppliers,
             COUNT(DISTINCT CASE WHEN [{date_col}] >= @startDate
                                      AND [{date_col}] < {end_expr}
                                 THEN [CashmemoNo] END)    AS UniqueInvoices
