@@ -633,7 +633,10 @@ export default function Dashboard() {
       </div>
 
       {/* ── Customer & supplier KPIs (above main strip — visible on mobile without scrolling) ─── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* ── Secondary KPIs — only metrics NOT already shown in the hero strip
+           (removed duplicates: Total Revenue, Growth, Units Sold, Today's Sales,
+            MTD Customer Count — those repeat the hero cards above). ── */}
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         <KpiCard
           icon={<Users size={16} style={{ color:'#EC407A' }} />}
           value={todayCustomerDisplay}
@@ -646,17 +649,6 @@ export default function Dashboard() {
           pending={todayPending || todayCustomerDisplay === 'Loading…'}
         />
         <KpiCard
-          icon={<Users size={16} style={{ color:'#0EA5E9' }} />}
-          value={mtdCustomerDisplay}
-          label="MTD Customer Count"
-          sub={mtdCustomerDisplay === 'Loading…' ? 'Distinct customers' : `Unique customers · ${mtdLabel}`}
-          growth={null}
-          sparkData={[]}
-          color="#0EA5E9"
-          delay={0.03}
-          pending={dataPending || mtdCustomerDisplay === 'Loading…'}
-        />
-        <KpiCard
           icon={<Zap size={16} style={{ color:'#F97316' }} />}
           value={distinctSuppliers}
           label="Distinct Suppliers"
@@ -665,21 +657,6 @@ export default function Dashboard() {
           sparkData={[]}
           color="#F97316"
           delay={0.04}
-          pending={dataPending}
-        />
-      </div>
-
-      {/* ── 2. KPI STRIP ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <KpiCard
-          icon={<TrendingUp size={16} style={{ color:'#5882ff' }} />}
-          value={mtdSales}
-          label="Total Revenue"
-          sub={dataPending ? undefined : (lyPending ? 'LY: Loading…' : formatLySub(mS?.ly_sales, lyReady))}
-          growth={lyGrowthReady(lyReady && !dataPending, mtdGrowth)}
-          sparkData={revSpark}
-          color="#5882ff"
-          delay={0.00}
           pending={dataPending}
         />
         <KpiCard
@@ -704,45 +681,6 @@ export default function Dashboard() {
           color="#FFA726"
           delay={0.10}
           pending={dataPending}
-        />
-        <KpiCard
-          icon={<TrendingUp size={16} style={{ color:'#00e67a' }} />}
-          value={dataPending || lyPending ? '…' : (mtdGrowth != null ? `${mtdGrowth >= 0 ? '+' : ''}${mtdGrowth.toFixed(1)}%` : '—')}
-          label="Growth"
-          sub={dataPending ? undefined : (lyPending ? 'Loading…' : 'vs same period LY')}
-          growth={null}
-          sparkData={revSpark.map((v, i, arr) => (i > 0 ? (v - arr[i-1]) / (arr[i-1] || 1) * 100 : 0))}
-          color="#00e67a"
-          delay={0.15}
-          pending={dataPending || lyPending}
-        />
-        <KpiCard
-          icon={<Zap size={16} style={{ color:'#8B5CF6' }} />}
-          value={mtdQty}
-          label="Units Sold"
-          sub={dataPending ? undefined : 'Quantity MTD'}
-          growth={null}
-          sparkData={qtySpark}
-          color="#8B5CF6"
-          delay={0.20}
-          pending={dataPending}
-        />
-        <KpiCard
-          icon={<Activity size={16} style={{ color:'#EC407A' }} />}
-          value={todaySales}
-          label="Today's Sales"
-          sub={todayPending ? undefined : `${todayBills} bills · ${todayQty} units`}
-          growth={
-            // Suppress growth when today has < 20 bills — data is clearly partial
-            // (comparing a partial trading day vs a full LY day gives misleading ±99% swings)
-            todayPending || !tS || (tS.bills ?? 0) < 20
-              ? null
-              : (tS.sales_growth_pct ?? null)
-          }
-          sparkData={[]}
-          color="#EC407A"
-          delay={0.25}
-          pending={todayPending}
         />
       </div>
 
